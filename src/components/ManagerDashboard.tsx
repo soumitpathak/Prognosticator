@@ -61,8 +61,12 @@ import FloorPlan2DView from './FloorPlan2DView';
 import SystemAuditLog from './SystemAuditLog';
 import ResourceAllocationModule from './ResourceAllocationModule';
 import VoiceAlertsModal from './VoiceAlertsModal';
+import IncidentHotspotsWidget from './IncidentHotspotsWidget';
+import GlobalSearchBar from './GlobalSearchBar';
+import BiometricSyncModule from './BiometricSyncModule';
+import MaintenanceSchedulerModule from './MaintenanceSchedulerModule';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -697,11 +701,43 @@ export default function ManagerDashboard() {
     }
   };
 
+  const handleSyncBiometricToKalman = (workerId: string, hrvRmssd: number, heartRate: number) => {
+    const updatedPacket: TelemetryPacket = {
+      ...generatePacketForZone(activeZoneObj, hrvRmssd < 28),
+      worker_id: workerId,
+      hrv_series: [hrvRmssd + 4, hrvRmssd + 2, hrvRmssd, Math.max(12, hrvRmssd - 1)]
+    };
+    const res = predictWorkforceAnomaly(updatedPacket, undefined, kalmanConfig);
+    setTelemetryAlert(res);
+    setProtocolActiveNotice(
+      `Synchronized live wearable biometrics for ${workerId} (HRV: ${hrvRmssd}ms, HR: ${heartRate} BPM). Anomaly risk updated to ${(res.risk_probability * 100).toFixed(1)}%.`
+    );
+
+    const syncAudit: SystemAuditLogEntry = {
+      id: `AUD-BIO-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Manager on Duty',
+      category: 'BIOMETRIC_SYNC',
+      targetModule: 'Wearable Health Device BLE Ingestion Hub',
+      parameter: `Live Biometric Sync: ${workerId}`,
+      previousValue: `HRV: ${activeZoneObj.customBaselines?.baselineHrv || 68}ms`,
+      newValue: `Live RMSSD: ${hrvRmssd}ms (HR: ${heartRate} BPM)`,
+      justification: `Ingested real-time wearable beat-to-beat variability into Kalman state estimator.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [syncAudit, ...prev]);
+
+    setTimeout(() => setProtocolActiveNotice(null), 6000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-6">
       {/* Top Navigation Bar */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
-        <div className="flex items-center space-x-3">
+      {/* Top Navigation Bar */}
+      <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
+        <div className="flex items-center space-x-3 shrink-0">
           <div className="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded-lg">
             <Activity className="text-cyan-400 h-6 w-6 animate-pulse" />
           </div>
@@ -713,8 +749,70 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
+        {/* Global Search Bar: Quick navigation to specific zones, sensor IDs, or recent alert reports */}
+        <div className="w-full xl:w-96 xl:mx-2">
+          <GlobalSearchBar
+            zones={zones}
+            alerts={activeAlerts}
+            onSelectZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              const z = zones.find((item) => item.id === zoneId);
+              if (z) {
+                const newPacket = generatePacketForZone(z, z.status === 'CRITICAL');
+                const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+                setTelemetryAlert(res);
+              }
+            }}
+            onSelectAlert={(alertId) => {
+              const a = activeAlerts.find((item) => item.id === alertId);
+              if (a) {
+                setSelectedZone(a.location_zone);
+              }
+            }}
+          />
+        </div>
+
         {/* Global Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Incident Hotspots NLG Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('incident-hotspots-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            title="Incident Hotspots & Top 3 Contributing Factors Natural Language Generation"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Hotspots NLG</span>
+          </button>
+
+          {/* Real-Time Wearable Biometric Synchronization Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('biometric-sync-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/50 hover:bg-rose-900/50 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Real-Time Wearable Biometric Synchronization & Worker HRV Stress Monitoring"
+          >
+            <Heart className="h-3.5 w-3.5 text-rose-400" />
+            <span>Biometrics HRV</span>
+          </button>
+
+          {/* Automated Predictive Maintenance Scheduler Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('maintenance-scheduler-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-amber-950/50 hover:bg-amber-900/50 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Automated Predictive Maintenance Work Order Scheduler & Technician Dispatch"
+          >
+            <Wrench className="h-3.5 w-3.5 text-amber-400" />
+            <span>Maintenance Dispatch</span>
+          </button>
+
           {/* Medical Dispatch Queue Trigger */}
           <button
             onClick={() => setIsDispatchModalOpen(true)}
@@ -952,6 +1050,21 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* Incident Hotspots Summary Widget (Text-Based Natural Language Generation) */}
+      <IncidentHotspotsWidget
+        alerts={activeAlerts}
+        zones={zones}
+        telemetryStream={telemetryStream}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onOpenVoiceAlerts={() => setIsVoiceModalOpen(true)}
+      />
+
       {/* Hyper-Local Real-Time Weather Integration Card */}
       <ZoneWeatherCard
         weather={currentWeather}
@@ -960,6 +1073,24 @@ export default function ManagerDashboard() {
         zoneName={activeZoneObj.name}
         latitude={activeZoneObj.latitude}
         longitude={activeZoneObj.longitude}
+      />
+
+      {/* Real-Time Biometric Synchronization Hub (Wearable Health Devices & Live HRV Stress Monitoring) */}
+      <BiometricSyncModule
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSyncBiometricToKalman={handleSyncBiometricToKalman}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
       />
 
       {/* 2D Floor Plan Visualization Component with Zone Hotspots & Sensor Telemetry Stream Toggles */}
@@ -1013,6 +1144,25 @@ export default function ManagerDashboard() {
         onSpeakAlert={handleSpeakAlert}
         isSpeaking={isSpeaking}
         voiceEnabled={voiceSettings.enabled}
+      />
+
+      {/* Automated Predictive Maintenance Scheduler Tool (Correlating Alerts with Technician Availability) */}
+      <MaintenanceSchedulerModule
+        alerts={activeAlerts}
+        zones={zones}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
       />
 
       {/* Main Operational Section: Split View */}

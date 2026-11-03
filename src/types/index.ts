@@ -185,7 +185,13 @@ export interface SensorStreamToggles {
   riskScore: boolean;
 }
 
-export type AuditChangeCategory = 'THRESHOLD_CHANGE' | 'ZONE_CONFIG' | 'FILTER_CALIBRATION' | 'RESOURCE_REALLOCATION';
+export type AuditChangeCategory =
+  | 'THRESHOLD_CHANGE'
+  | 'ZONE_CONFIG'
+  | 'FILTER_CALIBRATION'
+  | 'RESOURCE_REALLOCATION'
+  | 'MAINTENANCE_DISPATCH'
+  | 'BIOMETRIC_SYNC';
 
 export type SafetyPersonnelRole =
   | 'EMERGENCY_MEDICAL_RESPONDER'
@@ -251,4 +257,106 @@ export interface SystemAuditLogEntry {
   approvalStatus: 'VERIFIED' | 'APPLIED' | 'FLAGGED';
   ipAddress?: string;
 }
+
+// ==========================================
+// Wearable Biometric Synchronization Types
+// ==========================================
+
+export type WorkerStressTier = 'OPTIMAL' | 'MODERATE' | 'HIGH_STRESS' | 'CRITICAL_STRAIN';
+
+export interface WearableHrvHistoryItem {
+  timestamp: string;
+  timeLabel: string;
+  rmssd: number; // ms
+  heartRate: number; // bpm
+  stressScore: number; // 0-100
+  skinTempC: number;
+}
+
+export interface WorkerWearableDevice {
+  id: string; // e.g. 'DEV-BLE-9921'
+  workerId: string; // e.g. 'W-9921'
+  workerName: string;
+  zoneId: string;
+  zoneName: string;
+  deviceModel: string; // e.g. 'Polar H10 ECG Band', 'Garmin Forerunner Pro', 'Whoop 4.0 Strap'
+  deviceType: 'CHEST_STRAP' | 'WRIST_BAND' | 'SMART_RING' | 'BIO_HARNESS';
+  connectionStatus: 'CONNECTED' | 'PAIRING' | 'SYNCING' | 'DISCONNECTED';
+  batteryPct: number;
+  rssiSignalDbm: number;
+  currentHeartRate: number; // bpm
+  currentRmssd: number; // Root Mean Square of Successive Differences (ms)
+  currentSdnn: number; // Standard Deviation of NN intervals (ms)
+  stressScore: number; // 0-100 Baevsky Stress Index normalized
+  stressTier: WorkerStressTier;
+  pnsIndex: number; // Parasympathetic tone index (-3 to +3)
+  snsIndex: number; // Sympathetic tone index (-3 to +3)
+  rrIntervals: number[]; // Rolling beat-to-beat inter-beat intervals (ms)
+  recentHrvHistory: WearableHrvHistoryItem[];
+  lastSyncTime: string;
+  isPairingViaBluetooth?: boolean;
+}
+
+// ==========================================
+// Automated Maintenance Scheduling Types
+// ==========================================
+
+export type TechnicianSpecialization =
+  | 'VIBRATION_ANALYSIS_CAT_III'
+  | 'ELECTRO_MECHANICAL_MILLWRIGHT'
+  | 'HVAC_THERMAL_CHILLER'
+  | 'HYDRAULIC_TURBINE_PUMP'
+  | 'INSTRUMENTATION_CONTROLS';
+
+export type TechnicianAvailability = 'AVAILABLE' | 'ON_REPAIR' | 'ON_BREAK' | 'OFF_DUTY';
+
+export interface MaintenanceTechnician {
+  id: string;
+  name: string;
+  specialization: TechnicianSpecialization;
+  certification: string; // e.g. 'ISO 18436-2 Cat III Vibration Specialist'
+  status: TechnicianAvailability;
+  assignedZone: string;
+  shiftWindow: string; // e.g. '07:00 - 15:30'
+  rating: number; // e.g. 4.9
+  experienceYears: number;
+  activeTicketsCount: number;
+  contactPhone: string;
+  estimatedArrivalMin: number;
+}
+
+export type TicketUrgency =
+  | 'IMMEDIATE_STOP'
+  | 'BEARING_REPLACEMENT'
+  | 'SCHEDULED_LUBRICATION'
+  | 'ROTOR_REBALANCE'
+  | 'ROUTINE_MONITORING';
+
+export type TicketStatus = 'STAGED' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED';
+
+export interface MaintenanceTicket {
+  id: string; // e.g. 'TKT-PM-9042'
+  alertId: string;
+  equipmentId: string;
+  equipmentName: string;
+  equipmentSubsystem: string;
+  zone: string;
+  vibrationMmS: number;
+  isoClass: string;
+  urgency: TicketUrgency;
+  issueDescription: string;
+  recommendedAction: string;
+  assignedTechnicianId?: string;
+  assignedTechnicianName?: string;
+  status: TicketStatus;
+  createdAt: string;
+  assignedAt?: string;
+  completedAt?: string;
+  estimatedMttrHours: number; // Mean time to repair
+  requiredParts: string[];
+  lotoRequired: boolean; // Lockout / Tagout mandatory
+  matchScorePct?: number; // Automated correlation match score (0-100%)
+  managerNotes?: string;
+}
+
 
