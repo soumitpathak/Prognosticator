@@ -58,19 +58,23 @@ export default function ReportExportModal({
     csvRows.push('# Privacy Standard: HIPAA Security Rule & GDPR Article 9 Compliant (k-Anonymity N>=12 & Differential Privacy)');
     csvRows.push('');
 
-    // Section 1: Active Anomaly Incidents
-    csvRows.push('--- SECTION 1: ACTIVE KALMAN HEALTH ANOMALIES & INTERVENTIONS ---');
-    csvRows.push('Alert_ID,Worker_Token,Zone,Detected_At,Anomaly_Metric,Severity,Kalman_Status,Raw_Value,Kalman_Smoothed_Value,Lead_Time,Action_Required,Compliance_Status,Acknowledged');
+    // Section 1: Active Anomaly Incidents & Predictive Maintenance
+    csvRows.push('--- SECTION 1: ACTIVE ANOMALIES & PREDICTIVE MAINTENANCE LOG ---');
+    csvRows.push('Alert_ID,Alert_Type,Equipment_ID,Worker_Token,Zone,Detected_At,Anomaly_Metric,Severity,Kalman_Status,Vibration_RMS,Equipment_Heat_C,Raw_Value,Kalman_Smoothed_Value,Lead_Time,Action_Required,Compliance_Status,Acknowledged');
 
     activeAlerts.forEach((a) => {
       const row = [
         `"${a.id}"`,
+        `"${a.alert_type || 'HEALTH_ANOMALY'}"`,
+        `"${a.equipment_id || 'N/A'}"`,
         `"${a.worker_id}"`,
         `"${a.location_zone}"`,
         `"${a.detected_at}"`,
         `"${a.anomaly_metric}"`,
         `"${a.severity}"`,
         `"${a.kalman_status}"`,
+        `"${a.vibration_mm_s ? a.vibration_mm_s + ' mm/s' : 'N/A'}"`,
+        `"${a.equipment_temp_c ? a.equipment_temp_c + ' °C' : 'N/A'}"`,
         `"${a.raw_value.replace(/"/g, '""')}"`,
         `"${a.kalman_smoothed_value.replace(/"/g, '""')}"`,
         `"${a.lead_time}"`,
@@ -84,7 +88,7 @@ export default function ReportExportModal({
     csvRows.push('');
     // Section 2: Sliding 24-Hour Sensor Telemetry Log
     csvRows.push('--- SECTION 2: 24-HOUR MULTI-SIGNAL SENSOR TELEMETRY LOG ---');
-    csvRows.push('Timestamp,Time_Label,Ambient_Temp_C,Noise_dB,Raw_Noise_dB,HRV_ms,Raw_HRV_ms,Skin_Temp_C,TWL_Index,AQI,Risk_Score_Pct,Is_Anomaly');
+    csvRows.push('Timestamp,Time_Label,Ambient_Temp_C,Noise_dB,Equip_Vibration_mm_s,Equip_Bearing_Heat_C,Raw_Noise_dB,HRV_ms,Raw_HRV_ms,Skin_Temp_C,TWL_Index,AQI,Risk_Score_Pct,Is_Anomaly');
 
     telemetryStream.forEach((t) => {
       const row = [
@@ -92,6 +96,8 @@ export default function ReportExportModal({
         `"${t.timeLabel}"`,
         t.ambient_temp_c,
         t.noise_db ?? t.smoothed_noise_db ?? 0,
+        t.equipment_vibration_mm_s ?? 'N/A',
+        t.equipment_bearing_temp_c ?? 'N/A',
         t.raw_noise_db ?? 0,
         t.smoothed_hrv,
         t.raw_hrv,

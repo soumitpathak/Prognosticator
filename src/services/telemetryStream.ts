@@ -105,7 +105,31 @@ export const INITIAL_ACTIVE_ALERTS: ActiveAnomalyAlert[] = [
     lead_time: '3.8h Prior to Syncope',
     recommended_action: 'Immediate extraction: Escort cohort member to air-conditioned shelter, administer 500ml oral rehydration solution.',
     acknowledged: false,
-    privacy_status: 'k-Anonymity Cleared (N=18 ≥ 12)'
+    privacy_status: 'k-Anonymity Cleared (N=18 ≥ 12)',
+    alert_type: 'HEALTH_ANOMALY'
+  },
+  {
+    id: 'ALR-PM-9042',
+    worker_id: 'EQUIP-CONV-4B',
+    location_zone: 'Outdoor-Construction-Sector-4',
+    detected_at: '18 mins ago',
+    anomaly_metric: 'Predictive Maintenance: Bearing Vibration & Motor Casing Heat',
+    raw_value: 'Vibration: 7.2 mm/s RMS, Casing Heat: 89.1°C',
+    kalman_smoothed_value: 'Vibration: 6.85 mm/s, Casing Heat: 86.4°C',
+    severity: 'CRITICAL',
+    kalman_status: 'Jitter Filtered & Validated',
+    lead_time: '18.5h To Bearing Cage Failure',
+    recommended_action: 'LOTO Stage 2: Immediate conveyor drive motor isolation and roller bearing replacement to prevent shaft seizure.',
+    acknowledged: false,
+    privacy_status: 'Machine Telemetry (ISO 10816 Vibration Compliance)',
+    alert_type: 'PREDICTIVE_MAINTENANCE',
+    equipment_id: 'MTR-DRIVE-4B',
+    equipment_name: 'Conveyor Drive Motor 4B',
+    equipment_subsystem: 'Drive Roller Bearing Sleeve & Stator',
+    vibration_mm_s: 6.85,
+    equipment_temp_c: 86.4,
+    iso_10816_class: 'ISO 10816-3 Class II (Severe Zone C/D)',
+    maintenance_urgency: 'BEARING_REPLACEMENT'
   },
   {
     id: 'ALR-8839-HG',
@@ -120,7 +144,31 @@ export const INITIAL_ACTIVE_ALERTS: ActiveAnomalyAlert[] = [
     lead_time: '2.5h Permissible Limit Exceeded',
     recommended_action: 'Mandatory noise ear-defender inspection and immediate mechanical vibration damper check.',
     acknowledged: false,
-    privacy_status: 'k-Anonymity Cleared (N=18 ≥ 12)'
+    privacy_status: 'k-Anonymity Cleared (N=18 ≥ 12)',
+    alert_type: 'HEALTH_ANOMALY'
+  },
+  {
+    id: 'ALR-PM-7120',
+    worker_id: 'EQUIP-PMP-02',
+    location_zone: 'Warehouse-Logistics-Hub-North',
+    detected_at: '36 mins ago',
+    anomaly_metric: 'Predictive Maintenance: Rotor Harmonic Jitter & Pump Heat',
+    raw_value: 'Vibration: 5.4 mm/s RMS, Heat: 76.5°C',
+    kalman_smoothed_value: 'Vibration: 4.92 mm/s, Heat: 74.8°C',
+    severity: 'HIGH',
+    kalman_status: 'Transient Noise Suppressed',
+    lead_time: '34.0h Mechanical Runout Margin',
+    recommended_action: 'Apply synthetic high-temp lubrication to thrust bearing assembly; inspect suction manifold for fluid cavitation.',
+    acknowledged: false,
+    privacy_status: 'Machine Telemetry (ISO 10816 Vibration Compliance)',
+    alert_type: 'PREDICTIVE_MAINTENANCE',
+    equipment_id: 'PMP-CHILLER-02',
+    equipment_name: 'Primary HVAC Chilled Water Pump',
+    equipment_subsystem: 'Impeller Shaft & Thrust Bearing',
+    vibration_mm_s: 4.92,
+    equipment_temp_c: 74.8,
+    iso_10816_class: 'ISO 10816-3 Class II (Warning Zone B/C)',
+    maintenance_urgency: 'SCHEDULED_LUBRICATION'
   },
   {
     id: 'ALR-8827-MD',
@@ -135,7 +183,31 @@ export const INITIAL_ACTIVE_ALERTS: ActiveAnomalyAlert[] = [
     lead_time: '4.2h Shift Fatigue Horizon',
     recommended_action: 'Rotate worker from high-bay forklift operations to floor-level scanning station.',
     acknowledged: false,
-    privacy_status: 'k-Anonymity Cleared (N=25 ≥ 12)'
+    privacy_status: 'k-Anonymity Cleared (N=25 ≥ 12)',
+    alert_type: 'HEALTH_ANOMALY'
+  },
+  {
+    id: 'ALR-PM-4105',
+    worker_id: 'EQUIP-BLW-03',
+    location_zone: 'Manufacturing-Assembly-Line-B',
+    detected_at: '1h 10m ago',
+    anomaly_metric: 'Predictive Maintenance: Dynamic Unbalance Jitter',
+    raw_value: 'Vibration: 4.1 mm/s RMS, Motor: 69.8°C',
+    kalman_smoothed_value: 'Vibration: 3.75 mm/s, Motor: 68.2°C',
+    severity: 'MODERATE',
+    kalman_status: 'Signal Imputed',
+    lead_time: '72.0h Preventive Service Window',
+    recommended_action: 'Clean particulate residue from centrifugal blower blades to restore dynamic rotational balance.',
+    acknowledged: false,
+    privacy_status: 'Machine Telemetry (ISO 10816 Vibration Compliance)',
+    alert_type: 'PREDICTIVE_MAINTENANCE',
+    equipment_id: 'FAN-EXHAUST-03',
+    equipment_name: 'Centrifugal Exhaust Blower 3',
+    equipment_subsystem: 'Impeller Fan Blades & Dynamic Balance',
+    vibration_mm_s: 3.75,
+    equipment_temp_c: 68.2,
+    iso_10816_class: 'ISO 10816-3 Class I (Borderline Zone B)',
+    maintenance_urgency: 'ROTOR_REBALANCE'
   },
   {
     id: 'ALR-8815-LW',
@@ -150,7 +222,8 @@ export const INITIAL_ACTIVE_ALERTS: ActiveAnomalyAlert[] = [
     lead_time: 'Zero Clinical Impact',
     recommended_action: 'No operational extraction necessary. Sensor lead recalibration logged in telemetry audit.',
     acknowledged: true,
-    privacy_status: 'k-Anonymity Cleared (N=42 ≥ 12)'
+    privacy_status: 'k-Anonymity Cleared (N=42 ≥ 12)',
+    alert_type: 'HEALTH_ANOMALY'
   }
 ];
 
@@ -175,6 +248,8 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
     raw_skin_temp: number;
     sick_leave_rate_deviation: number;
     is_anomaly: boolean;
+    equipment_vibration_mm_s?: number;
+    equipment_bearing_temp_c?: number;
   }> = [];
 
   const anomalyStart = Math.floor(pointsCount * 0.65);
@@ -198,6 +273,10 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
     let skinTemp = 36.6 + (Math.random() - 0.5) * 0.25;
     let sickLeaveDev = Math.max(0, (Math.random() - 0.5) * 0.4);
 
+    // Industrial vibration & motor/bearing heat metrics for Predictive Maintenance & multi-variable correlations
+    let equipVibration = 1.8 + 0.08 * (rawNoise - 60) + (Math.random() - 0.5) * 0.4;
+    let equipBearingTemp = 48.0 + 0.75 * (ambientTemp - 25.0) + 0.15 * (rawNoise - 60) + (Math.random() - 0.5) * 1.5;
+
     const isAnomaly = i >= anomalyStart && i <= anomalyEnd;
     if (isAnomaly) {
       ambientTemp += 8.5;
@@ -207,6 +286,8 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       hrvDropPct += 28.5;
       skinTemp += 1.35;
       sickLeaveDev += 2.4;
+      equipVibration += 3.8; // Exceeds ISO 10816 4.5 mm/s limit
+      equipBearingTemp += 26.5; // High thermal spike in bearing casing (> 82°C)
     }
 
     const rawHrv = Math.max(25, 68.0 * (1.0 - hrvDropPct / 100) + (Math.random() - 0.5) * 6.0);
@@ -225,7 +306,9 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       raw_hrv: Number(rawHrv.toFixed(1)),
       raw_skin_temp: Number(skinTemp.toFixed(2)),
       sick_leave_rate_deviation: Number(sickLeaveDev.toFixed(2)),
-      is_anomaly: isAnomaly
+      is_anomaly: isAnomaly,
+      equipment_vibration_mm_s: Number(Math.max(0.5, equipVibration).toFixed(2)),
+      equipment_bearing_temp_c: Number(equipBearingTemp.toFixed(1))
     });
   }
 
@@ -257,6 +340,112 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       risk_score: Number((riskProb * 100).toFixed(1))
     };
   });
+}
+
+/**
+ * Generate multi-variable correlation dataset for Recharts ScatterPlot analysis
+ */
+export function generateCorrelationDataset(zoneId?: string): import('../types').SensorCorrelationPoint[] {
+  const points: import('../types').SensorCorrelationPoint[] = [];
+  const zones = INITIAL_FACILITY_ZONES.map((z) => z.id);
+
+  // Generate 80 realistic sample points with controlled multi-variable cluster correlations
+  // (e.g. Ambient Temp vs Noise, Vibration vs Motor Heat, Ambient Temp vs HRV drop)
+  for (let i = 0; i < 90; i++) {
+    const assignedZone = zones[i % zones.length];
+    if (zoneId && zoneId !== 'ALL' && assignedZone !== zoneId) continue;
+
+    const isConstruction = assignedZone === 'Outdoor-Construction-Sector-4';
+    const isLogistics = assignedZone === 'Warehouse-Logistics-Hub-North';
+    const isAssembly = assignedZone === 'Manufacturing-Assembly-Line-B';
+
+    // Ambient Temp & Noise base
+    let baseTemp = isConstruction ? 38 + Math.random() * 8 : isLogistics ? 32 + Math.random() * 6 : 28 + Math.random() * 5;
+    let baseNoise = isConstruction ? 82 + Math.random() * 20 : isAssembly ? 76 + Math.random() * 14 : 70 + Math.random() * 16;
+
+    // Physical coupling: High equipment load produces higher acoustic noise and higher motor vibration
+    let equipVibration = 1.2 + ((baseNoise - 65) / 35) * 2.8 + (Math.random() - 0.5) * 0.8;
+    // Motor heat correlates with ambient heat and vibration friction
+    let equipHeat = 45 + (baseTemp - 25) * 0.65 + equipVibration * 4.8 + (Math.random() - 0.5) * 3.5;
+
+    // Physiological strain: skin temp and HRV drop correlate with ambient heat and noise stress
+    let skinTemp = 36.4 + Math.max(0, (baseTemp - 32) * 0.08) + (Math.random() - 0.5) * 0.3;
+    let hrvDrop = Math.max(2, (baseTemp - 28) * 1.6 + (baseNoise - 70) * 0.8 + (Math.random() - 0.5) * 6);
+    let rawHrv = Math.max(28, 68 * (1 - hrvDrop / 100));
+    let twlIndex = Math.max(70, 160 - baseTemp * 2.1 - (baseNoise - 70) * 0.4);
+    let aqi = Math.round(50 + (baseTemp - 25) * 2.2 + Math.random() * 30);
+
+    // Hazard clusters & Incidents
+    let isIncident = false;
+    let incidentType: import('../types').AlertType | 'NONE' = 'NONE';
+    let incidentLabel = '';
+    let severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' = 'LOW';
+
+    // Multi-variable cluster 1: High Vibration + High Motor Heat -> Predictive Maintenance Anomaly
+    if (equipVibration > 4.5 || (equipVibration > 3.8 && equipHeat > 78) || (i % 14 === 0)) {
+      if (Math.random() > 0.4 || i % 14 === 0) {
+        isIncident = true;
+        incidentType = 'PREDICTIVE_MAINTENANCE';
+        if (equipVibration > 5.5 || equipHeat > 84) {
+          severity = 'CRITICAL';
+          equipVibration = Math.max(equipVibration, 5.8 + Math.random() * 1.8);
+          equipHeat = Math.max(equipHeat, 85 + Math.random() * 8);
+          incidentLabel = 'Critical Bearing Wear / High Vibration Spike';
+        } else {
+          severity = 'HIGH';
+          equipVibration = Math.max(equipVibration, 4.6 + Math.random() * 0.8);
+          equipHeat = Math.max(equipHeat, 76 + Math.random() * 6);
+          incidentLabel = 'Harmonic Rotor Jitter & Thermal Overheat';
+        }
+      }
+    }
+
+    // Multi-variable cluster 2: High Ambient Heat (>40°C) + High Acoustic Noise (>92 dB) -> Acute Worker Heat Exhaustion
+    if (!isIncident && ((baseTemp > 41 && baseNoise > 90) || (baseTemp > 43) || (i % 19 === 0))) {
+      isIncident = true;
+      incidentType = 'HEALTH_ANOMALY';
+      if (baseTemp > 42 && hrvDrop > 35) {
+        severity = 'CRITICAL';
+        incidentLabel = 'Severe Heat-Acoustic Syncope Hazard';
+        skinTemp = Math.max(skinTemp, 38.2);
+        hrvDrop = Math.max(hrvDrop, 42);
+      } else {
+        severity = 'HIGH';
+        incidentLabel = 'Autonomic De-compensation / Noise Fatigue';
+        hrvDrop = Math.max(hrvDrop, 28);
+      }
+    }
+
+    const riskScore = Math.min(
+      100,
+      Math.max(5, (baseTemp - 30) * 2.2 + (baseNoise - 75) * 1.5 + (equipVibration - 2) * 8 + (isIncident ? 35 : 0))
+    );
+
+    const time = new Date(Date.now() - (90 - i) * 20 * 60 * 1000);
+
+    points.push({
+      id: `CORR-PT-${1000 + i}`,
+      timestamp: time.toISOString(),
+      timeLabel: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      zone: assignedZone,
+      ambient_temp_c: Number(baseTemp.toFixed(1)),
+      noise_db: Number(baseNoise.toFixed(1)),
+      equipment_vibration_mm_s: Number(equipVibration.toFixed(2)),
+      equipment_bearing_temp_c: Number(equipHeat.toFixed(1)),
+      skin_temp_c: Number(skinTemp.toFixed(2)),
+      hrv_drop_pct: Number(hrvDrop.toFixed(1)),
+      raw_hrv: Number(rawHrv.toFixed(1)),
+      twl_index: Number(twlIndex.toFixed(1)),
+      aqi,
+      risk_score: Number(riskScore.toFixed(1)),
+      is_incident: isIncident,
+      incident_type: incidentType,
+      incident_label: incidentLabel || (isIncident ? 'Hazard Anomaly' : 'Normal Operating Baseline'),
+      severity
+    });
+  }
+
+  return points;
 }
 
 /**

@@ -103,6 +103,8 @@ export interface AuditEvent {
   actionTaken: string;
 }
 
+export type AlertType = 'PREDICTIVE_MAINTENANCE' | 'HEALTH_ANOMALY' | 'ENVIRONMENTAL';
+
 export interface ActiveAnomalyAlert {
   id: string;
   worker_id: string;
@@ -117,6 +119,15 @@ export interface ActiveAnomalyAlert {
   recommended_action: string;
   acknowledged: boolean;
   privacy_status: string;
+  // Predictive Maintenance fields
+  alert_type?: AlertType;
+  equipment_id?: string;
+  equipment_name?: string;
+  equipment_subsystem?: string;
+  vibration_mm_s?: number;
+  equipment_temp_c?: number;
+  maintenance_urgency?: 'IMMEDIATE_STOP' | 'SCHEDULED_LUBRICATION' | 'BEARING_REPLACEMENT' | 'ROTOR_REBALANCE' | 'ROUTINE_MONITORING';
+  iso_10816_class?: string;
 }
 
 export interface TelemetryDataPoint {
@@ -137,6 +148,31 @@ export interface TelemetryDataPoint {
   sick_leave_rate_deviation: number;
   is_anomaly: boolean;
   risk_score: number;
+  // Equipment telemetry for predictive maintenance & multi-variable correlation
+  equipment_vibration_mm_s?: number;
+  equipment_bearing_temp_c?: number;
+  zone?: string;
+}
+
+export interface SensorCorrelationPoint {
+  id: string;
+  timestamp: string;
+  timeLabel: string;
+  zone: string;
+  ambient_temp_c: number;
+  noise_db: number;
+  equipment_vibration_mm_s: number;
+  equipment_bearing_temp_c: number;
+  skin_temp_c: number;
+  hrv_drop_pct: number;
+  raw_hrv: number;
+  twl_index: number;
+  aqi: number;
+  risk_score: number;
+  is_incident: boolean;
+  incident_type?: AlertType | 'NONE';
+  incident_label?: string;
+  severity?: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
 }
 
 export interface SensorStreamToggles {

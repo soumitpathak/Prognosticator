@@ -30,14 +30,16 @@ import {
   TelemetryPacket,
   ZoneWeatherData,
   SensorStreamToggles,
-  SystemAuditLogEntry
+  SystemAuditLogEntry,
+  SensorCorrelationPoint
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
   INITIAL_FACILITY_ZONES,
   INITIAL_SYSTEM_AUDIT_LOGS,
   generatePacketForZone,
-  generateSyntheticStream
+  generateSyntheticStream,
+  generateCorrelationDataset
 } from '../services/telemetryStream';
 import { predictWorkforceAnomaly } from '../services/lstmAnomalyEngine';
 import { fetchLiveZoneWeather } from '../services/weatherService';
@@ -46,6 +48,7 @@ import TelemetryInspectorModal from './TelemetryInspectorModal';
 import StreamSimulatorDrawer from './StreamSimulatorDrawer';
 import TelemetryCharts from './TelemetryCharts';
 import ActiveAlertsSection from './ActiveAlertsSection';
+import SensorCorrelationScatterPlot from './SensorCorrelationScatterPlot';
 import ReportExportModal from './ReportExportModal';
 import KalmanSettingsModal, { DEFAULT_KALMAN_CONFIG } from './KalmanSettingsModal';
 import MedicalDispatchModal from './MedicalDispatchModal';
@@ -55,7 +58,7 @@ import IncidentProjectionChart from './IncidentProjectionChart';
 import FloorPlan2DView from './FloorPlan2DView';
 import SystemAuditLog from './SystemAuditLog';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -108,6 +111,9 @@ export default function ManagerDashboard() {
   const [zones, setZones] = useState<FacilityZone[]>(INITIAL_FACILITY_ZONES);
   const [telemetryStream, setTelemetryStream] = useState<TelemetryDataPoint[]>(() => generateSyntheticStream(24, 15));
   const [activeAlerts, setActiveAlerts] = useState<ActiveAnomalyAlert[]>(INITIAL_ACTIVE_ALERTS);
+  const [correlationData, setCorrelationData] = useState<SensorCorrelationPoint[]>(() =>
+    generateCorrelationDataset('ALL')
+  );
 
   // Live Weather State
   const [currentWeather, setCurrentWeather] = useState<ZoneWeatherData | null>(null);
@@ -493,23 +499,33 @@ export default function ManagerDashboard() {
       prev.map((a) => (a.id === alert.id ? { ...a, acknowledged: true } : a))
     );
 
-    // Auto-stage a medical dispatch
+    const isPredictive = alert.alert_type === 'PREDICTIVE_MAINTENANCE';
+
+    // Auto-stage dispatch notification
     const staged: MedicalDispatchNotification = {
-      id: `DSP-${Math.floor(1000 + Math.random() * 9000)}-ALR`,
+      id: isPredictive
+        ? `MNT-${Math.floor(1000 + Math.random() * 9000)}-ORD`
+        : `DSP-${Math.floor(1000 + Math.random() * 9000)}-ALR`,
       alertId: alert.id,
       zone: alert.location_zone,
       severity: alert.severity === 'LOW' ? 'MODERATE' : alert.severity,
-      recipientRole: 'On-Site Medical Triage Lead',
+      recipientRole: isPredictive
+        ? 'Reliability Engineering & Vibration Analysis Crew'
+        : 'On-Site Medical Triage Lead',
       contactMethod: 'DUAL_CHANNEL',
-      recipientPhone: '+1 (555) 911-COOL-2',
-      messagePayload: `INTERVENTION DISPATCH: ${alert.anomaly_metric} at ${alert.location_zone}. Directive: ${alert.recommended_action}`,
+      recipientPhone: isPredictive ? '+1 (555) 832-MAINT' : '+1 (555) 911-COOL-2',
+      messagePayload: isPredictive
+        ? `PREDICTIVE MAINTENANCE WORK ORDER: ${alert.anomaly_metric} on ${alert.equipment_name || alert.worker_id} (${alert.equipment_id}). Directive: ${alert.recommended_action}`
+        : `INTERVENTION DISPATCH: ${alert.anomaly_metric} at ${alert.location_zone}. Directive: ${alert.recommended_action}`,
       stagedAt: 'Just now',
       status: 'STAGED'
     };
     setMedicalDispatches((prev) => [staged, ...prev]);
 
     setProtocolActiveNotice(
-      `Dispatched intervention for ${alert.id} (${alert.anomaly_metric}). Automated SMS notification staged in medical dispatch queue.`
+      isPredictive
+        ? `Predictive maintenance work order dispatched for ${alert.equipment_name || alert.id} (${alert.anomaly_metric}). Reliability crew notified via dual-channel SMS.`
+        : `Dispatched intervention for ${alert.id} (${alert.anomaly_metric}). Automated SMS notification staged in medical dispatch queue.`
     );
   };
 
@@ -732,6 +748,19 @@ export default function ManagerDashboard() {
             <span>Audit Trail ({systemAuditLogs.length})</span>
           </button>
 
+          {/* Sensor Correlation Scatter Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('sensor-correlation-scatter-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            title="Explore multi-variable sensor correlations & root causes"
+          >
+            <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Correlations ({correlationData.length})</span>
+          </button>
+
           {/* Simulator & Jitter Drawer */}
           <button
             onClick={() => setIsSimulatorOpen(true)}
@@ -804,7 +833,7 @@ export default function ManagerDashboard() {
       )}
 
       {/* Macro Analytics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <p className="text-xs text-slate-400 font-medium">Active Monitored Workforce</p>
           <div className="flex items-baseline justify-between mt-2">
@@ -821,6 +850,22 @@ export default function ManagerDashboard() {
             <h3 className="text-2xl font-bold text-rose-400">{pendingCriticalCount}</h3>
             <span className="text-xs text-rose-400 font-semibold flex items-center">
               <ShieldAlert className="h-3 w-3 mr-1" /> Immediate Action
+            </span>
+          </div>
+        </div>
+
+        {/* Equipment Predictive Maintenance Macro Metric Card */}
+        <div className="bg-slate-900 border border-amber-500/30 p-4 rounded-xl">
+          <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5">
+            <Wrench className="h-3.5 w-3.5 text-amber-400" />
+            Predictive Maintenance
+          </p>
+          <div className="flex items-baseline justify-between mt-2">
+            <h3 className="text-2xl font-bold text-amber-400">
+              {activeAlerts.filter((a) => a.alert_type === 'PREDICTIVE_MAINTENANCE' && !a.acknowledged).length} Pending
+            </h3>
+            <span className="text-[11px] text-amber-300/80 font-mono">
+              Vibration / Heat
             </span>
           </div>
         </div>
@@ -877,6 +922,16 @@ export default function ManagerDashboard() {
         streamToggles={streamToggles}
       />
 
+      {/* Multi-Variable Sensor Correlation & Root-Cause Scatter Plot (Recharts) */}
+      <div id="sensor-correlation-scatter-section">
+        <SensorCorrelationScatterPlot
+          data={correlationData}
+          zones={zones}
+          selectedZoneId={selectedZone}
+          onSelectZone={(zoneId) => setSelectedZone(zoneId)}
+        />
+      </div>
+
       {/* 48-Hour Potential Incident Volume Projection Trend Analysis (Recharts) */}
       <IncidentProjectionChart
         alerts={activeAlerts}
@@ -884,7 +939,7 @@ export default function ManagerDashboard() {
         currentZone={activeZoneObj}
       />
 
-      {/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap) */}
+      {/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap & Predictive Maintenance) */}
       <ActiveAlertsSection
         alerts={activeAlerts}
         onAcknowledgeAlert={handleAcknowledgeAlert}
