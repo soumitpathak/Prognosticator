@@ -9,6 +9,7 @@ import {
   Sparkles,
   MapPin,
   Volume2,
+  VolumeX,
   Thermometer,
   Heart,
   ChevronRight,
@@ -20,7 +21,9 @@ import {
   Zap,
   Activity,
   AlertTriangle,
-  Cog
+  Cog,
+  Radio,
+  Play
 } from 'lucide-react';
 import AnomalyHeatmap, { HeatmapCellData } from './AnomalyHeatmap';
 
@@ -28,12 +31,20 @@ interface ActiveAlertsSectionProps {
   alerts: ActiveAnomalyAlert[];
   onAcknowledgeAlert: (id: string) => void;
   onDispatchAction: (alert: ActiveAnomalyAlert) => void;
+  onOpenVoiceSettings?: () => void;
+  onSpeakAlert?: (alert: ActiveAnomalyAlert) => void;
+  isSpeaking?: boolean;
+  voiceEnabled?: boolean;
 }
 
 export default function ActiveAlertsSection({
   alerts,
   onAcknowledgeAlert,
-  onDispatchAction
+  onDispatchAction,
+  onOpenVoiceSettings,
+  onSpeakAlert,
+  isSpeaking = false,
+  voiceEnabled = true
 }: ActiveAlertsSectionProps) {
   const [selectedSeverity, setSelectedSeverity] = useState<string>('ALL');
   const [selectedType, setSelectedType] = useState<'ALL' | 'PREDICTIVE_MAINTENANCE' | 'HEALTH_ANOMALY'>('ALL');
@@ -128,6 +139,28 @@ export default function ActiveAlertsSection({
 
         {/* View Mode & Type / Severity Filter Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Audible Voice Alerts Toggle & Settings */}
+          {onOpenVoiceSettings && (
+            <button
+              onClick={onOpenVoiceSettings}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+                isSpeaking
+                  ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 animate-pulse shadow-md shadow-cyan-500/20'
+                  : voiceEnabled
+                  ? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300 hover:bg-cyan-900/60'
+                  : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+              title="Configure audible synthesized voice alerts for on-site supervisors"
+            >
+              {voiceEnabled ? (
+                <Volume2 className={`h-3.5 w-3.5 ${isSpeaking ? 'text-cyan-300 animate-ping' : 'text-cyan-400'}`} />
+              ) : (
+                <VolumeX className="h-3.5 w-3.5 text-slate-500" />
+              )}
+              <span>Voice Alerts: {isSpeaking ? 'Speaking...' : voiceEnabled ? 'ON' : 'OFF'}</span>
+            </button>
+          )}
+
           {/* Heatmap Toggle */}
           <button
             onClick={() => setShowHeatmap((prev) => !prev)}
@@ -381,6 +414,17 @@ export default function ActiveAlertsSection({
 
                   {/* Right side: Action Buttons */}
                   <div className="flex sm:flex-row lg:flex-col items-stretch sm:items-center lg:items-end gap-2 shrink-0 pt-2 lg:pt-0">
+                    {onSpeakAlert && (
+                      <button
+                        onClick={() => onSpeakAlert(alert)}
+                        className="text-xs bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-cyan-200 px-3 py-1.5 rounded-lg transition border border-slate-700/80 flex items-center justify-center gap-1.5"
+                        title="Synthesize audible voice broadcast for this anomaly"
+                      >
+                        <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>Speak Alert</span>
+                      </button>
+                    )}
+
                     {alert.acknowledged ? (
                       <span className="text-xs text-emerald-400 flex items-center gap-1 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg font-medium">
                         <CheckCircle2 className="h-3.5 w-3.5" />

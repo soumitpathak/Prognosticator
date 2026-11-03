@@ -31,7 +31,8 @@ import {
   ZoneWeatherData,
   SensorStreamToggles,
   SystemAuditLogEntry,
-  SensorCorrelationPoint
+  SensorCorrelationPoint,
+  VoiceAlertSettings
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -43,6 +44,7 @@ import {
 } from '../services/telemetryStream';
 import { predictWorkforceAnomaly } from '../services/lstmAnomalyEngine';
 import { fetchLiveZoneWeather } from '../services/weatherService';
+import { voiceAlertService, DEFAULT_VOICE_SETTINGS } from '../services/voiceAlertService';
 import AuditLogModal from './AuditLogModal';
 import TelemetryInspectorModal from './TelemetryInspectorModal';
 import StreamSimulatorDrawer from './StreamSimulatorDrawer';
@@ -57,8 +59,10 @@ import ZoneWeatherCard from './ZoneWeatherCard';
 import IncidentProjectionChart from './IncidentProjectionChart';
 import FloorPlan2DView from './FloorPlan2DView';
 import SystemAuditLog from './SystemAuditLog';
+import ResourceAllocationModule from './ResourceAllocationModule';
+import VoiceAlertsModal from './VoiceAlertsModal';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -137,6 +141,24 @@ export default function ManagerDashboard() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState<boolean>(false);
   const [isZoneBuilderOpen, setIsZoneBuilderOpen] = useState<boolean>(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceAlertSettings>(DEFAULT_VOICE_SETTINGS);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+
+  useEffect(() => {
+    const unsub = voiceAlertService.subscribeSpeakingState((speaking) => {
+      setIsSpeaking(speaking);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleSpeakAlert = (alert: ActiveAnomalyAlert) => {
+    voiceAlertService.speakAlert(alert, voiceSettings);
+  };
+
+  const handleStopSpeaking = () => {
+    voiceAlertService.cancelSpeech();
+  };
 
   // Client-Side Executive PDF Export State
   const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
@@ -601,6 +623,11 @@ export default function ManagerDashboard() {
           privacy_status: result.privacy_compliance
         };
         setActiveAlerts((prev) => [freshAlert, ...prev.slice(0, 7)]);
+
+        // Synthesize audible voice alert for on-site supervisors
+        if (voiceSettings.enabled) {
+          voiceAlertService.speakAlert(freshAlert, voiceSettings);
+        }
       }
 
       setLoading(false);
@@ -721,6 +748,44 @@ export default function ManagerDashboard() {
               }`}
             ></span>
             <span>{isStreamingActive ? 'Streaming Hub: LIVE' : 'Streaming Hub: PAUSED'}</span>
+          </button>
+
+          {/* Audible Voice Dispatch Modal Trigger */}
+          <button
+            onClick={() => setIsVoiceModalOpen(true)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border shadow-xs ${
+              isSpeaking
+                ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 animate-pulse'
+                : voiceSettings.enabled
+                ? 'bg-cyan-950/60 hover:bg-cyan-900/60 border-cyan-500/40 text-cyan-300'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+            }`}
+            title="Configure audible synthesized voice alerts for on-site supervisors"
+          >
+            {voiceSettings.enabled ? (
+              <Volume2 className={`h-3.5 w-3.5 ${isSpeaking ? 'text-cyan-300 animate-ping' : 'text-cyan-400'}`} />
+            ) : (
+              <VolumeX className="h-3.5 w-3.5 text-slate-500" />
+            )}
+            <span>
+              Voice Dispatch:{' '}
+              <strong className="text-white ml-0.5">
+                {isSpeaking ? 'SPEAKING' : voiceSettings.enabled ? 'ON' : 'MUTED'}
+              </strong>
+            </span>
+          </button>
+
+          {/* Safety Resources Allocation Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('resource-allocation-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            title="Dynamic On-Site Safety Resource Allocation & Personnel Redistribution"
+          >
+            <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Safety Resources</span>
           </button>
 
           {/* Sensitivity Settings */}
@@ -944,6 +1009,10 @@ export default function ManagerDashboard() {
         alerts={activeAlerts}
         onAcknowledgeAlert={handleAcknowledgeAlert}
         onDispatchAction={handleDispatchAction}
+        onOpenVoiceSettings={() => setIsVoiceModalOpen(true)}
+        onSpeakAlert={handleSpeakAlert}
+        isSpeaking={isSpeaking}
+        voiceEnabled={voiceSettings.enabled}
       />
 
       {/* Main Operational Section: Split View */}
@@ -1171,6 +1240,17 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* Dynamic On-Site Safety Resource Allocation & Personnel Redistribution Module */}
+      <ResourceAllocationModule
+        zones={zones}
+        alerts={activeAlerts}
+        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+      />
+
       {/* System Audit Log Component: Manual Changes to Sensitivity Thresholds & Zone Configurations */}
       <div id="system-audit-log-section">
         <SystemAuditLog
@@ -1236,6 +1316,16 @@ export default function ManagerDashboard() {
         isOpen={isZoneBuilderOpen}
         onClose={() => setIsZoneBuilderOpen(false)}
         onAddZone={handleAddCustomZone}
+      />
+
+      {/* Audible Voice Alerts Synthesis Modal */}
+      <VoiceAlertsModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        settings={voiceSettings}
+        onUpdateSettings={setVoiceSettings}
+        isSpeaking={isSpeaking}
+        onStopSpeaking={handleStopSpeaking}
       />
     </div>
   );

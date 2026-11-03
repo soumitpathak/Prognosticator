@@ -185,7 +185,56 @@ export interface SensorStreamToggles {
   riskScore: boolean;
 }
 
-export type AuditChangeCategory = 'THRESHOLD_CHANGE' | 'ZONE_CONFIG' | 'FILTER_CALIBRATION';
+export type AuditChangeCategory = 'THRESHOLD_CHANGE' | 'ZONE_CONFIG' | 'FILTER_CALIBRATION' | 'RESOURCE_REALLOCATION';
+
+export type SafetyPersonnelRole =
+  | 'EMERGENCY_MEDICAL_RESPONDER'
+  | 'HEAT_HYDRATION_STEWARD'
+  | 'ACOUSTIC_SAFETY_OFFICER'
+  | 'RELIABILITY_VIBRATION_ENGINEER'
+  | 'ERGONOMIC_SAFETY_LEAD';
+
+export interface SafetyOfficer {
+  id: string;
+  name: string;
+  role: SafetyPersonnelRole;
+  currentZoneId: string; // zone ID or 'CENTRAL_STANDBY'
+  status: 'DEPLOYED' | 'EN_ROUTE' | 'STANDBY';
+  assignedAt: string;
+  contactNumber: string;
+  specialization: string;
+  experienceYears: number;
+}
+
+export interface ZoneResourceAllocation {
+  zoneId: string;
+  recommendedStaffCount: number;
+  assignedOfficers: SafetyOfficer[];
+  coverageRatio: number;
+  coverageStatus: 'OPTIMAL' | 'SUFFICIENT' | 'CRITICAL_DEFICIT';
+}
+
+export interface DeploymentOrder {
+  id: string;
+  timestamp: string;
+  fromZone: string;
+  toZone: string;
+  officerIds: string[];
+  officerNames: string[];
+  reason: string;
+  urgency: 'CRITICAL' | 'ELEVATED' | 'ROUTINE';
+  status: 'ACTIVE' | 'COMPLETED';
+}
+
+export interface VoiceAlertSettings {
+  enabled: boolean;
+  volume: number; // 0 to 1
+  rate: number; // 0.8 to 1.4
+  pitch: number; // 0.8 to 1.2
+  announceCriticalOnly: boolean;
+  chimeSound: boolean;
+  selectedVoiceName?: string;
+}
 
 export interface SystemAuditLogEntry {
   id: string;
