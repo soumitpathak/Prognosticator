@@ -1,11 +1,11 @@
-import { FacilityZone, TelemetryDataPoint, TelemetryPacket } from '../types';
+import { ActiveAnomalyAlert, FacilityZone, TelemetryDataPoint, TelemetryPacket } from '../types';
 import { defaultKalman } from './kalmanFilter';
 
 /**
  * Synthetic Multi-Signal Telemetry Generator
- * Generates realistic 72-hour or live rolling industrial telemetry streams
- * with diurnal temperature cycles, TWL heat strain index, AQI air quality,
- * heart rate variability (HRV), and skin temperature.
+ * Generates realistic 24-hour sliding telemetry streams
+ * with diurnal temperature cycles, ambient noise levels (dB), TWL heat strain index,
+ * AQI air quality, heart rate variability (HRV), and skin temperature.
  */
 
 export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
@@ -19,7 +19,7 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 92.4,
     aqi: 154,
     description: 'Direct sun exposure, asphalt laying & structural steel work',
-    activeHazards: ['Severe Thermal Radiation', 'High Wet-Bulb Load', 'Elevated Exertion']
+    activeHazards: ['Severe Thermal Radiation', 'High Wet-Bulb Load', 'Acoustic Machinery Overexposure']
   },
   {
     id: 'Manufacturing-Assembly-Line-B',
@@ -31,7 +31,7 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 142.1,
     aqi: 48,
     description: 'Indoor climate-controlled precision robotic assembly line',
-    activeHazards: ['Repetitive Ergonomic Strain']
+    activeHazards: ['Repetitive Ergonomic Strain', 'Moderate Acoustic Noise']
   },
   {
     id: 'Warehouse-Logistics-Hub-North',
@@ -43,7 +43,7 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 118.0,
     aqi: 95,
     description: 'High-bay inventory sorting and forklift logistics bay',
-    activeHazards: ['Moderate Ambient Heat', 'Continuous Material Handling']
+    activeHazards: ['Moderate Ambient Heat', 'Continuous Material Handling', 'Diesel Particulate AQI']
   },
   {
     id: 'Subgrade-Tunnel-Conduit-7',
@@ -59,6 +59,69 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
   }
 ];
 
+export const INITIAL_ACTIVE_ALERTS: ActiveAnomalyAlert[] = [
+  {
+    id: 'ALR-8842-CR',
+    worker_id: 'W-9921',
+    location_zone: 'Outdoor-Construction-Sector-4',
+    detected_at: '12 mins ago',
+    anomaly_metric: 'Acute Autonomic & Thermal Strain',
+    raw_value: 'HRV: 31 ms (Jitter: ±8ms), Skin: 38.4°C',
+    kalman_smoothed_value: 'HRV: 34.2 ms, Skin: 38.15°C',
+    severity: 'CRITICAL',
+    kalman_status: 'Jitter Filtered & Validated',
+    lead_time: '3.8h Prior to Syncope',
+    recommended_action: 'Immediate extraction: Escort cohort member to air-conditioned shelter, administer 500ml oral rehydration solution.',
+    acknowledged: false,
+    privacy_status: 'k-Anonymity Cleared (N=18 ≥ 12)'
+  },
+  {
+    id: 'ALR-8839-HG',
+    worker_id: 'W-6104',
+    location_zone: 'Outdoor-Construction-Sector-4',
+    detected_at: '28 mins ago',
+    anomaly_metric: 'Acoustic Machinery Overexposure & Temp Spike',
+    raw_value: 'Noise: 104.8 dB, Ambient: 45.1°C',
+    kalman_smoothed_value: 'Noise: 98.4 dB, Ambient: 44.2°C',
+    severity: 'HIGH',
+    kalman_status: 'Transient Noise Suppressed',
+    lead_time: '2.5h Permissible Limit Exceeded',
+    recommended_action: 'Mandatory noise ear-defender inspection and immediate mechanical vibration damper check.',
+    acknowledged: false,
+    privacy_status: 'k-Anonymity Cleared (N=18 ≥ 12)'
+  },
+  {
+    id: 'ALR-8827-MD',
+    worker_id: 'W-3209',
+    location_zone: 'Warehouse-Logistics-Hub-North',
+    detected_at: '54 mins ago',
+    anomaly_metric: 'Sleep Debt & Progressive Heart Rate Drift',
+    raw_value: 'HRV Drop: 22.4%, Sleep Debt: 3.5h',
+    kalman_smoothed_value: 'HRV Drop: 19.8% (Imputed 2 dropped packets)',
+    severity: 'MODERATE',
+    kalman_status: 'Signal Imputed',
+    lead_time: '4.2h Shift Fatigue Horizon',
+    recommended_action: 'Rotate worker from high-bay forklift operations to floor-level scanning station.',
+    acknowledged: false,
+    privacy_status: 'k-Anonymity Cleared (N=25 ≥ 12)'
+  },
+  {
+    id: 'ALR-8815-LW',
+    worker_id: 'W-7140',
+    location_zone: 'Manufacturing-Assembly-Line-B',
+    detected_at: '1h 35m ago',
+    anomaly_metric: 'Transient Electro-Magnetic Noise Deviation',
+    raw_value: 'Skin Temp spike: +1.8°C (single second)',
+    kalman_smoothed_value: 'Skin Temp normalized: 36.7°C',
+    severity: 'LOW',
+    kalman_status: 'Confirmed Sensor Spike',
+    lead_time: 'Zero Clinical Impact',
+    recommended_action: 'No operational extraction necessary. Sensor lead recalibration logged in telemetry audit.',
+    acknowledged: true,
+    privacy_status: 'k-Anonymity Cleared (N=42 ≥ 12)'
+  }
+];
+
 export function generateSyntheticStream(hours = 24, freqMinutes = 15): TelemetryDataPoint[] {
   const pointsCount = Math.floor((hours * 60) / freqMinutes);
   const now = new Date();
@@ -66,10 +129,13 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
 
   const rawHrvList: number[] = [];
   const rawSkinList: number[] = [];
+  const rawNoiseList: number[] = [];
+
   const rawData: Array<{
     timestamp: string;
     timeLabel: string;
     ambient_temp_c: number;
+    raw_noise_db: number;
     twl_index: number;
     aqi: number;
     hrv_drop_pct: number;
@@ -92,6 +158,10 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
     let twlIndex = 140.0 - (ambientTemp - 30.0) * 3.5 + (Math.random() - 0.5) * 2.5;
     let aqi = 90.0 + 20.0 * Math.sin(progress * 4 * Math.PI) + (Math.random() - 0.5) * 5.0;
 
+    // Industrial noise levels: baseline ~72 dB with midday spikes to 95+ dB plus sensor acoustic flutter
+    const workShiftFactor = Math.sin(progress * Math.PI); // higher during mid-shift
+    let rawNoise = 68.0 + 18.0 * Math.max(0, workShiftFactor) + (Math.random() - 0.5) * 6.5;
+
     let hrvDropPct = 5.0 + (Math.random() - 0.5) * 4.0;
     let skinTemp = 36.6 + (Math.random() - 0.5) * 0.25;
     let sickLeaveDev = Math.max(0, (Math.random() - 0.5) * 0.4);
@@ -101,6 +171,7 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       ambientTemp += 8.5;
       twlIndex -= 35.0;
       aqi += 65.0;
+      rawNoise += 14.5;
       hrvDropPct += 28.5;
       skinTemp += 1.35;
       sickLeaveDev += 2.4;
@@ -109,11 +180,13 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
     const rawHrv = Math.max(25, 68.0 * (1.0 - hrvDropPct / 100) + (Math.random() - 0.5) * 6.0);
     rawHrvList.push(rawHrv);
     rawSkinList.push(skinTemp);
+    rawNoiseList.push(rawNoise);
 
     rawData.push({
       timestamp: pointTime.toISOString(),
       timeLabel: pointTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       ambient_temp_c: Number(ambientTemp.toFixed(1)),
+      raw_noise_db: Number(rawNoise.toFixed(1)),
       twl_index: Number(twlIndex.toFixed(1)),
       aqi: Math.round(aqi),
       hrv_drop_pct: Number(Math.min(100, Math.max(0, hrvDropPct)).toFixed(1)),
@@ -127,20 +200,25 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
   // Smooth series through Kalman filter
   const smoothedHrvList = defaultKalman.smooth(rawHrvList);
   const smoothedSkinList = defaultKalman.smooth(rawSkinList);
+  const smoothedNoiseList = defaultKalman.smooth(rawNoiseList);
 
   return rawData.map((d, idx) => {
     const sHrv = smoothedHrvList[idx];
     const sTemp = smoothedSkinList[idx];
+    const sNoise = smoothedNoiseList[idx];
 
     // Compute continuous risk score 0 - 100
     const hrvDrop = Math.max(0, 68.0 - sHrv) / 68.0;
     const tempSpike = Math.max(0, sTemp - 36.5) / 36.5;
     const heatLoad = Math.max(0, d.ambient_temp_c - 32.0) / 20.0;
-    const mse = 0.4 * hrvDrop + 0.2 * tempSpike + 0.3 * heatLoad + 0.1 * (d.sick_leave_rate_deviation / 4.0);
+    const noiseFactor = Math.max(0, sNoise - 85.0) / 30.0;
+    const mse = 0.35 * hrvDrop + 0.2 * tempSpike + 0.25 * heatLoad + 0.1 * noiseFactor + 0.1 * (d.sick_leave_rate_deviation / 4.0);
     const riskProb = 1.0 / (1.0 + Math.exp(-12 * (mse - 0.25)));
 
     return {
       ...d,
+      noise_db: sNoise,
+      smoothed_noise_db: sNoise,
       smoothed_hrv: sHrv,
       skin_temp_c: sTemp,
       smoothed_skin_temp: sTemp,

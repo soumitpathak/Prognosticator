@@ -10,20 +10,40 @@ import {
   Lock,
   LineChart,
   Sliders,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Download,
+  Settings
 } from 'lucide-react';
-import { AnomalyPredictionResult, AuditEvent, FacilityZone, TelemetryDataPoint, TelemetryPacket } from '../types';
-import { INITIAL_FACILITY_ZONES, generatePacketForZone, generateSyntheticStream } from '../services/telemetryStream';
+import {
+  ActiveAnomalyAlert,
+  AnomalyPredictionResult,
+  AuditEvent,
+  FacilityZone,
+  KalmanSensitivityConfig,
+  TelemetryDataPoint,
+  TelemetryPacket
+} from '../types';
+import {
+  INITIAL_ACTIVE_ALERTS,
+  INITIAL_FACILITY_ZONES,
+  generatePacketForZone,
+  generateSyntheticStream
+} from '../services/telemetryStream';
 import { predictWorkforceAnomaly } from '../services/lstmAnomalyEngine';
 import AuditLogModal from './AuditLogModal';
 import TelemetryInspectorModal from './TelemetryInspectorModal';
 import StreamSimulatorDrawer from './StreamSimulatorDrawer';
+import TelemetryCharts from './TelemetryCharts';
+import ActiveAlertsSection from './ActiveAlertsSection';
+import ReportExportModal from './ReportExportModal';
+import KalmanSettingsModal, { DEFAULT_KALMAN_CONFIG } from './KalmanSettingsModal';
 
 export default function ManagerDashboard() {
   const [selectedZone, setSelectedZone] = useState<string>('Outdoor-Construction-Sector-4');
   const [loading, setLoading] = useState<boolean>(false);
   const [zones, setZones] = useState<FacilityZone[]>(INITIAL_FACILITY_ZONES);
   const [telemetryStream, setTelemetryStream] = useState<TelemetryDataPoint[]>(() => generateSyntheticStream(24, 15));
+  const [activeAlerts, setActiveAlerts] = useState<ActiveAnomalyAlert[]>(INITIAL_ACTIVE_ALERTS);
 
   const [telemetryAlert, setTelemetryAlert] = useState<AnomalyPredictionResult>({
     status: 'success',
@@ -47,10 +67,13 @@ export default function ManagerDashboard() {
   // Action status banner
   const [protocolActiveNotice, setProtocolActiveNotice] = useState<string | null>(null);
 
-  // Modals
+  // Modals & Sensitivity Config
+  const [kalmanConfig, setKalmanConfig] = useState<KalmanSensitivityConfig>(DEFAULT_KALMAN_CONFIG);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
   // Audit events trail
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([
@@ -87,15 +110,111 @@ export default function ManagerDashboard() {
   ]);
 
   const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
+  const pendingCriticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL' && !a.acknowledged).length;
+
+  // Acknowledge anomaly alert
+  const handleAcknowledgeAlert = (id: string) => {
+    setActiveAlerts((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a))
+    );
+    const targetAlert = activeAlerts.find((a) => a.id === id);
+    if (targetAlert) {
+      const newAudit: AuditEvent = {
+        id: `ACK-${Math.floor(1000 + Math.random() * 9000)}`,
+        timestamp: new Date().toLocaleTimeString(),
+        eventType: 'ALERT_DISPATCH',
+        zone: targetAlert.location_zone,
+        cohortCount: activeZoneObj.count,
+        riskTier: targetAlert.severity,
+        privacyEnforced: 'Logged in GDPR Audit Trail',
+        actionTaken: `Safety Manager acknowledged alert ${targetAlert.id} (${targetAlert.anomaly_metric})`
+      };
+      setAuditEvents((prev) => [newAudit, ...prev]);
+    }
+  };
+
+  // Dispatch action from active alerts list
+  const handleDispatchAction = (alert: ActiveAnomalyAlert) => {
+    setActiveAlerts((prev) =>
+      prev.map((a) => (a.id === alert.id ? { ...a, acknowledged: true } : a))
+    );
+    setProtocolActiveNotice(
+      `Dispatched intervention for ${alert.id} (${alert.anomaly_metric}) at ${alert.location_zone}. Directive: ${alert.recommended_action}`
+    );
+    const newAudit: AuditEvent = {
+      id: `DISP-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toLocaleTimeString(),
+      eventType: 'HYDRATION_PROTOCOL',
+      zone: alert.location_zone,
+      cohortCount: activeZoneObj.count,
+      riskTier: alert.severity,
+      privacyEnforced: alert.privacy_status,
+      actionTaken: `Intervention dispatched: ${alert.recommended_action}`
+    };
+    setAuditEvents((prev) => [newAudit, ...prev]);
+
+    setTimeout(() => {
+      setProtocolActiveNotice(null);
+    }, 7000);
+  };
+
+  const handleSaveConfig = (newConfig: KalmanSensitivityConfig) => {
+    setKalmanConfig(newConfig);
+    const packet = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
+    const recalibrated = predictWorkforceAnomaly(packet, undefined, newConfig);
+    setTelemetryAlert(recalibrated);
+
+    setProtocolActiveNotice(
+      `Kalman Anomaly Sensitivity updated to ${newConfig.preset} (Critical Cutoff: ${newConfig.criticalCutoffPct}%, Q=${newConfig.processVarianceQ}, R=${newConfig.measurementVarianceR.toFixed(2)})`
+    );
+
+    const newAudit: AuditEvent = {
+      id: `CALIB-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toLocaleTimeString(),
+      eventType: 'CALIBRATION',
+      zone: activeZoneObj.name,
+      cohortCount: activeZoneObj.count,
+      riskTier: recalibrated.risk_tier,
+      privacyEnforced: 'Differential Privacy Active',
+      actionTaken: `Kalman detection threshold recalibrated to ${newConfig.preset} profile`
+    };
+    setAuditEvents((prev) => [newAudit, ...prev]);
+
+    setTimeout(() => setProtocolActiveNotice(null), 6000);
+  };
 
   // Simulated live refresh trigger
   const handleRefreshStream = () => {
     setLoading(true);
     setTimeout(() => {
       const newPacket = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
-      const result = predictWorkforceAnomaly(newPacket);
+      const result = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
       setTelemetryAlert(result);
-      setTelemetryStream(generateSyntheticStream(24, 15));
+      const newStream = generateSyntheticStream(24, 15);
+      setTelemetryStream(newStream);
+
+      // If high risk detected, dynamically add fresh anomaly into active alerts
+      if (result.risk_probability > 0.4 && !result.is_suppressed) {
+        const freshAlert: ActiveAnomalyAlert = {
+          id: `ALR-${Math.floor(1000 + Math.random() * 9000)}-LIVE`,
+          worker_id: result.worker_id,
+          location_zone: result.location_zone,
+          detected_at: 'Just now',
+          anomaly_metric:
+            result.risk_probability > 0.75
+              ? 'Multi-Signal Cumulative Stress Spike'
+              : 'Moderate Physiological Heat Load',
+          raw_value: `Jittered Packet: MSE ${result.reconstruction_mse.toFixed(3)}`,
+          kalman_smoothed_value: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}%`,
+          severity: result.risk_probability > 0.75 ? 'CRITICAL' : 'MODERATE',
+          kalman_status: 'Jitter Filtered & Validated',
+          lead_time: '3.5h Shift Forecast',
+          recommended_action: result.recommended_operational_action,
+          acknowledged: false,
+          privacy_status: result.privacy_compliance
+        };
+        setActiveAlerts((prev) => [freshAlert, ...prev.slice(0, 7)]);
+      }
 
       // Append audit event
       const newAudit: AuditEvent = {
@@ -138,7 +257,7 @@ export default function ManagerDashboard() {
   };
 
   const handleCustomPacketFromSimulator = (customPacket: TelemetryPacket) => {
-    const result = predictWorkforceAnomaly(customPacket);
+    const result = predictWorkforceAnomaly(customPacket, undefined, kalmanConfig);
     setTelemetryAlert(result);
 
     // Update zone count if changed
@@ -148,6 +267,25 @@ export default function ManagerDashboard() {
           z.id === selectedZone ? { ...z, count: customPacket.cohort_size || z.count } : z
         )
       );
+    }
+
+    if (!result.is_suppressed && result.risk_probability > 0.4) {
+      const simAlert: ActiveAnomalyAlert = {
+        id: `SIM-ALR-${Math.floor(1000 + Math.random() * 9000)}`,
+        worker_id: customPacket.worker_id,
+        location_zone: customPacket.location_zone,
+        detected_at: 'Just now (Simulated)',
+        anomaly_metric: 'Injected Thermal & Noise Stress Test',
+        raw_value: `Heat: ${customPacket.heat_index}°C, Sleep: ${customPacket.sleep_deficit_hours}h`,
+        kalman_smoothed_value: `Predicted Risk: ${(result.risk_probability * 100).toFixed(1)}%`,
+        severity: result.risk_probability > 0.75 ? 'CRITICAL' : 'HIGH',
+        kalman_status: 'Jitter Filtered & Validated',
+        lead_time: '2.8h Before Exceedance',
+        recommended_action: result.recommended_operational_action,
+        acknowledged: false,
+        privacy_status: result.privacy_compliance
+      };
+      setActiveAlerts((prev) => [simAlert, ...prev]);
     }
 
     const newAudit: AuditEvent = {
@@ -191,11 +329,26 @@ export default function ManagerDashboard() {
             <span>Differential Privacy Active (&epsilon;-DP)</span>
           </div>
           <button
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            title="Adjust Kalman filter sensitivity and anomaly detection thresholds"
+          >
+            <Settings className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Sensitivity: <strong className="font-bold text-white ml-0.5">{kalmanConfig.preset}</strong></span>
+          </button>
+          <button
             onClick={() => setIsSimulatorOpen(true)}
             className="flex items-center space-x-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition"
           >
             <Sliders className="h-3.5 w-3.5 text-cyan-400" />
             <span>Tune Telemetry</span>
+          </button>
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-emerald-950/70 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+          >
+            <Download className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Download Report</span>
           </button>
         </div>
       </header>
@@ -231,7 +384,7 @@ export default function ManagerDashboard() {
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <p className="text-xs text-slate-400 font-medium">Active Critical Alerts</p>
           <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-rose-400">3</h3>
+            <h3 className="text-2xl font-bold text-rose-400">{pendingCriticalCount}</h3>
             <span className="text-xs text-rose-400 font-semibold flex items-center">
               <ShieldAlert className="h-3 w-3 mr-1" /> Immediate Action
             </span>
@@ -254,6 +407,16 @@ export default function ManagerDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Sliding 24-Hour Recharts Telemetry Stream */}
+      <TelemetryCharts data={telemetryStream} zoneName={activeZoneObj.name} />
+
+      {/* Active Alerts Section (Kalman Filter Anomaly Detection with Severity Color-Coding) */}
+      <ActiveAlertsSection
+        alerts={activeAlerts}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+      />
 
       {/* Main Operational Section: Split View */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -429,6 +592,13 @@ export default function ManagerDashboard() {
               <CheckCircle2 className="h-4 w-4 mr-2" /> Trigger Zone Hydration Protocol
             </button>
             <button
+              onClick={() => setIsReportModalOpen(true)}
+              className="bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-emerald-600/40 flex items-center gap-1.5 shadow-sm"
+            >
+              <Download className="h-4 w-4 text-emerald-400" />
+              <span>Download Compliance Report (PDF/CSV)</span>
+            </button>
+            <button
               onClick={() => setIsAuditModalOpen(true)}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5"
             >
@@ -458,6 +628,22 @@ export default function ManagerDashboard() {
         onClose={() => setIsSimulatorOpen(false)}
         currentZone={selectedZone}
         onSimulateCustomPacket={handleCustomPacketFromSimulator}
+      />
+
+      <ReportExportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        activeAlerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        currentZone={activeZoneObj.name}
+        zones={zones}
+      />
+
+      <KalmanSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        currentConfig={kalmanConfig}
+        onSaveConfig={handleSaveConfig}
       />
     </div>
   );

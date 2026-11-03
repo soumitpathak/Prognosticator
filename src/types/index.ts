@@ -15,6 +15,18 @@ export interface TelemetryPacket {
 
 export type RiskTier = 'CRITICAL_RISK' | 'MODERATE_RISK' | 'STABLE';
 
+export type SensitivityPreset = 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM';
+
+export interface KalmanSensitivityConfig {
+  preset: SensitivityPreset;
+  processVarianceQ: number;
+  measurementVarianceR: number;
+  criticalCutoffPct: number;
+  moderateCutoffPct: number;
+  autoImputeMissing: boolean;
+  suppressSmallCells: boolean;
+}
+
 export interface AnomalyPredictionResult {
   status: 'success' | 'suppressed';
   worker_id: string;
@@ -54,10 +66,29 @@ export interface AuditEvent {
   actionTaken: string;
 }
 
+export interface ActiveAnomalyAlert {
+  id: string;
+  worker_id: string;
+  location_zone: string;
+  detected_at: string;
+  anomaly_metric: string;
+  raw_value: string;
+  kalman_smoothed_value: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
+  kalman_status: 'Jitter Filtered & Validated' | 'Signal Imputed' | 'Confirmed Sensor Spike' | 'Transient Noise Suppressed';
+  lead_time: string;
+  recommended_action: string;
+  acknowledged: boolean;
+  privacy_status: string;
+}
+
 export interface TelemetryDataPoint {
   timestamp: string;
   timeLabel: string;
   ambient_temp_c: number;
+  noise_db: number;
+  raw_noise_db: number;
+  smoothed_noise_db: number;
   twl_index: number;
   aqi: number;
   hrv_drop_pct: number;
@@ -70,3 +101,4 @@ export interface TelemetryDataPoint {
   is_anomaly: boolean;
   risk_score: number;
 }
+

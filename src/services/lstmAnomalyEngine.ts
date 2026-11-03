@@ -1,14 +1,15 @@
-import { defaultKalman } from './kalmanFilter';
+import { defaultKalman, KalmanFilterSimulator } from './kalmanFilter';
 import { defaultPrivacyShield } from './privacyShield';
-import { AnomalyPredictionResult, RiskTier, TelemetryPacket } from '../types';
+import { AnomalyPredictionResult, KalmanSensitivityConfig, RiskTier, TelemetryPacket } from '../types';
 
 /**
  * Prognosticator Explainable Anomaly Detection Engine
  * Combines:
  * 1. Kalman filter noise reduction & missing packet imputation
- * 2. LSTM Autoencoder reconstruction error (MSE) modeling cumulative physiological strain
- * 3. Integrated Gradients / SHAP feature attribution weights
- * 4. Privacy Shield enforcement (k-Anonymity small-cell suppression & ε-DP)
+ * 2. Dynamic Sensitivity Thresholds (High/Medium/Low/Custom)
+ * 3. LSTM Autoencoder reconstruction error (MSE) modeling cumulative physiological strain
+ * 4. Integrated Gradients / SHAP feature attribution weights
+ * 5. Privacy Shield enforcement (k-Anonymity small-cell suppression & ε-DP)
  */
 
 export interface ReconstructionResult {
@@ -23,7 +24,9 @@ export function computeLstmReconstructionAnomaly(
   hrvSmoothed: number[],
   skinTempSmoothed: number[],
   heatIndex: number,
-  sleepDeficit: number
+  sleepDeficit: number,
+  criticalCutoff = 0.75,
+  moderateCutoff = 0.40
 ): ReconstructionResult {
   const baselineHrv = 68.0;
   const baselineTemp = 36.5;
@@ -57,10 +60,10 @@ export function computeLstmReconstructionAnomaly(
   let riskTier: RiskTier = 'STABLE';
   let recommendedAction = 'Continue standard operational monitoring.';
 
-  if (riskProbability > 0.75) {
+  if (riskProbability >= criticalCutoff) {
     riskTier = 'CRITICAL_RISK';
     recommendedAction = 'Immediate extraction: Direct worker to shaded cooling zone and dispatch medical liaison.';
-  } else if (riskProbability > 0.40) {
+  } else if (riskProbability >= moderateCutoff) {
     riskTier = 'MODERATE_RISK';
     recommendedAction = 'Targeted preventive action: Mandatory 15-minute hydration pause and task rotation.';
   }
@@ -79,12 +82,14 @@ export function computeLstmReconstructionAnomaly(
  */
 export function predictWorkforceAnomaly(
   payload: TelemetryPacket,
-  privacyShield = defaultPrivacyShield
+  privacyShield = defaultPrivacyShield,
+  sensitivityConfig?: KalmanSensitivityConfig
 ): AnomalyPredictionResult {
   const cohortSize = payload.cohort_size ?? 18;
 
   // Check k-Anonymity small-cell suppression
-  if (privacyShield.isCohortSuppressed(cohortSize)) {
+  const suppress = sensitivityConfig?.suppressSmallCells ?? true;
+  if (suppress && privacyShield.isCohortSuppressed(cohortSize)) {
     return {
       status: 'suppressed',
       worker_id: '[MASKED - k-Anonymity N < 12]',
@@ -105,9 +110,17 @@ export function predictWorkforceAnomaly(
     };
   }
 
+  // Use configured Kalman filter parameters if provided
+  const kalman = sensitivityConfig
+    ? new KalmanFilterSimulator(sensitivityConfig.processVarianceQ, sensitivityConfig.measurementVarianceR)
+    : defaultKalman;
+
   // Apply Kalman filtering to noisy series
-  const smoothedHrv = defaultKalman.smooth(payload.hrv_series);
-  const smoothedTemp = defaultKalman.smooth(payload.skin_temp_series);
+  const smoothedHrv = kalman.smooth(payload.hrv_series);
+  const smoothedTemp = kalman.smooth(payload.skin_temp_series);
+
+  const critCutoff = sensitivityConfig ? sensitivityConfig.criticalCutoffPct / 100 : 0.75;
+  const modCutoff = sensitivityConfig ? sensitivityConfig.moderateCutoffPct / 100 : 0.40;
 
   // Compute LSTM reconstruction MSE & explainable attributions
   const { riskProbability, mseScore, attributions, riskTier, recommendedAction } =
@@ -115,7 +128,9 @@ export function predictWorkforceAnomaly(
       smoothedHrv,
       smoothedTemp,
       payload.heat_index,
-      payload.sleep_deficit_hours
+      payload.sleep_deficit_hours,
+      critCutoff,
+      modCutoff
     );
 
   // Apply Differential Privacy noise if applicable
