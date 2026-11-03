@@ -191,7 +191,8 @@ export type AuditChangeCategory =
   | 'FILTER_CALIBRATION'
   | 'RESOURCE_REALLOCATION'
   | 'MAINTENANCE_DISPATCH'
-  | 'BIOMETRIC_SYNC';
+  | 'BIOMETRIC_SYNC'
+  | 'SHIFT_HANDOVER';
 
 export type SafetyPersonnelRole =
   | 'EMERGENCY_MEDICAL_RESPONDER'
@@ -358,5 +359,33 @@ export interface MaintenanceTicket {
   matchScorePct?: number; // Automated correlation match score (0-100%)
   managerNotes?: string;
 }
+
+// ==========================================
+// Shift Handover Types
+// ==========================================
+
+export interface ShiftHandoverReport {
+  id: string;
+  generatedAt: string;
+  shiftWindow: string; // e.g. "Last 8 Hours (03:00 - 11:00)"
+  outgoingSupervisor: string;
+  incomingSupervisor: string;
+  totalAnomaliesDetected: number;
+  criticalAnomaliesCount: number;
+  highAnomaliesCount: number;
+  moderateAnomaliesCount: number;
+  peakAmbientTempC: number;
+  peakNoiseDb: number;
+  minimumWorkerRmssd: number;
+  highestRiskZone: string;
+  pendingMaintenanceTicketsCount: number;
+  criticalLotoCount: number;
+  deployedSafetyOfficersCount: number;
+  standbyOfficersCount: number;
+  handoverStatus: 'CLEARED_NOMINAL' | 'ELEVATED_ATTENTION' | 'CRITICAL_CONDITIONAL';
+  immediateDirectives: string[];
+  acknowledgedByIncoming: boolean;
+}
+
 
 

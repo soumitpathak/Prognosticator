@@ -17,7 +17,8 @@ import {
   Send,
   Zap,
   MapPin,
-  ChevronDown
+  ChevronDown,
+  FileText
 } from 'lucide-react';
 import {
   FacilityZone,
@@ -27,6 +28,8 @@ import {
   DeploymentOrder,
   SystemAuditLogEntry
 } from '../types';
+import ShiftHandoverModal from './ShiftHandoverModal';
+import { maintenanceSchedulingService } from '../services/maintenanceSchedulingService';
 
 export interface ResourceAllocationModuleProps {
   zones: FacilityZone[];
@@ -207,6 +210,7 @@ export default function ResourceAllocationModule({
   const [targetZoneId, setTargetZoneId] = useState<string>('Outdoor-Construction-Sector-4');
   const [transferReason, setTransferReason] = useState<string>('');
   const [isReallocating, setIsReallocating] = useState<boolean>(false);
+  const [isHandoverModalOpen, setIsHandoverModalOpen] = useState<boolean>(false);
 
   // Group officers by zone
   const officersByZone = useMemo(() => {
@@ -500,6 +504,16 @@ export default function ResourceAllocationModule({
 
         {/* Global Action Bar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Shift Handover Tool Trigger Button */}
+          <button
+            onClick={() => setIsHandoverModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-cyan-500/40 bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 shadow-xs"
+            title="Open 8-Hour Shift Handover Dossier & Maintenance Summary Tool for incoming supervisors"
+          >
+            <Clock className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Shift Handover Tool (8h)</span>
+          </button>
+
           <button
             onClick={handleAutoRebalance}
             disabled={isReallocating}
@@ -512,6 +526,73 @@ export default function ResourceAllocationModule({
             <Sparkles className={`h-3.5 w-3.5 ${isReallocating ? 'animate-spin' : ''}`} />
             <span>{isReallocating ? 'Calculating Optimal Redistribution...' : 'Auto-Redistribute by Risk'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* 8-Hour Shift-Handover Executive Briefing Card for Incoming Safety Supervisors */}
+      <div className="my-4 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-indigo-950/40 border border-cyan-500/30 rounded-xl p-4 shadow-md">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center space-x-3">
+            <div className="bg-cyan-500/20 p-2 rounded-lg text-cyan-400 border border-cyan-500/30">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-white text-sm">Shift-Handover Summary &bull; Past 8 Hours</span>
+                <span className="bg-cyan-500/20 text-cyan-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-cyan-500/40 font-bold">
+                  03:00 – 11:00 Shift
+                </span>
+                <span className="bg-amber-500/20 text-amber-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-amber-500/40 font-bold">
+                  Incoming: Jordan Hayes (Day Lead)
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Summarizes 8-hour sensor anomaly trajectories, pending machinery maintenance tickets, and safety personnel coverage
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsHandoverModalOpen(true)}
+            className="flex items-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition shadow-md shadow-cyan-600/20 whitespace-nowrap"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>Review Full Handover Dossier</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div className="bg-slate-950/70 border border-slate-800/80 p-2.5 rounded-lg">
+            <span className="text-[10px] text-slate-400 uppercase font-semibold">8h Sensor Anomalies</span>
+            <div className="text-base font-bold font-mono text-rose-400 mt-0.5">
+              {alerts.length} Detected ({alerts.filter((a) => a.severity === 'CRITICAL').length} Critical)
+            </div>
+            <span className="text-[10px] text-slate-400">Peak: 45.1°C • 104.8 dB</span>
+          </div>
+
+          <div className="bg-slate-950/70 border border-slate-800/80 p-2.5 rounded-lg">
+            <span className="text-[10px] text-slate-400 uppercase font-semibold">Pending Repair Tickets</span>
+            <div className="text-base font-bold font-mono text-amber-400 mt-0.5">
+              {maintenanceSchedulingService.getTickets().filter((t) => t.status !== 'RESOLVED').length} Active Work Orders
+            </div>
+            <span className="text-[10px] text-rose-400 font-mono">1 Mandatory LOTO Stage 2</span>
+          </div>
+
+          <div className="bg-slate-950/70 border border-slate-800/80 p-2.5 rounded-lg">
+            <span className="text-[10px] text-slate-400 uppercase font-semibold">Staff Redeployments</span>
+            <div className="text-base font-bold font-mono text-cyan-400 mt-0.5">
+              {orders.length} Shifts Executed
+            </div>
+            <span className="text-[10px] text-slate-400">{officers.filter((o) => o.status === 'DEPLOYED').length} Deployed • {officers.filter((o) => o.currentZoneId === 'CENTRAL_STANDBY').length} Standby</span>
+          </div>
+
+          <div className="bg-slate-950/70 border border-slate-800/80 p-2.5 rounded-lg">
+            <span className="text-[10px] text-slate-400 uppercase font-semibold">Incoming Handover Status</span>
+            <div className="text-base font-bold font-mono text-amber-300 mt-0.5 flex items-center gap-1">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-400" /> Conditional
+            </div>
+            <span className="text-[10px] text-slate-400">Requires Sector 4 Sign-Off</span>
+          </div>
         </div>
       </div>
 
@@ -816,6 +897,17 @@ export default function ResourceAllocationModule({
           </div>
         </div>
       </div>
+
+      {/* Shift Handover Dossier Modal (Last 8 Hours) */}
+      <ShiftHandoverModal
+        isOpen={isHandoverModalOpen}
+        onClose={() => setIsHandoverModalOpen(false)}
+        zones={zones}
+        alerts={alerts}
+        officers={officers}
+        onLogAudit={onLogAudit}
+        onNotice={onNotice}
+      />
     </div>
   );
 }
