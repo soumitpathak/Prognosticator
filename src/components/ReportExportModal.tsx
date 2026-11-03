@@ -9,8 +9,13 @@ import {
   CheckCircle2,
   ShieldCheck,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Loader2,
+  Sparkles,
+  TrendingUp,
+  Activity
 } from 'lucide-react';
+import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
 
 interface ReportExportModalProps {
   isOpen: boolean;
@@ -30,9 +35,12 @@ export default function ReportExportModal({
   zones
 }: ReportExportModalProps) {
   const [downloadSuccessMessage, setDownloadSuccessMessage] = useState<string | null>(null);
+  const [isPdfGenerating, setIsPdfGenerating] = useState<boolean>(false);
+  const [pdfGenerationStatus, setPdfGenerationStatus] = useState<string>('');
 
   if (!isOpen) return null;
 
+  const currentZoneObj = zones.find((z) => z.name === currentZone || z.id === currentZone) || zones[0];
   const timestamp = new Date().toISOString();
   const dateFormatted = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
@@ -112,11 +120,37 @@ export default function ReportExportModal({
     setTimeout(() => setDownloadSuccessMessage(null), 4000);
   };
 
+  const handleGenerateClientSidePdf = async () => {
+    setIsPdfGenerating(true);
+    setPdfGenerationStatus('Capturing telemetry charts & compiling executive report...');
+
+    try {
+      await generateExecutiveSafetyPdfReport({
+        activeAlerts,
+        telemetryStream,
+        currentZone: currentZoneObj,
+        zones,
+        telemetryElementId: 'telemetry-charts-card',
+        projectionElementId: 'incident-projection-chart-card',
+        alertsElementId: 'active-alerts-section',
+        onProgress: (status) => setPdfGenerationStatus(status)
+      });
+
+      setDownloadSuccessMessage('Executive Safety Report PDF generated and downloaded successfully.');
+      setTimeout(() => setDownloadSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error('Failed to generate PDF report:', error);
+      setDownloadSuccessMessage('PDF export encountered an issue. Falling back to print view.');
+      setTimeout(() => setDownloadSuccessMessage(null), 4000);
+    } finally {
+      setIsPdfGenerating(false);
+      setPdfGenerationStatus('');
+    }
+  };
+
   const handlePrintPdf = () => {
-    // Generate an isolated printable view
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      // Fallback to window.print if popup blocked
       window.print();
       return;
     }
@@ -131,7 +165,6 @@ export default function ReportExportModal({
             .header { border-bottom: 2px solid #0284c7; padding-bottom: 15px; margin-bottom: 20px; }
             .title { font-size: 20px; font-weight: bold; color: #0369a1; margin: 0; }
             .subtitle { font-size: 13px; color: #64748b; margin-top: 4px; }
-            .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: bold; background: #e0f2fe; color: #0369a1; }
             .kpi-grid { display: flex; gap: 15px; margin: 20px 0; }
             .kpi-card { flex: 1; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
             .kpi-title { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600; }
@@ -159,7 +192,7 @@ export default function ReportExportModal({
           <div class="kpi-grid">
             <div class="kpi-card">
               <div class="kpi-title">Active Monitored Workforce</div>
-              <div class="kpi-value">1,420 Active</div>
+              <div class="kpi-value">${currentZoneObj.count || 1420} Workers</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-title">Active Critical Alerts</div>
@@ -167,7 +200,7 @@ export default function ReportExportModal({
             </div>
             <div class="kpi-card">
               <div class="kpi-title">Avg Wet-Bulb Heat Index</div>
-              <div class="kpi-value">42.5°C</div>
+              <div class="kpi-value">${currentZoneObj.heatIndex || 42.5}°C</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-title">Model Lead Time</div>
@@ -208,7 +241,7 @@ export default function ReportExportModal({
           </table>
 
           <div class="notice">
-            <strong>Compliance Statement:</strong> All biometrics are processed with strict k-Anonymity small-cell suppression ($N \\ge 12$) and Differential Privacy ($\\epsilon=0.5$). Raw biometric identity tracking is cryptographically prohibited under European GDPR Article 9 & US HIPAA Security Rule.
+            <strong>Compliance Statement:</strong> All biometrics are processed with strict k-Anonymity small-cell suppression (N &ge; 12) and Differential Privacy (epsilon=0.5). Raw biometric identity tracking is cryptographically prohibited under European GDPR Article 9 &amp; US HIPAA Security Rule.
           </div>
         </body>
       </html>
@@ -227,7 +260,7 @@ export default function ReportExportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl overflow-hidden flex flex-col">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-center pb-4 border-b border-slate-800">
           <div className="flex items-center space-x-3">
@@ -236,10 +269,10 @@ export default function ReportExportModal({
             </div>
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                Compliance Documentation &amp; Report Generator
+                Executive Safety Report &amp; Compliance Generator
               </h3>
               <p className="text-xs text-slate-400">
-                Export verified telemetry streams, Kalman anomaly detections, and HIPAA/GDPR audit records
+                Generate printable executive safety reports capturing telemetry charts, 48-hour incident forecasts, and active alerts
               </p>
             </div>
           </div>
@@ -259,47 +292,93 @@ export default function ReportExportModal({
           </div>
         )}
 
+        {/* Loading Progress State */}
+        {isPdfGenerating && (
+          <div className="mt-4 p-3.5 rounded-xl bg-cyan-950/70 border border-cyan-500/40 text-cyan-200 text-xs flex items-center gap-3 animate-pulse">
+            <Loader2 className="h-5 w-5 text-cyan-400 animate-spin shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold text-white">Rendering Client-Side Executive PDF Report...</div>
+              <div className="text-[11px] text-cyan-300 font-mono mt-0.5">{pdfGenerationStatus}</div>
+            </div>
+          </div>
+        )}
+
         {/* Report Overview Card */}
         <div className="py-4 space-y-3">
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2 flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4 text-emerald-400" />
-              Report Summary Metadata
+              Report Inclusions &amp; Facility Context
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div>
                 <span className="text-slate-500 block text-[10px]">Report Date</span>
                 <span className="text-slate-200 font-medium font-mono">{dateFormatted}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Monitored Zones</span>
-                <span className="text-cyan-400 font-medium">{zones.length} Facility Zones</span>
+                <span className="text-slate-500 block text-[10px]">Active Facility</span>
+                <span className="text-cyan-400 font-medium truncate block">{currentZoneObj.name}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Active Anomalies</span>
+                <span className="text-slate-500 block text-[10px]">Active Alerts</span>
                 <span className="text-rose-400 font-bold">{activeAlerts.length} Recorded</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Telemetry Points</span>
-                <span className="text-slate-200 font-mono">{telemetryStream.length} Rolling Samples (24h)</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">Privacy Standard</span>
-                <span className="text-emerald-400 font-mono">k-Anonymity (N &ge; 12)</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[10px]">Kalman Jitter Status</span>
-                <span className="text-cyan-300 font-mono">Validated</span>
+                <span className="text-slate-500 block text-[10px]">48h Projection</span>
+                <span className="text-amber-400 font-bold">Autoregressive LSTM</span>
               </div>
             </div>
           </div>
 
-          {/* Export Options */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            {/* CSV Option */}
+          {/* Export Options Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            {/* 1. Client-Side Executive PDF (Direct Canvas & Vector generation) */}
+            <div
+              onClick={!isPdfGenerating ? handleGenerateClientSidePdf : undefined}
+              className={`p-4 rounded-xl border border-cyan-500/40 bg-cyan-950/20 hover:bg-cyan-950/40 hover:border-cyan-400 cursor-pointer transition flex flex-col justify-between group shadow-lg shadow-cyan-950/30 ${
+                isPdfGenerating ? 'opacity-50 pointer-events-none' : ''
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-white text-sm flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-cyan-400 group-hover:scale-110 transition" />
+                    Executive PDF
+                  </span>
+                  <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full font-mono font-semibold">
+                    Client-Side PDF
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Captures live telemetry charts, 48-hour incident projection trends, and active Kalman anomaly logs into a multi-page executive document.
+                </p>
+              </div>
+              <button
+                disabled={isPdfGenerating}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleGenerateClientSidePdf();
+                }}
+                className="mt-4 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-cyan-600/20"
+              >
+                {isPdfGenerating ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Compiling...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download PDF Report</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 2. CSV Option */}
             <div
               onClick={generateCsv}
-              className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 hover:bg-slate-800/50 hover:border-cyan-500/50 cursor-pointer transition flex flex-col justify-between group"
+              className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 hover:bg-slate-800/50 hover:border-emerald-500/50 cursor-pointer transition flex flex-col justify-between group"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -327,23 +406,23 @@ export default function ReportExportModal({
               </button>
             </div>
 
-            {/* PDF Summary Option */}
+            {/* 3. Browser Print / Save PDF View */}
             <div
               onClick={handlePrintPdf}
-              className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 hover:bg-slate-800/50 hover:border-cyan-500/50 cursor-pointer transition flex flex-col justify-between group"
+              className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 hover:bg-slate-800/50 hover:border-indigo-500/50 cursor-pointer transition flex flex-col justify-between group"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-white text-sm flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-cyan-400 group-hover:scale-110 transition" />
-                    Executive PDF Report
+                    <Printer className="h-5 w-5 text-indigo-400 group-hover:scale-110 transition" />
+                    Print Layout
                   </span>
-                  <span className="text-[10px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded-full font-mono font-semibold">
-                    Print / PDF
+                  <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full font-mono font-semibold">
+                    Native Print
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Print-ready regulatory audit summary with corporate incident tables, Kalman state validations, early-warning lead times, and compliance disclosures.
+                  Quick browser print stream for hardcopy paper sign-offs and shift supervisor hand-off documentation.
                 </p>
               </div>
               <button
@@ -351,10 +430,10 @@ export default function ReportExportModal({
                   e.stopPropagation();
                   handlePrintPdf();
                 }}
-                className="mt-4 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-cyan-600/20"
+                className="mt-4 w-full bg-slate-800 hover:bg-slate-700 text-indigo-200 border border-indigo-500/30 font-semibold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5"
               >
-                <Printer className="h-3.5 w-3.5" />
-                <span>Print / Save PDF</span>
+                <Printer className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Print Document</span>
               </button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { ActiveAnomalyAlert, FacilityZone, TelemetryDataPoint, TelemetryPacket } from '../types';
+import { ActiveAnomalyAlert, FacilityZone, TelemetryDataPoint, TelemetryPacket, SystemAuditLogEntry } from '../types';
 import { defaultKalman } from './kalmanFilter';
 
 /**
@@ -19,7 +19,15 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 92.4,
     aqi: 154,
     description: 'Direct sun exposure, asphalt laying & structural steel work',
-    activeHazards: ['Severe Thermal Radiation', 'High Wet-Bulb Load', 'Acoustic Machinery Overexposure']
+    activeHazards: ['Severe Thermal Radiation', 'High Wet-Bulb Load', 'Acoustic Machinery Overexposure'],
+    latitude: 25.0657,
+    longitude: 55.1713,
+    customBaselines: {
+      baselineHrv: 64,
+      baselineSkinTemp: 36.6,
+      noiseLimitDb: 90,
+      heatThresholdC: 40
+    }
   },
   {
     id: 'Manufacturing-Assembly-Line-B',
@@ -31,7 +39,15 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 142.1,
     aqi: 48,
     description: 'Indoor climate-controlled precision robotic assembly line',
-    activeHazards: ['Repetitive Ergonomic Strain', 'Moderate Acoustic Noise']
+    activeHazards: ['Repetitive Ergonomic Strain', 'Moderate Acoustic Noise'],
+    latitude: 37.7749,
+    longitude: -122.4194,
+    customBaselines: {
+      baselineHrv: 70,
+      baselineSkinTemp: 36.4,
+      noiseLimitDb: 80,
+      heatThresholdC: 32
+    }
   },
   {
     id: 'Warehouse-Logistics-Hub-North',
@@ -43,7 +59,15 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 118.0,
     aqi: 95,
     description: 'High-bay inventory sorting and forklift logistics bay',
-    activeHazards: ['Moderate Ambient Heat', 'Continuous Material Handling', 'Diesel Particulate AQI']
+    activeHazards: ['Moderate Ambient Heat', 'Continuous Material Handling', 'Diesel Particulate AQI'],
+    latitude: 29.9792,
+    longitude: 31.1342,
+    customBaselines: {
+      baselineHrv: 66,
+      baselineSkinTemp: 36.5,
+      noiseLimitDb: 85,
+      heatThresholdC: 36
+    }
   },
   {
     id: 'Subgrade-Tunnel-Conduit-7',
@@ -55,7 +79,15 @@ export const INITIAL_FACILITY_ZONES: FacilityZone[] = [
     twl: 104.5,
     aqi: 122,
     description: 'Subterranean utility piping installation cohort (N=8 < 12)',
-    activeHazards: ['Confined Space', 'k-Anonymity Small-Cell Suppressed']
+    activeHazards: ['Confined Space', 'k-Anonymity Small-Cell Suppressed'],
+    latitude: 40.7128,
+    longitude: -74.0060,
+    customBaselines: {
+      baselineHrv: 65,
+      baselineSkinTemp: 36.5,
+      noiseLimitDb: 88,
+      heatThresholdC: 34
+    }
   }
 ];
 
@@ -273,3 +305,90 @@ export function generatePacketForZone(zone: FacilityZone, injectSevereAnomaly = 
     aqi: zone.aqi
   };
 }
+
+export const INITIAL_SYSTEM_AUDIT_LOGS: SystemAuditLogEntry[] = [
+  {
+    id: 'AUD-TH-9841',
+    timestamp: '2026-03-30 14:15:22',
+    userId: 'USR-SAF-104',
+    userName: 'Dr. Sarah Chen',
+    userRole: 'Lead Safety Engineer',
+    category: 'THRESHOLD_CHANGE',
+    targetModule: 'Kalman Anomaly Filter Engine',
+    parameter: 'Critical Risk Cutoff %',
+    previousValue: '75.0%',
+    newValue: '65.0%',
+    justification: 'Heightened extreme ambient solar heatwave forecast in Sector 4; lower threshold triggers earlier preventative hydration staging.',
+    approvalStatus: 'VERIFIED'
+  },
+  {
+    id: 'AUD-TH-9820',
+    timestamp: '2026-03-30 11:32:05',
+    userId: 'USR-ENG-441',
+    userName: 'David Ruiz',
+    userRole: 'SCADA Instrumentation Specialist',
+    category: 'THRESHOLD_CHANGE',
+    targetModule: 'Kalman State Estimator (Core Filter)',
+    parameter: 'Measurement Noise Variance (R)',
+    previousValue: 'R = 0.100',
+    newValue: 'R = 0.050',
+    justification: 'New high-precision Bluetooth 5.4 biometric chest patches deployed; lowered sensor variance expectation to accelerate Kalman response time.',
+    approvalStatus: 'VERIFIED'
+  },
+  {
+    id: 'AUD-ZN-9788',
+    timestamp: '2026-03-30 09:40:18',
+    userId: 'USR-OPS-882',
+    userName: 'Marcus Vance',
+    userRole: 'Operations Director',
+    category: 'ZONE_CONFIG',
+    targetModule: 'Zone: Outdoor-Construction-Sector-4',
+    parameter: 'Acoustic Permissible Limit (dB)',
+    previousValue: '85.0 dBA',
+    newValue: '90.0 dBA',
+    justification: 'Heavy pneumatic pile driving scheduled for Shift 1; acoustic limit adjusted with mandatory Class 5 earmuff PPE protocol enforcement.',
+    approvalStatus: 'VERIFIED'
+  },
+  {
+    id: 'AUD-ZN-9755',
+    timestamp: '2026-03-29 16:50:41',
+    userId: 'USR-MED-042',
+    userName: 'Dr. Emily Thorne',
+    userRole: 'Chief Occupational Physician',
+    category: 'ZONE_CONFIG',
+    targetModule: 'Zone: Warehouse-Logistics-Hub-North',
+    parameter: 'Baseline HRV Floor (ms)',
+    previousValue: '70.0 ms',
+    newValue: '66.0 ms',
+    justification: 'Annual worker cohort cardiovascular baseline recalibration following seasonal health assessment.',
+    approvalStatus: 'VERIFIED'
+  },
+  {
+    id: 'AUD-TH-9712',
+    timestamp: '2026-03-29 13:05:10',
+    userId: 'USR-MGR-2026',
+    userName: 'Alex Mercer',
+    userRole: 'EHS Manager on Duty',
+    category: 'THRESHOLD_CHANGE',
+    targetModule: 'Kalman Process Noise Matrix',
+    parameter: 'Process Covariance (Q)',
+    previousValue: 'Q = 0.010',
+    newValue: 'Q = 0.020',
+    justification: 'Dynamic tracking adjustment for high-turnover shift changeover and rapid physiological state transitions.',
+    approvalStatus: 'VERIFIED'
+  },
+  {
+    id: 'AUD-ZN-9680',
+    timestamp: '2026-03-28 10:14:33',
+    userId: 'USR-OPS-882',
+    userName: 'Marcus Vance',
+    userRole: 'Operations Director',
+    category: 'ZONE_CONFIG',
+    targetModule: 'Zone: Subgrade-Tunnel-Conduit-7',
+    parameter: 'Small-Cell Cell Size Threshold',
+    previousValue: 'N = 10',
+    newValue: 'N = 12',
+    justification: 'Privacy compliance hardening to meet updated HIPAA / GDPR anonymization standards for confined space utility workers.',
+    approvalStatus: 'VERIFIED'
+  }
+];

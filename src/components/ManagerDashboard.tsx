@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ShieldAlert,
   Activity,
@@ -12,7 +12,12 @@ import {
   Sliders,
   FileSpreadsheet,
   Download,
-  Settings
+  Settings,
+  Radio,
+  Send,
+  Plus,
+  Zap,
+  CloudSun
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -20,16 +25,22 @@ import {
   AuditEvent,
   FacilityZone,
   KalmanSensitivityConfig,
+  MedicalDispatchNotification,
   TelemetryDataPoint,
-  TelemetryPacket
+  TelemetryPacket,
+  ZoneWeatherData,
+  SensorStreamToggles,
+  SystemAuditLogEntry
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
   INITIAL_FACILITY_ZONES,
+  INITIAL_SYSTEM_AUDIT_LOGS,
   generatePacketForZone,
   generateSyntheticStream
 } from '../services/telemetryStream';
 import { predictWorkforceAnomaly } from '../services/lstmAnomalyEngine';
+import { fetchLiveZoneWeather } from '../services/weatherService';
 import AuditLogModal from './AuditLogModal';
 import TelemetryInspectorModal from './TelemetryInspectorModal';
 import StreamSimulatorDrawer from './StreamSimulatorDrawer';
@@ -37,13 +48,141 @@ import TelemetryCharts from './TelemetryCharts';
 import ActiveAlertsSection from './ActiveAlertsSection';
 import ReportExportModal from './ReportExportModal';
 import KalmanSettingsModal, { DEFAULT_KALMAN_CONFIG } from './KalmanSettingsModal';
+import MedicalDispatchModal from './MedicalDispatchModal';
+import CustomZoneBuilderModal from './CustomZoneBuilderModal';
+import ZoneWeatherCard from './ZoneWeatherCard';
+import IncidentProjectionChart from './IncidentProjectionChart';
+import FloorPlan2DView from './FloorPlan2DView';
+import SystemAuditLog from './SystemAuditLog';
+import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
+import { FileText, Loader2, Navigation, ShieldCheck } from 'lucide-react';
+
+const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
+  {
+    id: 'DSP-9921-COOL',
+    alertId: 'ALR-8842-CR',
+    zone: 'Outdoor-Construction-Sector-4',
+    severity: 'CRITICAL',
+    recipientRole: 'On-Site Rapid Cooling Evacuation Team',
+    contactMethod: 'DUAL_CHANNEL',
+    recipientPhone: '+1 (555) 911-COOL-2',
+    messagePayload:
+      'CRITICAL ALERT: Worker W-9921 exhibiting severe autonomic deceleration (HRV 31ms, skin temp 38.4°C). Immediate extraction to shaded tent with oral rehydration dispatched.',
+    stagedAt: '10 mins ago',
+    status: 'TRANSMITTED'
+  },
+  {
+    id: 'DSP-6104-PPE',
+    alertId: 'ALR-8839-HG',
+    zone: 'Outdoor-Construction-Sector-4',
+    severity: 'HIGH',
+    recipientRole: 'Acoustic Hearing Protection Officer',
+    contactMethod: 'SMS',
+    recipientPhone: '+1 (555) 441-NOISE',
+    messagePayload:
+      'HIGH NOISE HAZARD: Machine 4B acoustic overpressure breach (104.8 dB raw / 98.4 dB smoothed). Deploy secondary ear defenders to Sector 4 cohort.',
+    stagedAt: '25 mins ago',
+    status: 'ACKNOWLEDGED_BY_TEAM',
+    acknowledgedAt: '20 mins ago',
+    responderNotes: 'Secondary ear defenders distributed; compressor vibration dampeners checked.'
+  },
+  {
+    id: 'DSP-3209-REST',
+    alertId: 'ALR-8827-MD',
+    zone: 'Warehouse-Logistics-Hub-North',
+    severity: 'MODERATE',
+    recipientRole: 'Warehouse Logistics Shift Supervisor',
+    contactMethod: 'SMS',
+    recipientPhone: '+1 (555) 728-WH-LEAD',
+    messagePayload:
+      'MODERATE FATIGUE: Worker W-3209 sleep deficit exceedance (3.5h). Reassign to ground-level staging.',
+    stagedAt: '45 mins ago',
+    status: 'STAGED'
+  }
+];
 
 export default function ManagerDashboard() {
   const [selectedZone, setSelectedZone] = useState<string>('Outdoor-Construction-Sector-4');
   const [loading, setLoading] = useState<boolean>(false);
+  const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
   const [zones, setZones] = useState<FacilityZone[]>(INITIAL_FACILITY_ZONES);
   const [telemetryStream, setTelemetryStream] = useState<TelemetryDataPoint[]>(() => generateSyntheticStream(24, 15));
   const [activeAlerts, setActiveAlerts] = useState<ActiveAnomalyAlert[]>(INITIAL_ACTIVE_ALERTS);
+
+  // Live Weather State
+  const [currentWeather, setCurrentWeather] = useState<ZoneWeatherData | null>(null);
+
+  // Streaming IoT Hub Simulator State
+  const [isStreamingActive, setIsStreamingActive] = useState<boolean>(false);
+  const [jitterEnabled, setJitterEnabled] = useState<boolean>(true);
+  const [packetCounter, setPacketCounter] = useState<number>(142);
+
+  // Automated Protocol Medical Dispatches State
+  const [medicalDispatches, setMedicalDispatches] = useState<MedicalDispatchNotification[]>(INITIAL_MEDICAL_DISPATCHES);
+
+  // Sensitivity Settings Config
+  const [kalmanConfig, setKalmanConfig] = useState<KalmanSensitivityConfig>(DEFAULT_KALMAN_CONFIG);
+
+  // Modals & Drawers
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
+  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isDispatchModalOpen, setIsDispatchModalOpen] = useState<boolean>(false);
+  const [isZoneBuilderOpen, setIsZoneBuilderOpen] = useState<boolean>(false);
+
+  // Client-Side Executive PDF Export State
+  const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
+  const [directPdfStatus, setDirectPdfStatus] = useState<string>('');
+
+  // 2D Floor Plan Sensor Stream Toggles State
+  const [streamToggles, setStreamToggles] = useState<SensorStreamToggles>({
+    ambientTemp: true,
+    noiseDb: true,
+    hrvDrop: true,
+    skinTemp: true,
+    twlHeatStrain: true,
+    aqiAirQuality: true,
+    riskScore: true
+  });
+
+  const handleToggleStream = (key: keyof SensorStreamToggles) => {
+    setStreamToggles((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const handleSetAllStreams = (enable: boolean) => {
+    setStreamToggles({
+      ambientTemp: enable,
+      noiseDb: enable,
+      hrvDrop: enable,
+      skinTemp: enable,
+      twlHeatStrain: enable,
+      aqiAirQuality: enable,
+      riskScore: enable
+    });
+  };
+
+  // System Audit Log State (Manual changes to thresholds & zone configs)
+  const [systemAuditLogs, setSystemAuditLogs] = useState<SystemAuditLogEntry[]>(INITIAL_SYSTEM_AUDIT_LOGS);
+
+  const handleAddManualAuditLog = (newEntry: Omit<SystemAuditLogEntry, 'id' | 'timestamp'>) => {
+    const entry: SystemAuditLogEntry = {
+      ...newEntry,
+      id: `AUD-MAN-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19)
+    };
+    setSystemAuditLogs((prev) => [entry, ...prev]);
+    setProtocolActiveNotice(
+      `Recorded manual parameter override by ${newEntry.userId} for "${newEntry.parameter}".`
+    );
+  };
+
+  // Action status banner
+  const [protocolActiveNotice, setProtocolActiveNotice] = useState<string | null>(null);
 
   const [telemetryAlert, setTelemetryAlert] = useState<AnomalyPredictionResult>({
     status: 'success',
@@ -63,17 +202,6 @@ export default function ManagerDashboard() {
     privacy_compliance:
       'Enforced: k-Anonymity & Small-Cell Suppression Applied (N >= 12, Active Count: 18)'
   });
-
-  // Action status banner
-  const [protocolActiveNotice, setProtocolActiveNotice] = useState<string | null>(null);
-
-  // Modals & Sensitivity Config
-  const [kalmanConfig, setKalmanConfig] = useState<KalmanSensitivityConfig>(DEFAULT_KALMAN_CONFIG);
-  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
-  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
-  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
   // Audit events trail
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([
@@ -111,26 +239,252 @@ export default function ManagerDashboard() {
 
   const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
   const pendingCriticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL' && !a.acknowledged).length;
+  const stagedDispatchCount = medicalDispatches.filter((d) => d.status === 'STAGED').length;
+
+  // Sync hyper-local live weather via Open-Meteo API
+  const syncLiveWeather = useCallback(async (zone: FacilityZone) => {
+    setWeatherLoading(true);
+    try {
+      const weather = await fetchLiveZoneWeather(zone.latitude, zone.longitude, zone.name);
+      setCurrentWeather(weather);
+
+      // Adjust zone heat load if apparent temperature is high
+      if (weather.apparentTemperature) {
+        setZones((prev) =>
+          prev.map((z) =>
+            z.id === zone.id
+              ? {
+                  ...z,
+                  temp: `${weather.temperature}°C`,
+                  heatIndex: weather.apparentTemperature
+                }
+              : z
+          )
+        );
+      }
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, []);
+
+  // Fetch live weather on initial mount or when zone changes
+  useEffect(() => {
+    syncLiveWeather(activeZoneObj);
+  }, [activeZoneObj.id, syncLiveWeather]);
+
+  // Streaming IoT Hub Simulator Interval
+  useEffect(() => {
+    if (!isStreamingActive) return;
+
+    const interval = setInterval(() => {
+      setPacketCounter((c) => c + 1);
+
+      // Generate next rolling point with simulated jitter if enabled
+      const jitterFactor = jitterEnabled ? (Math.random() - 0.5) * 8.0 : (Math.random() - 0.5) * 1.5;
+      const packet = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
+      const result = predictWorkforceAnomaly(packet, undefined, kalmanConfig);
+      setTelemetryAlert(result);
+
+      // Advance sliding chart by 1 step
+      setTelemetryStream((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last) return prev;
+        const now = new Date();
+        const newPoint: TelemetryDataPoint = {
+          ...last,
+          timestamp: now.toISOString(),
+          timeLabel: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          ambient_temp_c: Number((last.ambient_temp_c + (Math.random() - 0.48) * 0.4).toFixed(1)),
+          raw_noise_db: Number(Math.max(60, (last.noise_db ?? 75) + jitterFactor).toFixed(1)),
+          noise_db: Number(Math.max(60, (last.noise_db ?? 75) + jitterFactor * 0.25).toFixed(1)),
+          smoothed_noise_db: Number(Math.max(60, (last.noise_db ?? 75) + jitterFactor * 0.25).toFixed(1)),
+          smoothed_hrv: Number(Math.max(25, last.smoothed_hrv + (Math.random() - 0.5) * 1.5).toFixed(1)),
+          raw_hrv: Number(Math.max(20, last.smoothed_hrv + jitterFactor * 1.5).toFixed(1)),
+          risk_score: Number((result.risk_probability * 100).toFixed(1))
+        };
+        return [...prev.slice(1), newPoint];
+      });
+    }, 3200);
+
+    return () => clearInterval(interval);
+  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig]);
+
+  // Handle Burst Event Triggers
+  const handleTriggerBurst = (type: 'HEATWAVE' | 'NOISE' | 'CARDIAC' | 'DROPOUT') => {
+    if (type === 'HEATWAVE') {
+      const burstPacket: TelemetryPacket = {
+        worker_id: `EVT-${Math.floor(1000 + Math.random() * 9000)}`,
+        location_zone: activeZoneObj.name,
+        timestamp: new Date().toISOString(),
+        hrv_series: [42, 38, 35, 33, 31, 30, 28],
+        skin_temp_series: [37.8, 38.1, 38.3, 38.6, 38.8],
+        heat_index: 47.5,
+        sleep_deficit_hours: 4.0,
+        cohort_size: activeZoneObj.count,
+        twl_index: 82.0,
+        ambient_temp_c: 46.5,
+        aqi: 185
+      };
+      const res = predictWorkforceAnomaly(burstPacket, undefined, kalmanConfig);
+      setTelemetryAlert(res);
+
+      // Auto-stage medical cooling dispatch
+      const newDispatch: MedicalDispatchNotification = {
+        id: `AUTO-${Math.floor(1000 + Math.random() * 9000)}-COOL`,
+        alertId: `BURST-HEAT-${Math.floor(1000 + Math.random() * 9000)}`,
+        zone: activeZoneObj.name,
+        severity: 'CRITICAL',
+        recipientRole: 'On-Site Rapid Cooling Evacuation Team',
+        contactMethod: 'DUAL_CHANNEL',
+        recipientPhone: '+1 (555) 911-COOL-2',
+        messagePayload: `AUTOMATED EMERGENCY DISPATCH: Flash Heatwave Burst detected at ${activeZoneObj.name} (Ambient: 46.5°C, WBGT Apparent: 47.5°C). Immediate shaded extraction & cooling vests dispatched.`,
+        stagedAt: 'Just now',
+        status: 'STAGED'
+      };
+      setMedicalDispatches((prev) => [newDispatch, ...prev]);
+
+      setProtocolActiveNotice(
+        `BURST TRIGGERED: Flash Heatwave Exceedance (46.5°C). Critical alert active & automated medical dispatch staged in queue.`
+      );
+    } else if (type === 'NOISE') {
+      const burstAlert: ActiveAnomalyAlert = {
+        id: `BURST-NOISE-${Math.floor(1000 + Math.random() * 9000)}`,
+        worker_id: 'W-6104',
+        location_zone: activeZoneObj.name,
+        detected_at: 'Just now',
+        anomaly_metric: 'Acoustic Machinery Overpressure Blast',
+        raw_value: 'Noise: 108.5 dB (OSHA Rupture Threshold)',
+        kalman_smoothed_value: 'Kalman Estimate: 102.4 dB',
+        severity: 'CRITICAL',
+        kalman_status: 'Confirmed Sensor Spike',
+        lead_time: 'Immediate Hearing Protection Breach',
+        recommended_action: 'Emergency machine shutdown & mandatory high-attenuation PPE verification.',
+        acknowledged: false,
+        privacy_status: 'k-Anonymity Verified (N >= 12)'
+      };
+      setActiveAlerts((prev) => [burstAlert, ...prev]);
+
+      const newDispatch: MedicalDispatchNotification = {
+        id: `AUTO-${Math.floor(1000 + Math.random() * 9000)}-PPE`,
+        alertId: burstAlert.id,
+        zone: activeZoneObj.name,
+        severity: 'HIGH',
+        recipientRole: 'Acoustic Audiology PPE Officer',
+        contactMethod: 'SMS',
+        recipientPhone: '+1 (555) 441-NOISE',
+        messagePayload: `ACOUSTIC BLAST DETECTED: 108.5 dB at ${activeZoneObj.name}. Deploy hearing evaluation & acoustic damper inspections.`,
+        stagedAt: 'Just now',
+        status: 'STAGED'
+      };
+      setMedicalDispatches((prev) => [newDispatch, ...prev]);
+
+      setProtocolActiveNotice('BURST TRIGGERED: Acoustic Overpressure (108.5 dB). Audiology protocol staged.');
+    } else if (type === 'CARDIAC') {
+      const burstPacket: TelemetryPacket = {
+        worker_id: `W-${Math.floor(1000 + Math.random() * 9000)}`,
+        location_zone: activeZoneObj.name,
+        timestamp: new Date().toISOString(),
+        hrv_series: [29, 28, 27, 26, 26, 25],
+        skin_temp_series: [38.2, 38.4, 38.6],
+        heat_index: 43.0,
+        sleep_deficit_hours: 4.5,
+        cohort_size: activeZoneObj.count
+      };
+      const res = predictWorkforceAnomaly(burstPacket, undefined, kalmanConfig);
+      setTelemetryAlert(res);
+
+      setProtocolActiveNotice('BURST TRIGGERED: Autonomic Cardiac Collapse (-60% HRV drop to 26ms). Critical extraction flagged.');
+    } else if (type === 'DROPOUT') {
+      setProtocolActiveNotice(
+        'BURST TRIGGERED: 3 Sensor Packets Dropped. Kalman State Filter successfully imputed missing state with covariance R=0.10.'
+      );
+    }
+  };
+
+  // Add Custom Zone from Zone Builder
+  const handleAddCustomZone = (newZone: FacilityZone) => {
+    setZones((prev) => [...prev, newZone]);
+    setSelectedZone(newZone.id);
+    syncLiveWeather(newZone);
+
+    const newAudit: AuditEvent = {
+      id: `ZONE-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toLocaleTimeString(),
+      eventType: 'CALIBRATION',
+      zone: newZone.name,
+      cohortCount: newZone.count,
+      riskTier: 'STABLE',
+      privacyEnforced: newZone.count < 12 ? 'Cell Suppressed (N<12)' : 'k-Anonymity Verified',
+      actionTaken: `Supervisors instantiated custom zone "${newZone.name}" with custom HRV=${newZone.customBaselines?.baselineHrv}ms, Noise=${newZone.customBaselines?.noiseLimitDb}dB`
+    };
+    setAuditEvents((prev) => [newAudit, ...prev]);
+
+    const zoneAuditLog: SystemAuditLogEntry = {
+      id: `AUD-ZN-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Manager on Duty',
+      category: 'ZONE_CONFIG',
+      targetModule: `Zone: ${newZone.name}`,
+      parameter: 'Custom Baselines & Microclimate Configuration',
+      previousValue: 'Unregistered / None',
+      newValue: `HRV: ${newZone.customBaselines?.baselineHrv}ms, Noise: ${newZone.customBaselines?.noiseLimitDb}dB, Heat: ${newZone.customBaselines?.heatThresholdC}°C`,
+      justification: `Supervisory creation of monitored sector "${newZone.name}" with cohort size N=${newZone.count}`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [zoneAuditLog, ...prev]);
+
+    setProtocolActiveNotice(`Custom Monitoring Zone "${newZone.name}" created and connected to live weather stream.`);
+  };
+
+  // Transmit medical dispatch
+  const handleTransmitDispatch = (id: string) => {
+    setMedicalDispatches((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status: 'TRANSMITTED' } : d))
+    );
+    setProtocolActiveNotice(`Medical dispatch ${id} transmitted via Azure IoT Hub SMS/Radio relay.`);
+  };
+
+  const handleTransmitAllDispatches = () => {
+    const count = stagedDispatchCount;
+    setMedicalDispatches((prev) =>
+      prev.map((d) => (d.status === 'STAGED' ? { ...d, status: 'TRANSMITTED' } : d))
+    );
+    setProtocolActiveNotice(`Transmitted all ${count} staged medical dispatches to on-site liaisons.`);
+  };
+
+  const handleAcknowledgeDispatch = (id: string, notes?: string) => {
+    setMedicalDispatches((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              status: 'ACKNOWLEDGED_BY_TEAM',
+              acknowledgedAt: new Date().toLocaleTimeString(),
+              responderNotes: notes || 'Medical liaison arrived at zone tent.'
+            }
+          : d
+      )
+    );
+  };
+
+  const handleStageNewDispatch = (dispatchData: Omit<MedicalDispatchNotification, 'id' | 'stagedAt' | 'status'>) => {
+    const newD: MedicalDispatchNotification = {
+      ...dispatchData,
+      id: `DSP-${Math.floor(1000 + Math.random() * 9000)}-MAN`,
+      stagedAt: 'Just now',
+      status: 'STAGED'
+    };
+    setMedicalDispatches((prev) => [newD, ...prev]);
+    setProtocolActiveNotice(`Staged new medical dispatch for ${dispatchData.zone} in queue.`);
+  };
 
   // Acknowledge anomaly alert
   const handleAcknowledgeAlert = (id: string) => {
     setActiveAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a))
     );
-    const targetAlert = activeAlerts.find((a) => a.id === id);
-    if (targetAlert) {
-      const newAudit: AuditEvent = {
-        id: `ACK-${Math.floor(1000 + Math.random() * 9000)}`,
-        timestamp: new Date().toLocaleTimeString(),
-        eventType: 'ALERT_DISPATCH',
-        zone: targetAlert.location_zone,
-        cohortCount: activeZoneObj.count,
-        riskTier: targetAlert.severity,
-        privacyEnforced: 'Logged in GDPR Audit Trail',
-        actionTaken: `Safety Manager acknowledged alert ${targetAlert.id} (${targetAlert.anomaly_metric})`
-      };
-      setAuditEvents((prev) => [newAudit, ...prev]);
-    }
   };
 
   // Dispatch action from active alerts list
@@ -138,24 +492,25 @@ export default function ManagerDashboard() {
     setActiveAlerts((prev) =>
       prev.map((a) => (a.id === alert.id ? { ...a, acknowledged: true } : a))
     );
-    setProtocolActiveNotice(
-      `Dispatched intervention for ${alert.id} (${alert.anomaly_metric}) at ${alert.location_zone}. Directive: ${alert.recommended_action}`
-    );
-    const newAudit: AuditEvent = {
-      id: `DISP-${Math.floor(1000 + Math.random() * 9000)}`,
-      timestamp: new Date().toLocaleTimeString(),
-      eventType: 'HYDRATION_PROTOCOL',
-      zone: alert.location_zone,
-      cohortCount: activeZoneObj.count,
-      riskTier: alert.severity,
-      privacyEnforced: alert.privacy_status,
-      actionTaken: `Intervention dispatched: ${alert.recommended_action}`
-    };
-    setAuditEvents((prev) => [newAudit, ...prev]);
 
-    setTimeout(() => {
-      setProtocolActiveNotice(null);
-    }, 7000);
+    // Auto-stage a medical dispatch
+    const staged: MedicalDispatchNotification = {
+      id: `DSP-${Math.floor(1000 + Math.random() * 9000)}-ALR`,
+      alertId: alert.id,
+      zone: alert.location_zone,
+      severity: alert.severity === 'LOW' ? 'MODERATE' : alert.severity,
+      recipientRole: 'On-Site Medical Triage Lead',
+      contactMethod: 'DUAL_CHANNEL',
+      recipientPhone: '+1 (555) 911-COOL-2',
+      messagePayload: `INTERVENTION DISPATCH: ${alert.anomaly_metric} at ${alert.location_zone}. Directive: ${alert.recommended_action}`,
+      stagedAt: 'Just now',
+      status: 'STAGED'
+    };
+    setMedicalDispatches((prev) => [staged, ...prev]);
+
+    setProtocolActiveNotice(
+      `Dispatched intervention for ${alert.id} (${alert.anomaly_metric}). Automated SMS notification staged in medical dispatch queue.`
+    );
   };
 
   const handleSaveConfig = (newConfig: KalmanSensitivityConfig) => {
@@ -179,6 +534,22 @@ export default function ManagerDashboard() {
       actionTaken: `Kalman detection threshold recalibrated to ${newConfig.preset} profile`
     };
     setAuditEvents((prev) => [newAudit, ...prev]);
+
+    const thresholdAuditLog: SystemAuditLogEntry = {
+      id: `AUD-TH-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Manager on Duty',
+      category: 'THRESHOLD_CHANGE',
+      targetModule: 'Kalman Anomaly Filter Engine',
+      parameter: `Sensitivity Preset: ${newConfig.preset} (Critical Cutoff & Noise Parameters)`,
+      previousValue: `Preset: ${kalmanConfig.preset} (Cutoff: ${kalmanConfig.criticalCutoffPct}%, Q: ${kalmanConfig.processVarianceQ})`,
+      newValue: `Preset: ${newConfig.preset} (Cutoff: ${newConfig.criticalCutoffPct}%, Q: ${newConfig.processVarianceQ}, R: ${newConfig.measurementVarianceR.toFixed(2)})`,
+      justification: `Supervisory threshold recalibration to ${newConfig.preset} profile for active sector ${activeZoneObj.name}.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [thresholdAuditLog, ...prev]);
 
     setTimeout(() => setProtocolActiveNotice(null), 6000);
   };
@@ -216,40 +587,27 @@ export default function ManagerDashboard() {
         setActiveAlerts((prev) => [freshAlert, ...prev.slice(0, 7)]);
       }
 
-      // Append audit event
-      const newAudit: AuditEvent = {
-        id: `AUD-${Math.floor(1000 + Math.random() * 9000)}-IN`,
-        timestamp: new Date().toLocaleTimeString(),
-        eventType: result.is_suppressed ? 'PRIVACY_SUPPRESSION' : 'ALERT_DISPATCH',
-        zone: activeZoneObj.name,
-        cohortCount: activeZoneObj.count,
-        riskTier: result.risk_tier,
-        privacyEnforced: result.privacy_compliance,
-        actionTaken: result.is_suppressed
-          ? 'Masked small-cell alert to shield worker anonymity'
-          : `Processed stream packet; MSE: ${result.reconstruction_mse}`
-      };
-      setAuditEvents((prev) => [newAudit, ...prev]);
-
       setLoading(false);
     }, 450);
   };
 
   const handleTriggerHydrationProtocol = () => {
     setProtocolActiveNotice(
-      `Zone Hydration Protocol activated for ${activeZoneObj.name}. Automated sirens & water mist cooling units dispatched.`
+      `Zone Hydration Protocol activated for ${activeZoneObj.name}. Automated sirens, water mist cooling units & medical liaisons dispatched.`
     );
-    const newAudit: AuditEvent = {
-      id: `AUD-${Math.floor(1000 + Math.random() * 9000)}-HYD`,
-      timestamp: new Date().toLocaleTimeString(),
-      eventType: 'HYDRATION_PROTOCOL',
+    const newDispatch: MedicalDispatchNotification = {
+      id: `HYD-${Math.floor(1000 + Math.random() * 9000)}`,
+      alertId: 'ZONE-WIDE-HYDRATION',
       zone: activeZoneObj.name,
-      cohortCount: activeZoneObj.count,
-      riskTier: telemetryAlert.risk_tier,
-      privacyEnforced: 'Aggregated Directive Dispatched',
-      actionTaken: 'Mandatory 15-minute hydration pause & shaded cool-down initiated'
+      severity: 'HIGH',
+      recipientRole: 'Zone Hydration & Rest Foreman',
+      contactMethod: 'DUAL_CHANNEL',
+      recipientPhone: '+1 (555) 772-COOL',
+      messagePayload: `ZONE HYDRATION PROTOCOL TRIGGERED: Enforce mandatory 15-minute shaded pause for ${activeZoneObj.name} (N=${activeZoneObj.count}). Distribute 250ml electrolyte fluid.`,
+      stagedAt: 'Just now',
+      status: 'STAGED'
     };
-    setAuditEvents((prev) => [newAudit, ...prev]);
+    setMedicalDispatches((prev) => [newDispatch, ...prev]);
 
     setTimeout(() => {
       setProtocolActiveNotice(null);
@@ -260,7 +618,6 @@ export default function ManagerDashboard() {
     const result = predictWorkforceAnomaly(customPacket, undefined, kalmanConfig);
     setTelemetryAlert(result);
 
-    // Update zone count if changed
     if (customPacket.cohort_size) {
       setZones((prev) =>
         prev.map((z) =>
@@ -268,39 +625,33 @@ export default function ManagerDashboard() {
         )
       );
     }
+  };
 
-    if (!result.is_suppressed && result.risk_probability > 0.4) {
-      const simAlert: ActiveAnomalyAlert = {
-        id: `SIM-ALR-${Math.floor(1000 + Math.random() * 9000)}`,
-        worker_id: customPacket.worker_id,
-        location_zone: customPacket.location_zone,
-        detected_at: 'Just now (Simulated)',
-        anomaly_metric: 'Injected Thermal & Noise Stress Test',
-        raw_value: `Heat: ${customPacket.heat_index}°C, Sleep: ${customPacket.sleep_deficit_hours}h`,
-        kalman_smoothed_value: `Predicted Risk: ${(result.risk_probability * 100).toFixed(1)}%`,
-        severity: result.risk_probability > 0.75 ? 'CRITICAL' : 'HIGH',
-        kalman_status: 'Jitter Filtered & Validated',
-        lead_time: '2.8h Before Exceedance',
-        recommended_action: result.recommended_operational_action,
-        acknowledged: false,
-        privacy_status: result.privacy_compliance
-      };
-      setActiveAlerts((prev) => [simAlert, ...prev]);
+  // Direct Client-Side Executive Safety PDF Report Export
+  const handleDirectPdfExport = async () => {
+    setIsDirectPdfExporting(true);
+    setDirectPdfStatus('Capturing telemetry charts & compiling executive safety report...');
+    try {
+      await generateExecutiveSafetyPdfReport({
+        activeAlerts,
+        telemetryStream,
+        currentZone: activeZoneObj,
+        zones,
+        telemetryElementId: 'telemetry-charts-card',
+        projectionElementId: 'incident-projection-chart-card',
+        alertsElementId: 'active-alerts-section',
+        onProgress: (status) => setDirectPdfStatus(status)
+      });
+      setProtocolActiveNotice('Executive Safety Report PDF successfully generated & downloaded.');
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      setProtocolActiveNotice('Direct PDF capture encountered an issue, opening report modal instead.');
+      setIsReportModalOpen(true);
+    } finally {
+      setIsDirectPdfExporting(false);
+      setDirectPdfStatus('');
     }
-
-    const newAudit: AuditEvent = {
-      id: `SIM-${Math.floor(1000 + Math.random() * 9000)}`,
-      timestamp: new Date().toLocaleTimeString(),
-      eventType: result.is_suppressed ? 'PRIVACY_SUPPRESSION' : 'ALERT_DISPATCH',
-      zone: customPacket.location_zone,
-      cohortCount: customPacket.cohort_size || 0,
-      riskTier: result.risk_tier,
-      privacyEnforced: result.privacy_compliance,
-      actionTaken: result.is_suppressed
-        ? 'Simulator: Cell suppressed (N < 12)'
-        : `Simulator packet injected; Prob: ${(result.risk_probability * 100).toFixed(1)}%`
-    };
-    setAuditEvents((prev) => [newAudit, ...prev]);
   };
 
   return (
@@ -319,39 +670,122 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center space-x-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-full text-emerald-400 text-xs font-medium">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span>Azure Pipeline Active</span>
-          </div>
-          <div className="flex items-center space-x-1.5 bg-slate-800 border border-slate-700/60 px-3 py-1.5 rounded-lg text-xs text-slate-300">
-            <Lock className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Differential Privacy Active (&epsilon;-DP)</span>
-          </div>
+        {/* Global Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Medical Dispatch Queue Trigger */}
+          <button
+            onClick={() => setIsDispatchModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            title="Open Automated Medical Protocol Dispatch Queue"
+          >
+            <Radio className="h-3.5 w-3.5 text-rose-400" />
+            <span>
+              Medical Dispatch{' '}
+              {stagedDispatchCount > 0 && (
+                <span className="bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full text-[10px] ml-1">
+                  {stagedDispatchCount} Staged
+                </span>
+              )}
+            </span>
+          </button>
+
+          {/* Continuous IoT Stream State Indicator */}
+          <button
+            onClick={() => setIsStreamingActive((s) => !s)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
+              isStreamingActive
+                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+            }`}
+            title="Toggle Live Continuous IoT Streaming Engine"
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isStreamingActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'
+              }`}
+            ></span>
+            <span>{isStreamingActive ? 'Streaming Hub: LIVE' : 'Streaming Hub: PAUSED'}</span>
+          </button>
+
+          {/* Sensitivity Settings */}
           <button
             onClick={() => setIsSettingsModalOpen(true)}
             className="flex items-center space-x-1.5 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
             title="Adjust Kalman filter sensitivity and anomaly detection thresholds"
           >
             <Settings className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Sensitivity: <strong className="font-bold text-white ml-0.5">{kalmanConfig.preset}</strong></span>
+            <span>
+              Sensitivity: <strong className="font-bold text-white ml-0.5">{kalmanConfig.preset}</strong>
+            </span>
           </button>
+
+          {/* System Audit Trail Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('system-audit-log-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            title="View System Audit Log tracking manual sensitivity and zone changes"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Audit Trail ({systemAuditLogs.length})</span>
+          </button>
+
+          {/* Simulator & Jitter Drawer */}
           <button
             onClick={() => setIsSimulatorOpen(true)}
             className="flex items-center space-x-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition"
           >
             <Sliders className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Tune Telemetry</span>
+            <span>IoT Hub &amp; Bursts</span>
           </button>
+
+          {/* Executive Safety PDF Report (Client-Side) */}
+          <button
+            onClick={handleDirectPdfExport}
+            disabled={isDirectPdfExporting}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs border ${
+              isDirectPdfExporting
+                ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 animate-pulse'
+                : 'bg-cyan-950/70 hover:bg-cyan-900/70 border-cyan-500/40 text-cyan-300'
+            }`}
+            title="Directly compile & download printable Executive Safety PDF report capturing telemetry charts and active alerts"
+          >
+            {isDirectPdfExporting ? (
+              <Loader2 className="h-3.5 w-3.5 text-cyan-400 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5 text-cyan-400" />
+            )}
+            <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
+          </button>
+
+          {/* Compliance Report Modal Trigger */}
           <button
             onClick={() => setIsReportModalOpen(true)}
             className="flex items-center space-x-1.5 bg-emerald-950/70 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
           >
             <Download className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Download Report</span>
+            <span>Reports &amp; CSV</span>
           </button>
         </div>
       </header>
+
+      {/* PDF Export In-Flight Notification */}
+      {isDirectPdfExporting && (
+        <div className="mb-6 p-4 rounded-xl bg-cyan-950/70 border border-cyan-500/60 text-cyan-200 text-xs flex items-center justify-between shadow-xl animate-pulse">
+          <div className="flex items-center space-x-3">
+            <Loader2 className="h-5 w-5 text-cyan-400 animate-spin shrink-0" />
+            <div>
+              <span className="font-bold text-white text-sm block">Generating Executive Safety PDF Report...</span>
+              <span className="text-[11px] text-cyan-300 font-mono">{directPdfStatus}</span>
+            </div>
+          </div>
+          <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2.5 py-1 rounded-full font-mono font-semibold border border-cyan-500/40">
+            Client-Side jsPDF &amp; Canvas
+          </span>
+        </div>
+      )}
 
       {/* Protocol Banner Notification */}
       {protocolActiveNotice && (
@@ -394,7 +828,7 @@ export default function ManagerDashboard() {
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <p className="text-xs text-slate-400 font-medium">Avg Wet-Bulb Heat Index</p>
           <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-amber-400">42.5°C</h3>
+            <h3 className="text-2xl font-bold text-amber-400">{activeZoneObj.heatIndex || 42.5}°C</h3>
             <span className="text-xs text-slate-400">Severe Thermal Load</span>
           </div>
         </div>
@@ -408,10 +842,49 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      {/* Sliding 24-Hour Recharts Telemetry Stream */}
-      <TelemetryCharts data={telemetryStream} zoneName={activeZoneObj.name} />
+      {/* Hyper-Local Real-Time Weather Integration Card */}
+      <ZoneWeatherCard
+        weather={currentWeather}
+        loading={weatherLoading}
+        onRefreshWeather={() => syncLiveWeather(activeZoneObj)}
+        zoneName={activeZoneObj.name}
+        latitude={activeZoneObj.latitude}
+        longitude={activeZoneObj.longitude}
+      />
 
-      {/* Active Alerts Section (Kalman Filter Anomaly Detection with Severity Color-Coding) */}
+      {/* 2D Floor Plan Visualization Component with Zone Hotspots & Sensor Telemetry Stream Toggles */}
+      <FloorPlan2DView
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        activeAlerts={activeAlerts}
+        streamToggles={streamToggles}
+        onToggleStream={handleToggleStream}
+        onSetAllStreams={handleSetAllStreams}
+        recentTelemetryPoint={telemetryStream[telemetryStream.length - 1]}
+      />
+
+      {/* Sliding 24-Hour Recharts Telemetry Stream with 1-Hour Forecast */}
+      <TelemetryCharts
+        data={telemetryStream}
+        zoneName={activeZoneObj.name}
+        streamToggles={streamToggles}
+      />
+
+      {/* 48-Hour Potential Incident Volume Projection Trend Analysis (Recharts) */}
+      <IncidentProjectionChart
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        currentZone={activeZoneObj}
+      />
+
+      {/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap) */}
       <ActiveAlertsSection
         alerts={activeAlerts}
         onAcknowledgeAlert={handleAcknowledgeAlert}
@@ -420,24 +893,30 @@ export default function ManagerDashboard() {
 
       {/* Main Operational Section: Split View */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Col: Geospatial Zone Selector / Heatmap */}
+        {/* Left Col: Geospatial Zone Selector / Heatmap & Custom Zone Builder */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center">
                 <MapPin className="h-4 w-4 mr-2 text-cyan-400" /> Industrial Facility Zones
               </h2>
-              <span className="text-[10px] text-slate-500 font-mono">4 Zones</span>
+              <button
+                onClick={() => setIsZoneBuilderOpen(true)}
+                className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold px-2.5 py-1 rounded-md transition shadow-xs"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Custom Zone</span>
+              </button>
             </div>
 
             <div className="space-y-3">
               {zones.map((zone) => (
                 <div
-                  key={zone.name}
+                  key={zone.id}
                   onClick={() => {
                     setSelectedZone(zone.id);
                     const newPacket = generatePacketForZone(zone, zone.status === 'CRITICAL');
-                    const res = predictWorkforceAnomaly(newPacket);
+                    const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
                     setTelemetryAlert(res);
                   }}
                   className={`p-3.5 rounded-lg border cursor-pointer transition-all ${
@@ -471,6 +950,11 @@ export default function ManagerDashboard() {
                     </span>
                     <span>Heat Load: {zone.temp}</span>
                   </div>
+                  {zone.customBaselines && (
+                    <div className="text-[10px] text-cyan-400/80 font-mono mt-1">
+                      Custom Baselines: HRV {zone.customBaselines.baselineHrv}ms | Noise {zone.customBaselines.noiseLimitDb}dB
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -592,21 +1076,52 @@ export default function ManagerDashboard() {
               <CheckCircle2 className="h-4 w-4 mr-2" /> Trigger Zone Hydration Protocol
             </button>
             <button
+              onClick={() => setIsDispatchModalOpen(true)}
+              className="bg-rose-900/40 hover:bg-rose-800/60 text-rose-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-rose-600/40 flex items-center gap-1.5 shadow-sm"
+            >
+              <Radio className="h-4 w-4 text-rose-400" />
+              <span>Stage Medical Dispatch ({stagedDispatchCount})</span>
+            </button>
+            <button
+              onClick={handleDirectPdfExport}
+              disabled={isDirectPdfExporting}
+              className={`font-medium py-2.5 px-4 rounded-lg text-sm transition border flex items-center gap-1.5 shadow-sm ${
+                isDirectPdfExporting
+                  ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 animate-pulse'
+                  : 'bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-200 border-cyan-500/40'
+              }`}
+            >
+              {isDirectPdfExporting ? (
+                <Loader2 className="h-4 w-4 text-cyan-400 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4 text-cyan-400" />
+              )}
+              <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
+            </button>
+            <button
               onClick={() => setIsReportModalOpen(true)}
               className="bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-emerald-600/40 flex items-center gap-1.5 shadow-sm"
             >
               <Download className="h-4 w-4 text-emerald-400" />
-              <span>Download Compliance Report (PDF/CSV)</span>
+              <span>Compliance CSV / Print</span>
             </button>
             <button
               onClick={() => setIsAuditModalOpen(true)}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5"
             >
               <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
-              <span>Export Audit Log (GDPR/HIPAA)</span>
+              <span>Audit Log</span>
             </button>
           </div>
         </div>
+      </div>
+
+      {/* System Audit Log Component: Manual Changes to Sensitivity Thresholds & Zone Configurations */}
+      <div id="system-audit-log-section">
+        <SystemAuditLog
+          logs={systemAuditLogs}
+          onAddManualLog={handleAddManualAuditLog}
+        />
       </div>
 
       {/* Modals & Drawers */}
@@ -628,6 +1143,11 @@ export default function ManagerDashboard() {
         onClose={() => setIsSimulatorOpen(false)}
         currentZone={selectedZone}
         onSimulateCustomPacket={handleCustomPacketFromSimulator}
+        isStreamingActive={isStreamingActive}
+        onToggleLiveStream={() => setIsStreamingActive((s) => !s)}
+        jitterEnabled={jitterEnabled}
+        onToggleJitter={() => setJitterEnabled((j) => !j)}
+        onTriggerBurst={handleTriggerBurst}
       />
 
       <ReportExportModal
@@ -644,6 +1164,23 @@ export default function ManagerDashboard() {
         onClose={() => setIsSettingsModalOpen(false)}
         currentConfig={kalmanConfig}
         onSaveConfig={handleSaveConfig}
+      />
+
+      <MedicalDispatchModal
+        isOpen={isDispatchModalOpen}
+        onClose={() => setIsDispatchModalOpen(false)}
+        dispatches={medicalDispatches}
+        onTransmitDispatch={handleTransmitDispatch}
+        onTransmitAll={handleTransmitAllDispatches}
+        onAcknowledgeDispatch={handleAcknowledgeDispatch}
+        onStageNewDispatch={handleStageNewDispatch}
+        zoneNames={zones.map((z) => z.name)}
+      />
+
+      <CustomZoneBuilderModal
+        isOpen={isZoneBuilderOpen}
+        onClose={() => setIsZoneBuilderOpen(false)}
+        onAddZone={handleAddCustomZone}
       />
     </div>
   );

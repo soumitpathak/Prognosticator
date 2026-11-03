@@ -42,6 +42,24 @@ export interface AnomalyPredictionResult {
   differential_privacy_noise?: number;
 }
 
+export interface ZoneWeatherData {
+  temperature: number;
+  humidity: number;
+  apparentTemperature: number;
+  windSpeed: number;
+  lastFetched: string;
+  source: string;
+  baselineAdjustment: string;
+  heatStrainIndex: 'EXTREME' | 'HIGH' | 'MODERATE' | 'LOW';
+}
+
+export interface ZoneCustomBaselines {
+  baselineHrv: number; // default 68
+  baselineSkinTemp: number; // default 36.5
+  noiseLimitDb: number; // default 85
+  heatThresholdC: number; // default 35
+}
+
 export interface FacilityZone {
   id: string;
   name: string;
@@ -53,6 +71,25 @@ export interface FacilityZone {
   aqi: number;
   description: string;
   activeHazards: string[];
+  latitude: number;
+  longitude: number;
+  customBaselines?: ZoneCustomBaselines;
+  liveWeather?: ZoneWeatherData;
+}
+
+export interface MedicalDispatchNotification {
+  id: string;
+  alertId: string;
+  zone: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MODERATE';
+  recipientRole: string;
+  contactMethod: 'SMS' | 'PUSH_RADIO' | 'DUAL_CHANNEL';
+  recipientPhone: string;
+  messagePayload: string;
+  stagedAt: string;
+  status: 'STAGED' | 'TRANSMITTED' | 'ACKNOWLEDGED_BY_TEAM';
+  acknowledgedAt?: string;
+  responderNotes?: string;
 }
 
 export interface AuditEvent {
@@ -100,5 +137,33 @@ export interface TelemetryDataPoint {
   sick_leave_rate_deviation: number;
   is_anomaly: boolean;
   risk_score: number;
+}
+
+export interface SensorStreamToggles {
+  ambientTemp: boolean;
+  noiseDb: boolean;
+  hrvDrop: boolean;
+  skinTemp: boolean;
+  twlHeatStrain: boolean;
+  aqiAirQuality: boolean;
+  riskScore: boolean;
+}
+
+export type AuditChangeCategory = 'THRESHOLD_CHANGE' | 'ZONE_CONFIG' | 'FILTER_CALIBRATION';
+
+export interface SystemAuditLogEntry {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  category: AuditChangeCategory;
+  targetModule: string;
+  parameter: string;
+  previousValue: string;
+  newValue: string;
+  justification: string;
+  approvalStatus: 'VERIFIED' | 'APPLIED' | 'FLAGGED';
+  ipAddress?: string;
 }
 

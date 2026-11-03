@@ -12,7 +12,7 @@ import {
   ReferenceLine,
   Legend
 } from 'recharts';
-import { TelemetryDataPoint } from '../types';
+import { TelemetryDataPoint, SensorStreamToggles } from '../types';
 import {
   Thermometer,
   Volume2,
@@ -21,12 +21,14 @@ import {
   Clock,
   AlertTriangle,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  Sliders
 } from 'lucide-react';
 
 interface TelemetryChartsProps {
   data: TelemetryDataPoint[];
   zoneName: string;
+  streamToggles?: SensorStreamToggles;
 }
 
 interface ChartDataWithForecast extends Partial<TelemetryDataPoint> {
@@ -38,7 +40,7 @@ interface ChartDataWithForecast extends Partial<TelemetryDataPoint> {
   forecast_risk?: number;
 }
 
-export default function TelemetryCharts({ data, zoneName }: TelemetryChartsProps) {
+export default function TelemetryCharts({ data, zoneName, streamToggles }: TelemetryChartsProps) {
   const [activeMetric, setActiveMetric] = useState<'temp' | 'noise' | 'hrv' | 'combined'>('temp');
   const [windowHours, setWindowHours] = useState<number>(24);
   const [showForecast, setShowForecast] = useState<boolean>(true);
@@ -118,7 +120,7 @@ export default function TelemetryCharts({ data, zoneName }: TelemetryChartsProps
   const tempDiff = Number((finalProjectedTemp - (currentPoint?.ambient_temp_c || 0)).toFixed(1));
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-lg">
+    <div id="telemetry-charts-card" className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-lg">
       {/* Chart Header & Controls */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-4 border-b border-slate-800">
         <div>
@@ -484,11 +486,19 @@ export default function TelemetryCharts({ data, zoneName }: TelemetryChartsProps
                   label={{ value: 'Now | 1-Hr Forecast →', fill: '#38bdf8', fontSize: 10, position: 'insideTopLeft' }}
                 />
               )}
-              <Line yAxisId="left" type="monotone" dataKey="ambient_temp_c" name="Ambient Temp (°C)" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls={false} />
-              <Line yAxisId="left" type="monotone" dataKey="noise_db" name="Kalman Noise (dB)" stroke="#f43f5e" strokeWidth={2} dot={false} connectNulls={false} />
-              <Line yAxisId="left" type="monotone" dataKey="smoothed_hrv" name="Kalman HRV (ms)" stroke="#06b6d4" strokeWidth={2} dot={false} connectNulls={false} />
-              <Line yAxisId="right" type="monotone" dataKey="risk_score" name="Risk %" stroke="#a855f7" strokeWidth={2.5} dot={false} connectNulls={false} />
-              {showForecast && (
+              {(!streamToggles || streamToggles.ambientTemp) && (
+                <Line yAxisId="left" type="monotone" dataKey="ambient_temp_c" name="Ambient Temp (°C)" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls={false} />
+              )}
+              {(!streamToggles || streamToggles.noiseDb) && (
+                <Line yAxisId="left" type="monotone" dataKey="noise_db" name="Kalman Noise (dB)" stroke="#f43f5e" strokeWidth={2} dot={false} connectNulls={false} />
+              )}
+              {(!streamToggles || streamToggles.hrvDrop) && (
+                <Line yAxisId="left" type="monotone" dataKey="smoothed_hrv" name="Kalman HRV (ms)" stroke="#06b6d4" strokeWidth={2} dot={false} connectNulls={false} />
+              )}
+              {(!streamToggles || streamToggles.riskScore) && (
+                <Line yAxisId="right" type="monotone" dataKey="risk_score" name="Risk %" stroke="#a855f7" strokeWidth={2.5} dot={false} connectNulls={false} />
+              )}
+              {showForecast && (!streamToggles || streamToggles.riskScore) && (
                 <Line
                   yAxisId="right"
                   type="monotone"

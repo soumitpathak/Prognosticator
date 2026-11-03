@@ -82,7 +82,7 @@ export default function ActiveAlertsSection({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-lg">
+    <div id="active-alerts-section" className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-lg">
       {/* Section Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-slate-800">
         <div>
