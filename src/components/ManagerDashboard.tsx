@@ -32,7 +32,8 @@ import {
   SensorStreamToggles,
   SystemAuditLogEntry,
   SensorCorrelationPoint,
-  VoiceAlertSettings
+  VoiceAlertSettings,
+  HealthSignalNotificationThresholds
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -65,8 +66,13 @@ import IncidentHotspotsWidget from './IncidentHotspotsWidget';
 import GlobalSearchBar from './GlobalSearchBar';
 import BiometricSyncModule from './BiometricSyncModule';
 import MaintenanceSchedulerModule from './MaintenanceSchedulerModule';
+import HistoricalWorkforceHealthChart from './HistoricalWorkforceHealthChart';
+import ActiveAnomaliesWidget from './ActiveAnomaliesWidget';
+import ChronologicalAnomalyLogPanel from './ChronologicalAnomalyLogPanel';
+import HealthThresholdsConfigModal, { DEFAULT_HEALTH_THRESHOLDS } from './HealthThresholdsConfigModal';
+import { exportWorkforceHealthCsv } from '../services/workforceCsvExport';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -167,6 +173,56 @@ export default function ManagerDashboard() {
   // Client-Side Executive PDF Export State
   const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
   const [directPdfStatus, setDirectPdfStatus] = useState<string>('');
+
+  // Custom Health Signal Notification Thresholds Configuration State
+  const [healthThresholds, setHealthThresholds] = useState<HealthSignalNotificationThresholds>(DEFAULT_HEALTH_THRESHOLDS);
+  const [isHealthThresholdsModalOpen, setIsHealthThresholdsModalOpen] = useState<boolean>(false);
+  const [isolatedHealthSignal, setIsolatedHealthSignal] = useState<string | null>(null);
+
+  const handleSaveHealthThresholds = (
+    updatedThresholds: HealthSignalNotificationThresholds,
+    justification: string
+  ) => {
+    setHealthThresholds(updatedThresholds);
+    setKalmanConfig((prev) => ({
+      ...prev,
+      criticalCutoffPct: updatedThresholds.riskScoreCutoffPct
+    }));
+
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-HT-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Manager on Duty',
+      category: 'THRESHOLD_CHANGE',
+      targetModule: 'Workforce Health Signals Rule Engine',
+      parameter: 'Custom Health Signal Notification Thresholds',
+      previousValue: `HRV Floor: ${healthThresholds.minHrvMs}ms, Max Drop: ${healthThresholds.maxHrvDropPct}%, Skin: ${healthThresholds.maxSkinTempC}°C, Noise: ${healthThresholds.maxNoiseDb}dB, Risk: ${healthThresholds.riskScoreCutoffPct}%`,
+      newValue: `HRV Floor: ${updatedThresholds.minHrvMs}ms, Max Drop: ${updatedThresholds.maxHrvDropPct}%, Skin: ${updatedThresholds.maxSkinTempC}°C, Noise: ${updatedThresholds.maxNoiseDb}dB, Risk: ${updatedThresholds.riskScoreCutoffPct}% (Scope: ${updatedThresholds.applicableZoneId})`,
+      justification: justification || 'Custom workforce health signal thresholds updated.',
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Custom Health Signal Thresholds applied: HRV Floor ${updatedThresholds.minHrvMs}ms, Max Drop ${updatedThresholds.maxHrvDropPct}%, Skin Temp ${updatedThresholds.maxSkinTempC}°C, Noise Limit ${updatedThresholds.maxNoiseDb}dBA, Risk Cutoff ${updatedThresholds.riskScoreCutoffPct}%.`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 6000);
+  };
+
+  const handleExportWorkforceCsv = () => {
+    try {
+      const result = exportWorkforceHealthCsv(telemetryStream, activeZoneObj.name, healthThresholds);
+      setProtocolActiveNotice(
+        `Workforce health historical data exported successfully as CSV (${result.recordCount} samples). File: ${result.filename}`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+    } catch (err: any) {
+      console.error('CSV export failed:', err);
+      setProtocolActiveNotice('Failed to export CSV: ' + (err?.message || 'Unknown error'));
+    }
+  };
 
   // 2D Floor Plan Sensor Stream Toggles State
   const [streamToggles, setStreamToggles] = useState<SensorStreamToggles>({
@@ -774,6 +830,31 @@ export default function ManagerDashboard() {
 
         {/* Global Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* High-Priority Active Anomalies Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('active-anomalies-widget');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/50 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs animate-pulse"
+            title="Jump to High-Priority Active Anomalies & Urgent Triage Widget"
+          >
+            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
+            <span>Active Anomalies ({pendingCriticalCount} Critical)</span>
+          </button>
+
+          {/* 24-Hour Workforce Health Chart Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('historical-health-chart-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/40 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Jump to Historical Workforce Health Signals 24h Chart"
+          >
+            <LineChart className="h-3.5 w-3.5 text-cyan-400" />
+            <span>24h Health Signals</span>
+          </button>
           {/* Incident Hotspots NLG Jump Button */}
           <button
             onClick={() => {
@@ -798,6 +879,19 @@ export default function ManagerDashboard() {
           >
             <Heart className="h-3.5 w-3.5 text-rose-400" />
             <span>Biometrics HRV</span>
+          </button>
+
+          {/* Chronological Anomaly Log Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('chronological-anomaly-log-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Chronological list-view summary of all recent high-priority health and safety alerts"
+          >
+            <Clock className="h-3.5 w-3.5 text-rose-400" />
+            <span>Anomaly Log</span>
           </button>
 
           {/* Automated Predictive Maintenance Scheduler Jump Button */}
@@ -952,13 +1046,33 @@ export default function ManagerDashboard() {
             <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
           </button>
 
+          {/* Custom Health Signal Notification Thresholds Configuration Button */}
+          <button
+            onClick={() => setIsHealthThresholdsModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-500/50 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Configure custom notification thresholds for specific workforce health signals"
+          >
+            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Health Thresholds</span>
+          </button>
+
+          {/* Export Historical Workforce Health Data CSV Button */}
+          <button
+            onClick={handleExportWorkforceCsv}
+            className="flex items-center space-x-1.5 bg-emerald-950/80 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            title="Export current 24-hour historical workforce health data as a CSV file for offline reporting"
+          >
+            <Download className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Export Health CSV</span>
+          </button>
+
           {/* Compliance Report Modal Trigger */}
           <button
             onClick={() => setIsReportModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-emerald-950/70 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
           >
-            <Download className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Reports &amp; CSV</span>
+            <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Reports &amp; Print</span>
           </button>
         </div>
       </header>
@@ -1050,6 +1164,23 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* High-Priority Active Anomalies Widget (Using Real-Time Telemetry to Highlight Urgent Health & Safety Deviations) */}
+      <ActiveAnomaliesWidget
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        isSpeaking={isSpeaking}
+      />
+
       {/* Incident Hotspots Summary Widget (Text-Based Natural Language Generation) */}
       <IncidentHotspotsWidget
         alerts={activeAlerts}
@@ -1109,6 +1240,31 @@ export default function ManagerDashboard() {
         onToggleStream={handleToggleStream}
         onSetAllStreams={handleSetAllStreams}
         recentTelemetryPoint={telemetryStream[telemetryStream.length - 1]}
+      />
+
+      {/* Historical Workforce Health Signal Data Line Chart (Last 24 Hours via Recharts) */}
+      <HistoricalWorkforceHealthChart
+        data={telemetryStream}
+        zoneName={activeZoneObj.name}
+        activeThresholdCutoff={kalmanConfig.criticalCutoffPct}
+        thresholds={healthThresholds}
+        onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
+        onExportCsv={handleExportWorkforceCsv}
+        externalIsolatedSignal={isolatedHealthSignal}
+        onSignalIsolationChange={setIsolatedHealthSignal}
+      />
+
+      {/* Chronological Anomaly Log Panel below Line Chart */}
+      <ChronologicalAnomalyLogPanel
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => setSelectedZone(zoneId)}
+        onSpeakAlert={handleSpeakAlert}
+        onIsolateSignalInChart={(sigKey) => setIsolatedHealthSignal(sigKey)}
+        isSpeaking={isSpeaking}
       />
 
       {/* Sliding 24-Hour Recharts Telemetry Stream with 1-Hour Forecast */}
@@ -1373,17 +1529,25 @@ export default function ManagerDashboard() {
               <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
             </button>
             <button
-              onClick={() => setIsReportModalOpen(true)}
-              className="bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-emerald-600/40 flex items-center gap-1.5 shadow-sm"
+              onClick={handleExportWorkforceCsv}
+              className="bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-emerald-500/50 flex items-center gap-1.5 shadow-sm"
+              title="Download 24-hour historical health telemetry as CSV"
             >
               <Download className="h-4 w-4 text-emerald-400" />
-              <span>Compliance CSV / Print</span>
+              <span>Export Health CSV (24h)</span>
+            </button>
+            <button
+              onClick={() => setIsReportModalOpen(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
+              <span>Compliance Reports</span>
             </button>
             <button
               onClick={() => setIsAuditModalOpen(true)}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5"
             >
-              <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
+              <ShieldCheck className="h-4 w-4 text-indigo-400" />
               <span>Audit Log</span>
             </button>
           </div>
@@ -1476,6 +1640,16 @@ export default function ManagerDashboard() {
         onUpdateSettings={setVoiceSettings}
         isSpeaking={isSpeaking}
         onStopSpeaking={handleStopSpeaking}
+      />
+
+      {/* Workforce Health Signal Notification Thresholds Configuration Modal */}
+      <HealthThresholdsConfigModal
+        isOpen={isHealthThresholdsModalOpen}
+        onClose={() => setIsHealthThresholdsModalOpen(false)}
+        currentThresholds={healthThresholds}
+        onSaveThresholds={handleSaveHealthThresholds}
+        zones={zones}
+        activeZoneId={selectedZone}
       />
     </div>
   );

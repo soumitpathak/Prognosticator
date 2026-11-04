@@ -27,6 +27,20 @@ export interface KalmanSensitivityConfig {
   suppressSmallCells: boolean;
 }
 
+export interface HealthSignalNotificationThresholds {
+  minHrvMs: number; // minimum acceptable HRV (ms) before trigger
+  maxHrvDropPct: number; // maximum acceptable HRV drop (%)
+  maxSkinTempC: number; // maximum core/skin temperature (°C)
+  maxAmbientHeatC: number; // maximum ambient temperature (°C)
+  maxNoiseDb: number; // maximum acoustic noise limit (dBA)
+  minTwlIndex: number; // minimum Thermal Work Limit (W/m²)
+  riskScoreCutoffPct: number; // composite risk score cutoff (%)
+  enableSmsRadioDispatch: boolean;
+  enableVoiceAlerts: boolean;
+  enableInAppBeacon: boolean;
+  applicableZoneId: string; // 'ALL' or specific zone ID
+}
+
 export interface AnomalyPredictionResult {
   status: 'success' | 'suppressed';
   worker_id: string;

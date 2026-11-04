@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,7 +22,9 @@ import {
   AlertTriangle,
   TrendingUp,
   Sparkles,
-  Sliders
+  Sliders,
+  Calendar,
+  CheckCircle2
 } from 'lucide-react';
 
 interface TelemetryChartsProps {
@@ -31,19 +33,26 @@ interface TelemetryChartsProps {
   streamToggles?: SensorStreamToggles;
 }
 
-interface ChartDataWithForecast extends Partial<TelemetryDataPoint> {
+interface ChartDataWithForecastAndMA extends Partial<TelemetryDataPoint> {
   timeLabel: string;
   isForecast?: boolean;
   forecast_temp?: number;
   forecast_noise?: number;
   forecast_hrv?: number;
   forecast_risk?: number;
+  ma_temp?: number;
+  ma_noise?: number;
+  ma_hrv?: number;
+  ma_risk?: number;
+  formattedClock?: string;
+  formattedDate?: string;
 }
 
 export default function TelemetryCharts({ data, zoneName, streamToggles }: TelemetryChartsProps) {
   const [activeMetric, setActiveMetric] = useState<'temp' | 'noise' | 'hrv' | 'combined'>('temp');
   const [windowHours, setWindowHours] = useState<number>(24);
   const [showForecast, setShowForecast] = useState<boolean>(true);
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(true);
 
   // Filter based on selected time window (data frequency is 15min, so 4 points/hour)
   const pointsToShow = Math.min(data.length, windowHours * 4);
@@ -77,47 +86,198 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
 
   const lastPoint = historicalSlice[historicalSlice.length - 1] || data[data.length - 1];
 
-  // Construct combined historical + forecast dataset
-  const combinedData: ChartDataWithForecast[] = historicalSlice.map((d, idx) => {
-    const isLast = idx === historicalSlice.length - 1;
-    return {
-      ...d,
-      isForecast: false,
-      // Connect forecast line seamlessly from the last historical point
-      forecast_temp: isLast ? d.ambient_temp_c : undefined,
-      forecast_noise: isLast ? (d.noise_db ?? d.smoothed_noise_db) : undefined,
-      forecast_hrv: isLast ? d.smoothed_hrv : undefined,
-      forecast_risk: isLast ? d.risk_score : undefined
-    };
-  });
+  // Moving Average Window: 16 intervals (4 hours)
+  const maWindow = 16;
 
-  // Generate 4 forecast steps (15-min intervals: +15m, +30m, +45m, +60m)
-  if (showForecast && lastPoint) {
-    const forecastIntervals = ['+15m', '+30m', '+45m', '+60m'];
-    forecastIntervals.forEach((intervalLabel, stepIdx) => {
-      const step = stepIdx + 1;
-      const projTemp = Math.min(52, Math.max(20, Number((lastPoint.ambient_temp_c + tempSlope * step).toFixed(1))));
-      const projNoise = Math.min(120, Math.max(55, Number(((lastPoint.noise_db ?? 75) + noiseSlope * step).toFixed(1))));
-      const projHrv = Math.min(85, Math.max(20, Number((lastPoint.smoothed_hrv + hrvSlope * step).toFixed(1))));
-      const projRisk = Math.min(100, Math.max(0, Number((lastPoint.risk_score + riskSlope * step).toFixed(1))));
+  // Construct combined historical + forecast + moving average dataset
+  const combinedData: ChartDataWithForecastAndMA[] = useMemo(() => {
+    const historicalWithMA: ChartDataWithForecastAndMA[] = historicalSlice.map((d, idx) => {
+      const isLast = idx === historicalSlice.length - 1;
 
-      combinedData.push({
-        timeLabel: `${intervalLabel} (Proj)`,
-        timestamp: new Date(Date.now() + step * 15 * 60 * 1000).toISOString(),
-        isForecast: true,
-        forecast_temp: projTemp,
-        forecast_noise: projNoise,
-        forecast_hrv: projHrv,
-        forecast_risk: projRisk
-      });
+      // Calculate rolling window moving averages
+      const startIdx = Math.max(0, idx - maWindow + 1);
+      const sub = historicalSlice.slice(startIdx, idx + 1);
+      const count = sub.length;
+
+      const maTemp = Number((sub.reduce((acc, p) => acc + p.ambient_temp_c, 0) / count).toFixed(2));
+      const maNoise = Number((sub.reduce((acc, p) => acc + (p.noise_db ?? p.raw_noise_db ?? 75), 0) / count).toFixed(2));
+      const maHrv = Number((sub.reduce((acc, p) => acc + p.smoothed_hrv, 0) / count).toFixed(2));
+      const maRisk = Number((sub.reduce((acc, p) => acc + p.risk_score, 0) / count).toFixed(2));
+
+      const dateObj = new Date(d.timestamp);
+      const formattedClock = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      const formattedDate = dateObj.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+      return {
+        ...d,
+        isForecast: false,
+        formattedClock,
+        formattedDate,
+        ma_temp: maTemp,
+        ma_noise: maNoise,
+        ma_hrv: maHrv,
+        ma_risk: maRisk,
+        // Connect forecast line seamlessly from the last historical point
+        forecast_temp: isLast ? d.ambient_temp_c : undefined,
+        forecast_noise: isLast ? (d.noise_db ?? d.smoothed_noise_db) : undefined,
+        forecast_hrv: isLast ? d.smoothed_hrv : undefined,
+        forecast_risk: isLast ? d.risk_score : undefined
+      };
     });
-  }
+
+    // Generate 4 forecast steps (15-min intervals: +15m, +30m, +45m, +60m)
+    if (showForecast && lastPoint) {
+      const forecastIntervals = ['+15m', '+30m', '+45m', '+60m'];
+      forecastIntervals.forEach((intervalLabel, stepIdx) => {
+        const step = stepIdx + 1;
+        const projTemp = Math.min(52, Math.max(20, Number((lastPoint.ambient_temp_c + tempSlope * step).toFixed(1))));
+        const projNoise = Math.min(120, Math.max(55, Number(((lastPoint.noise_db ?? 75) + noiseSlope * step).toFixed(1))));
+        const projHrv = Math.min(85, Math.max(20, Number((lastPoint.smoothed_hrv + hrvSlope * step).toFixed(1))));
+        const projRisk = Math.min(100, Math.max(0, Number((lastPoint.risk_score + riskSlope * step).toFixed(1))));
+
+        const futureTime = new Date(Date.now() + step * 15 * 60 * 1000);
+
+        historicalWithMA.push({
+          timeLabel: `${intervalLabel} (Proj)`,
+          timestamp: futureTime.toISOString(),
+          formattedClock: futureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
+          formattedDate: futureTime.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
+          isForecast: true,
+          forecast_temp: projTemp,
+          forecast_noise: projNoise,
+          forecast_hrv: projHrv,
+          forecast_risk: projRisk
+        });
+      });
+    }
+
+    return historicalWithMA;
+  }, [historicalSlice, showForecast, lastPoint, tempSlope, noiseSlope, hrvSlope, riskSlope]);
 
   const currentPoint = lastPoint;
   const maxNoise = Math.max(...historicalSlice.map((d) => d.raw_noise_db || 0));
   const maxTemp = Math.max(...historicalSlice.map((d) => d.ambient_temp_c || 0));
   const finalProjectedTemp = combinedData[combinedData.length - 1]?.forecast_temp ?? currentPoint?.ambient_temp_c;
   const tempDiff = Number((finalProjectedTemp - (currentPoint?.ambient_temp_c || 0)).toFixed(1));
+
+  // Custom High-Precision Telemetry Tooltip with exact timestamps and moving average deltas
+  const renderCustomTelemetryTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+
+    const pt = combinedData.find((d) => d.timeLabel === label) || payload[0]?.payload;
+    if (!pt) return null;
+
+    const isForecast = pt.isForecast;
+
+    return (
+      <div className="bg-slate-950/98 border border-sky-500/50 rounded-xl p-3.5 shadow-2xl backdrop-blur-xl text-xs font-sans max-w-xs space-y-2.5 z-50">
+        <div className="border-b border-slate-800 pb-2">
+          <div className="flex items-center justify-between gap-1.5 font-mono text-cyan-300">
+            <span className="font-bold flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-sky-400" />
+              {pt.formattedClock ? `${pt.formattedClock} UTC` : pt.timeLabel}
+            </span>
+            {isForecast ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                1H FORECAST
+              </span>
+            ) : pt.is_anomaly ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                DEVIATION
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                OBSERVED
+              </span>
+            )}
+          </div>
+          {pt.formattedDate && (
+            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+              {pt.formattedDate} • Zone: {zoneName}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-1 font-mono text-[11px]">
+          {/* Temperature */}
+          {(activeMetric === 'temp' || activeMetric === 'combined') && (
+            <div className="flex justify-between items-center py-0.5 text-amber-300">
+              <span className="flex items-center gap-1">
+                <Thermometer className="h-3 w-3" />
+                Ambient Temp:
+              </span>
+              <div className="text-right font-bold">
+                <span>{isForecast ? `${pt.forecast_temp?.toFixed(2)}°C` : `${pt.ambient_temp_c?.toFixed(2)}°C`}</span>
+                {!isForecast && showMovingAverage && pt.ma_temp && (
+                  <span className="text-[10px] text-slate-400 ml-1 font-normal">
+                    (4h MA: {pt.ma_temp.toFixed(1)}°C)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Noise */}
+          {(activeMetric === 'noise' || activeMetric === 'combined') && (
+            <div className="flex justify-between items-center py-0.5 text-rose-300">
+              <span className="flex items-center gap-1">
+                <Volume2 className="h-3 w-3" />
+                Acoustic Pressure:
+              </span>
+              <div className="text-right font-bold">
+                <span>{isForecast ? `${pt.forecast_noise?.toFixed(1)} dBA` : `${(pt.noise_db ?? pt.smoothed_noise_db)?.toFixed(2)} dBA`}</span>
+                {!isForecast && showMovingAverage && pt.ma_noise && (
+                  <span className="text-[10px] text-slate-400 ml-1 font-normal">
+                    (4h MA: {pt.ma_noise.toFixed(1)} dBA)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* HRV */}
+          {(activeMetric === 'hrv' || activeMetric === 'combined') && (
+            <div className="flex justify-between items-center py-0.5 text-cyan-300">
+              <span className="flex items-center gap-1">
+                <Filter className="h-3 w-3" />
+                Kalman HRV:
+              </span>
+              <div className="text-right font-bold">
+                <span>{isForecast ? `${pt.forecast_hrv?.toFixed(1)} ms` : `${pt.smoothed_hrv?.toFixed(2)} ms`}</span>
+                {!isForecast && showMovingAverage && pt.ma_hrv && (
+                  <span className="text-[10px] text-emerald-400 ml-1 font-normal">
+                    (4h MA: {pt.ma_hrv.toFixed(1)} ms)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Risk Score */}
+          <div className="flex justify-between items-center py-0.5 text-purple-300">
+            <span className="flex items-center gap-1">
+              <Activity className="h-3 w-3" />
+              Risk Score:
+            </span>
+            <div className="text-right font-bold">
+              <span>{isForecast ? `${pt.forecast_risk?.toFixed(1)}%` : `${pt.risk_score?.toFixed(1)}%`}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Line */}
+        <div className="pt-1.5 border-t border-slate-800 text-[10px] text-slate-400">
+          {isForecast ? (
+            <span className="text-sky-300 flex items-center gap-1">
+              <Sparkles className="h-3 w-3" /> Linear trajectory projected from 1.5-hour sensor velocity.
+            </span>
+          ) : (
+            <span>Kalman State Filter Verified (Measurement Variance R=0.10)</span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div id="telemetry-charts-card" className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-lg">
@@ -140,17 +300,31 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
 
         {/* Metric and Window Selectors */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Moving Average Overlay Toggle */}
+          <button
+            onClick={() => setShowMovingAverage((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
+              showMovingAverage
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-xs'
+                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+            title="Toggle 4-Hour Rolling Moving Average Overlay Line"
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
+            <span>4h Moving Avg {showMovingAverage ? '[ON]' : '[OFF]'}</span>
+          </button>
+
           {/* 1-Hour Forecast Toggle */}
           <button
             onClick={() => setShowForecast((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold transition ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
               showForecast
                 ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 shadow-xs'
                 : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
           >
-            <TrendingUp className="h-3.5 w-3.5 text-sky-400" />
-            <span>1-Hour Forecast Line {showForecast ? '[ON]' : '[OFF]'}</span>
+            <Sparkles className="h-3.5 w-3.5 text-sky-400" />
+            <span>1-Hr Forecast {showForecast ? '[ON]' : '[OFF]'}</span>
           </button>
 
           {/* Stream Selector Buttons */}
@@ -286,7 +460,7 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
         </div>
       </div>
 
-      {/* Main Recharts Area with Predictive Forecasting Line */}
+      {/* Main Recharts Area with Custom Tooltip and Moving Average Overlay */}
       <div className="w-full h-72">
         <ResponsiveContainer width="100%" height="100%">
           {activeMetric === 'temp' ? (
@@ -300,16 +474,7 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
               <XAxis dataKey="timeLabel" stroke="#64748b" tick={{ fontSize: 11 }} />
               <YAxis stroke="#64748b" domain={[24, 48]} tick={{ fontSize: 11 }} unit="°C" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#090d16',
-                  borderColor: '#334155',
-                  borderRadius: '0.75rem',
-                  fontSize: '12px',
-                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
-                }}
-                labelStyle={{ color: '#94a3b8', fontWeight: 600 }}
-              />
+              <Tooltip content={renderCustomTelemetryTooltip} cursor={{ stroke: '#f59e0b', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
               <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
               <ReferenceLine y={35} stroke="#f59e0b" strokeDasharray="3 3" label={{ value: '35°C Heat Stress', fill: '#f59e0b', fontSize: 10, position: 'top' }} />
               <ReferenceLine y={42} stroke="#ef4444" strokeDasharray="3 3" label={{ value: '42°C Severe Danger', fill: '#ef4444', fontSize: 10, position: 'top' }} />
@@ -331,6 +496,19 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
                 fill="url(#tempGradient)"
                 connectNulls={false}
               />
+              {showMovingAverage && (
+                <Line
+                  type="monotone"
+                  dataKey="ma_temp"
+                  name="4h Moving Average Trend (°C)"
+                  stroke="#34d399"
+                  strokeWidth={2.5}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  activeDot={{ r: 5, fill: '#34d399' }}
+                  connectNulls={false}
+                />
+              )}
               {showForecast && (
                 <Line
                   type="monotone"
@@ -355,15 +533,7 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
               <XAxis dataKey="timeLabel" stroke="#64748b" tick={{ fontSize: 11 }} />
               <YAxis stroke="#64748b" domain={[60, 115]} tick={{ fontSize: 11 }} unit=" dB" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#090d16',
-                  borderColor: '#334155',
-                  borderRadius: '0.75rem',
-                  fontSize: '12px'
-                }}
-                labelStyle={{ color: '#94a3b8', fontWeight: 600 }}
-              />
+              <Tooltip content={renderCustomTelemetryTooltip} cursor={{ stroke: '#f43f5e', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
               <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
               <ReferenceLine y={85} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: '85 dB OSHA Limit', fill: '#f59e0b', fontSize: 10, position: 'insideTopRight' }} />
               {currentPoint && (
@@ -393,6 +563,19 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
                 fill="url(#noiseGradient)"
                 connectNulls={false}
               />
+              {showMovingAverage && (
+                <Line
+                  type="monotone"
+                  dataKey="ma_noise"
+                  name="4h Moving Average Noise (dB)"
+                  stroke="#34d399"
+                  strokeWidth={2.5}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  activeDot={{ r: 5, fill: '#34d399' }}
+                  connectNulls={false}
+                />
+              )}
               {showForecast && (
                 <Line
                   type="monotone"
@@ -411,15 +594,7 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
               <XAxis dataKey="timeLabel" stroke="#64748b" tick={{ fontSize: 11 }} />
               <YAxis stroke="#64748b" domain={[20, 80]} tick={{ fontSize: 11 }} unit=" ms" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#090d16',
-                  borderColor: '#334155',
-                  borderRadius: '0.75rem',
-                  fontSize: '12px'
-                }}
-                labelStyle={{ color: '#94a3b8', fontWeight: 600 }}
-              />
+              <Tooltip content={renderCustomTelemetryTooltip} cursor={{ stroke: '#06b6d4', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
               <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
               <ReferenceLine y={40} stroke="#f43f5e" strokeDasharray="3 3" label={{ value: '40ms Critical Fatigue', fill: '#f43f5e', fontSize: 10 }} />
               {currentPoint && (
@@ -448,6 +623,19 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
                 dot={false}
                 connectNulls={false}
               />
+              {showMovingAverage && (
+                <Line
+                  type="monotone"
+                  dataKey="ma_hrv"
+                  name="4h Moving Average Trend (HRV)"
+                  stroke="#34d399"
+                  strokeWidth={2.8}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  activeDot={{ r: 5, fill: '#34d399', stroke: '#fff', strokeWidth: 1.5 }}
+                  connectNulls={false}
+                />
+              )}
               {showForecast && (
                 <Line
                   type="monotone"
@@ -467,15 +655,7 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               <XAxis dataKey="timeLabel" stroke="#64748b" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" stroke="#64748b" domain={[20, 110]} tick={{ fontSize: 11 }} />
               <YAxis yAxisId="right" orientation="right" stroke="#64748b" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#090d16',
-                  borderColor: '#334155',
-                  borderRadius: '0.75rem',
-                  fontSize: '12px'
-                }}
-                labelStyle={{ color: '#94a3b8', fontWeight: 600 }}
-              />
+              <Tooltip content={renderCustomTelemetryTooltip} cursor={{ stroke: '#a855f7', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
               <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
               {currentPoint && (
                 <ReferenceLine
@@ -494,6 +674,19 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               )}
               {(!streamToggles || streamToggles.hrvDrop) && (
                 <Line yAxisId="left" type="monotone" dataKey="smoothed_hrv" name="Kalman HRV (ms)" stroke="#06b6d4" strokeWidth={2} dot={false} connectNulls={false} />
+              )}
+              {showMovingAverage && (!streamToggles || streamToggles.hrvDrop) && (
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="ma_hrv"
+                  name="4h Moving Avg (HRV Trend)"
+                  stroke="#34d399"
+                  strokeWidth={2.5}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  connectNulls={false}
+                />
               )}
               {(!streamToggles || streamToggles.riskScore) && (
                 <Line yAxisId="right" type="monotone" dataKey="risk_score" name="Risk %" stroke="#a855f7" strokeWidth={2.5} dot={false} connectNulls={false} />
@@ -522,10 +715,20 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
           <Clock className="h-3 w-3 text-cyan-400" />
           Sliding 24-hr buffer: Continuous rolling window (15-min intervals)
         </span>
-        <span className="flex items-center gap-1 text-sky-400">
-          <Sparkles className="h-3 w-3" />
-          Projected 1-Hour Forecast: Extrapolates 4 intervals (+15m, +30m, +45m, +60m) via trend velocity
-        </span>
+        <div className="flex items-center gap-3">
+          {showMovingAverage && (
+            <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+              <TrendingUp className="h-3 w-3" />
+              4-Hour Moving Average Overlay Active
+            </span>
+          )}
+          {showForecast && (
+            <span className="flex items-center gap-1 text-sky-400">
+              <Sparkles className="h-3 w-3" />
+              1-Hour Projected Forecast
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
