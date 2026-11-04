@@ -38,6 +38,7 @@ export interface HealthSignalNotificationThresholds {
   maxHeartRateBpm?: number; // maximum allowable heart rate in beats per minute (e.g. 115 bpm)
   dailyAnomalyFrequencyThreshold?: number; // e.g. 5 events/day
   criticalDailyFrequencyThreshold?: number; // e.g. 3 events/day
+  proactiveRiskThreshold?: number; // 7-day moving average projected safe level (e.g. 5.5 events/day)
   sensitivityLevel?: 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM';
   enableSmsRadioDispatch: boolean;
   enableVoiceAlerts: boolean;
@@ -520,6 +521,11 @@ export interface AnomalyTrendDay {
   primaryDriver: string;
   isHeatwavePeriod: boolean;
   zoneCounts: Record<string, number>;
+  // Comparison with Previous 30-Day Period
+  prevPeriodAnomalies?: number;
+  prevPeriodCritical?: number;
+  prevPeriodDate?: string;
+  periodVariancePct?: number;
 }
 
 // ==========================================
@@ -548,4 +554,39 @@ export interface DepartmentHeatmapRow {
     evening: number;
     night: number;
   };
+}
+
+// ==========================================
+// Real-Time Critical Anomaly Toast Notification Types
+// ==========================================
+
+export interface CriticalAnomalyToastData {
+  id: string;
+  anomalyId: string;
+  timestamp: string;
+  timeFormatted: string;
+  department: string;
+  zoneId: string;
+  zoneName: string;
+  confidenceLevel: number; // 0.0 to 1.0 (e.g. 0.948)
+  confidenceLevelFormatted: string; // e.g. "94.8%"
+  reconstructionMse: number;
+  anomalyMetric: string;
+  measuredValue: string;
+  thresholdLimit: string;
+  recommendedAction: string;
+  workerPseudonym: string;
+  cohortCount: number;
+  privacyNotice: string;
+  createdAt: number;
+  autoDismissMs: number;
+  acknowledged: boolean;
+}
+
+export interface AnomalyTrendDayWithProjection extends AnomalyTrendDay {
+  isProjected?: boolean;
+  projectedTrend?: number | null;
+  projectedUpper?: number | null;
+  projectedLower?: number | null;
+  projectedConfidence?: number;
 }

@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { AnomalyTrendDay, FacilityZone, ActiveAnomalyAlert, HealthSignalNotificationThresholds } from '../types';
+import { AnomalyTrendDay, AnomalyTrendDayWithProjection, FacilityZone, ActiveAnomalyAlert, HealthSignalNotificationThresholds } from '../types';
 
 /**
  * 30-Day Anomaly Trend Frequency Intelligence Service
@@ -102,6 +102,48 @@ export function generate30DayAnomalyTrend(
     const isHeatwave = entry.dayOffset >= 13 && entry.dayOffset <= 19;
     const ratePer100 = Number(((totalRaw / (isAll ? 85 : targetZone?.count || 25)) * 100).toFixed(1));
 
+    // Calibrated previous 30-day period baseline (Days 30-59 prior: Sept 05 - Oct 05, 2026)
+    // Reflects early late-summer operational conditions prior to automated misting tent deployment
+    const prevDailyPattern = [
+      { total: 7, crit: 2 },
+      { total: 8, crit: 3 },
+      { total: 7, crit: 2 },
+      { total: 6, crit: 2 },
+      { total: 4, crit: 1 },
+      { total: 4, crit: 1 },
+      { total: 9, crit: 3 },
+      { total: 10, crit: 4 },
+      { total: 11, crit: 4 },
+      { total: 12, crit: 5 },
+      { total: 13, crit: 5 },
+      { total: 5, crit: 2 },
+      { total: 6, crit: 2 },
+      { total: 14, crit: 6 },
+      { total: 16, crit: 7 }, // Previous period peak day
+      { total: 15, crit: 6 },
+      { total: 13, crit: 5 },
+      { total: 11, crit: 4 },
+      { total: 6, crit: 2 },
+      { total: 7, crit: 2 },
+      { total: 10, crit: 4 },
+      { total: 9, crit: 3 },
+      { total: 8, crit: 3 },
+      { total: 7, crit: 2 },
+      { total: 6, crit: 2 },
+      { total: 4, crit: 1 },
+      { total: 5, crit: 1 },
+      { total: 8, crit: 3 },
+      { total: 9, crit: 3 },
+      { total: 10, crit: 4 }
+    ];
+
+    const prevEntry = prevDailyPattern[idx] || { total: 8, crit: 3 };
+    const prevTotal = isAll ? prevEntry.total : Math.max(1, Math.round(prevEntry.total * scaleFactor));
+    const prevCrit = isAll ? prevEntry.crit : Math.min(prevTotal, Math.round(prevEntry.crit * scaleFactor));
+    const prevDateObj = new Date(dayDate.getTime() - 30 * 86400000);
+    const prevDateFormatted = prevDateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+    const diffPct = prevTotal > 0 ? Number((((totalRaw - prevTotal) / prevTotal) * 100).toFixed(1)) : 0;
+
     result.push({
       dayIndex: idx,
       date: dateFormatted,
@@ -118,7 +160,11 @@ export function generate30DayAnomalyTrend(
       peakHour: '13:30 - 15:45',
       primaryDriver: entry.driver,
       isHeatwavePeriod: isHeatwave,
-      zoneCounts: zoneDistribution
+      zoneCounts: zoneDistribution,
+      prevPeriodAnomalies: prevTotal,
+      prevPeriodCritical: prevCrit,
+      prevPeriodDate: prevDateFormatted,
+      periodVariancePct: diffPct
     });
   });
 
@@ -131,6 +177,83 @@ export function generate30DayAnomalyTrend(
   }
 
   return result;
+}
+
+/**
+ * Extends the 30-day historical anomaly trend with a 7-day predicted moving average projection
+ * including upper and lower confidence uncertainty boundaries for shaded visualization in Recharts.
+ */
+export function generate30DayAnomalyTrendWithProjection(
+  zones: FacilityZone[],
+  selectedZoneId = 'ALL'
+): AnomalyTrendDayWithProjection[] {
+  const historical = generate30DayAnomalyTrend(zones, selectedZoneId);
+
+  // Compute Simple Moving Average (SMA) over the last 7 historical days
+  const last7Days = historical.slice(-7);
+  const smaRecent = last7Days.reduce((acc, curr) => acc + curr.totalAnomalies, 0) / (last7Days.length || 1);
+
+  // Compute variance & standard deviation across recent window for confidence bounds
+  const variance =
+    last7Days.reduce((acc, curr) => acc + Math.pow(curr.totalAnomalies - smaRecent, 2), 0) / (last7Days.length || 1);
+  const stdDev = Math.max(0.8, Math.sqrt(variance));
+
+  const lastDay = historical[historical.length - 1];
+  const lastDateTime = new Date('2026-11-04T09:30:00').getTime();
+
+  // Map historical days: bridge point links seamlessly to predicted line
+  const combined: AnomalyTrendDayWithProjection[] = historical.map((d, idx) => {
+    const isBridgePoint = idx === historical.length - 1;
+    return {
+      ...d,
+      isProjected: false,
+      projectedTrend: isBridgePoint ? d.totalAnomalies : null,
+      projectedUpper: isBridgePoint ? d.totalAnomalies : null,
+      projectedLower: isBridgePoint ? d.totalAnomalies : null,
+      projectedConfidence: 98
+    };
+  });
+
+  // Project next 7 days using Simple Moving Average
+  for (let i = 1; i <= 7; i++) {
+    const nextTime = new Date(lastDateTime + i * 86400000);
+    const dateFormatted = nextTime.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+    const fullDateIso = nextTime.toISOString().slice(0, 10);
+    const dayOfWeek = nextTime.toLocaleDateString('en-US', { weekday: 'short' });
+    const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
+
+    // Projected mean using SMA (with realistic weekend operational moderation)
+    const projectedVal = Number((isWeekend ? Math.max(1, smaRecent * 0.58) : smaRecent).toFixed(1));
+    const margin = Number((stdDev * 1.45 + i * 0.12).toFixed(1));
+    const upper = Number((projectedVal + margin).toFixed(1));
+    const lower = Number(Math.max(0, projectedVal - margin).toFixed(1));
+
+    combined.push({
+      dayIndex: 29 + i,
+      date: dateFormatted,
+      fullDate: fullDateIso,
+      dayOfWeek,
+      totalAnomalies: 0,
+      criticalCount: Number((projectedVal * 0.33).toFixed(1)),
+      moderateCount: Number((projectedVal * 0.67).toFixed(1)),
+      resolvedCount: Number((projectedVal * 0.85).toFixed(1)),
+      movingAvg7d: projectedVal,
+      anomalyRatePer100: Number(((projectedVal / 85) * 100).toFixed(1)),
+      avgAmbientTempC: Number((34.8 - i * 0.25).toFixed(1)),
+      avgHrvMs: Number((62 + i * 0.4).toFixed(1)),
+      peakHour: '13:00 - 15:30 (Forecasted)',
+      primaryDriver: 'Projected 7-Day SMA Baseline (Moving Average Drift)',
+      isHeatwavePeriod: false,
+      zoneCounts: {},
+      isProjected: true,
+      projectedTrend: projectedVal,
+      projectedUpper: upper,
+      projectedLower: lower,
+      projectedConfidence: Math.max(82, Math.round(95 - i * 1.8))
+    });
+  }
+
+  return combined;
 }
 
 export interface AnomalyTrendSummaryStats {
@@ -147,6 +270,9 @@ export interface AnomalyTrendSummaryStats {
   };
   trendComparisonPct: number; // Comparison of last 14 days vs prior 14 days
   mitigationResolutionRate: number; // % resolved/stabilized
+  prevPeriodTotal30d: number;
+  prevPeriodCritical30d: number;
+  periodComparisonDeltaPct: number; // e.g. -14.7% change vs previous 30 days
 }
 
 export function computeTrendSummary(data: AnomalyTrendDay[]): AnomalyTrendSummaryStats {
@@ -159,7 +285,10 @@ export function computeTrendSummary(data: AnomalyTrendDay[]): AnomalyTrendSummar
       dailyMeanFrequency: 0,
       peakDay: { date: 'N/A', total: 0, critical: 0, driver: 'None' },
       trendComparisonPct: 0,
-      mitigationResolutionRate: 0
+      mitigationResolutionRate: 0,
+      prevPeriodTotal30d: 0,
+      prevPeriodCritical30d: 0,
+      periodComparisonDeltaPct: 0
     };
   }
 
@@ -168,6 +297,11 @@ export function computeTrendSummary(data: AnomalyTrendDay[]): AnomalyTrendSummar
   const moderate = data.reduce((acc, d) => acc + d.moderateCount, 0);
   const resolved = data.reduce((acc, d) => acc + d.resolvedCount, 0);
   const dailyMean = Number((total / data.length).toFixed(1));
+
+  // Previous 30-day period aggregates
+  const prevTotal = data.reduce((acc, d) => acc + (d.prevPeriodAnomalies || 0), 0);
+  const prevCritical = data.reduce((acc, d) => acc + (d.prevPeriodCritical || 0), 0);
+  const periodDelta = prevTotal > 0 ? Number((((total - prevTotal) / prevTotal) * 100).toFixed(1)) : 0;
 
   let peak = data[0];
   for (const day of data) {
@@ -195,7 +329,10 @@ export function computeTrendSummary(data: AnomalyTrendDay[]): AnomalyTrendSummar
       driver: peak.primaryDriver
     },
     trendComparisonPct: trendPct,
-    mitigationResolutionRate: resolutionRate
+    mitigationResolutionRate: resolutionRate,
+    prevPeriodTotal30d: prevTotal,
+    prevPeriodCritical30d: prevCritical,
+    periodComparisonDeltaPct: periodDelta
   };
 }
 

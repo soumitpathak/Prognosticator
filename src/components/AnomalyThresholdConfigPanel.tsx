@@ -19,7 +19,7 @@ import {
   Zap,
   Target
 } from 'lucide-react';
-import { HealthSignalNotificationThresholds, AnomalyTrendDay, FacilityZone } from '../types';
+import { HealthSignalNotificationThresholds, AnomalyTrendDay, AnomalyTrendDayWithProjection, FacilityZone } from '../types';
 
 interface AnomalyThresholdConfigPanelProps {
   thresholds: HealthSignalNotificationThresholds;
@@ -32,10 +32,13 @@ interface AnomalyThresholdConfigPanelProps {
   onDailyFrequencyThresholdChange: (val: number) => void;
   criticalFrequencyThreshold: number;
   onCriticalFrequencyThresholdChange: (val: number) => void;
+  proactiveRiskThreshold?: number;
+  onProactiveRiskThresholdChange?: (val: number) => void;
   sensitivityLevel: 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM';
   onSensitivityLevelChange: (lvl: 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM') => void;
   onScrollToTrendChart?: () => void;
   selectedZone: FacilityZone;
+  onTriggerPreemptiveAlert?: () => void;
 }
 
 export default function AnomalyThresholdConfigPanel({
@@ -46,14 +49,20 @@ export default function AnomalyThresholdConfigPanel({
   onDailyFrequencyThresholdChange,
   criticalFrequencyThreshold,
   onCriticalFrequencyThresholdChange,
+  proactiveRiskThreshold = 5.5,
+  onProactiveRiskThresholdChange,
   sensitivityLevel,
   onSensitivityLevelChange,
   onScrollToTrendChart,
-  selectedZone
+  selectedZone,
+  onTriggerPreemptiveAlert
 }: AnomalyThresholdConfigPanelProps) {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [localDailyLimit, setLocalDailyLimit] = useState<number>(dailyFrequencyThreshold);
   const [localCriticalLimit, setLocalCriticalLimit] = useState<number>(criticalFrequencyThreshold);
+  const [localProactiveRiskLimit, setLocalProactiveRiskLimit] = useState<number>(
+    proactiveRiskThreshold ?? thresholds.proactiveRiskThreshold ?? 5.5
+  );
   const [localRiskCutoff, setLocalRiskCutoff] = useState<number>(thresholds.riskScoreCutoffPct);
   const [localHrvFloor, setLocalHrvFloor] = useState<number>(thresholds.minHrvMs);
   const [localMaxTemp, setLocalMaxTemp] = useState<number>(thresholds.maxAmbientHeatC);
@@ -65,17 +74,38 @@ export default function AnomalyThresholdConfigPanel({
   React.useEffect(() => {
     setLocalDailyLimit(dailyFrequencyThreshold);
     setLocalCriticalLimit(criticalFrequencyThreshold);
+    setLocalProactiveRiskLimit(proactiveRiskThreshold ?? thresholds.proactiveRiskThreshold ?? 5.5);
     setLocalRiskCutoff(thresholds.riskScoreCutoffPct);
     setLocalHrvFloor(thresholds.minHrvMs);
     setLocalMaxTemp(thresholds.maxAmbientHeatC);
     setLocalMaxNoise(thresholds.maxNoiseDb);
-  }, [dailyFrequencyThreshold, criticalFrequencyThreshold, thresholds]);
+  }, [dailyFrequencyThreshold, criticalFrequencyThreshold, proactiveRiskThreshold, thresholds]);
+
+  // Peak 7-day moving average projection across the projected forecast window
+  const peakForecastSma = useMemo(() => {
+    const projectedItems = (trendData as AnomalyTrendDayWithProjection[]).filter(
+      (d) => d.isProjected && d.projectedTrend != null
+    );
+    if (projectedItems.length > 0) {
+      const maxVal = Math.max(...projectedItems.map((d) => d.projectedTrend || 0));
+      return Number(maxVal.toFixed(1));
+    }
+    // Fallback if not projected
+    const last7 = trendData.slice(-7);
+    if (last7.length === 0) return 4.8;
+    const avg = last7.reduce((acc, d) => acc + d.totalAnomalies, 0) / last7.length;
+    return Number(avg.toFixed(1));
+  }, [trendData]);
+
+  const isProactiveRiskBreached = peakForecastSma > localProactiveRiskLimit;
+  const exceedanceDelta = Number((peakForecastSma - localProactiveRiskLimit).toFixed(1));
 
   // Handle Preset Selection
   const handleSelectPreset = (preset: 'HIGH' | 'MEDIUM' | 'LOW') => {
     onSensitivityLevelChange(preset);
     let newDaily = 5;
     let newCrit = 3;
+    let newProactive = 5.5;
     let newRisk = 65;
     let newHrv = 40;
     let newTemp = 36.0;
@@ -83,12 +113,14 @@ export default function AnomalyThresholdConfigPanel({
     if (preset === 'HIGH') {
       newDaily = 3;
       newCrit = 2;
+      newProactive = 3.5;
       newRisk = 55;
       newHrv = 45;
       newTemp = 34.5;
     } else if (preset === 'LOW') {
       newDaily = 8;
       newCrit = 5;
+      newProactive = 7.5;
       newRisk = 75;
       newHrv = 35;
       newTemp = 38.0;
@@ -96,12 +128,16 @@ export default function AnomalyThresholdConfigPanel({
 
     setLocalDailyLimit(newDaily);
     setLocalCriticalLimit(newCrit);
+    setLocalProactiveRiskLimit(newProactive);
     setLocalRiskCutoff(newRisk);
     setLocalHrvFloor(newHrv);
     setLocalMaxTemp(newTemp);
 
     onDailyFrequencyThresholdChange(newDaily);
     onCriticalFrequencyThresholdChange(newCrit);
+    if (onProactiveRiskThresholdChange) {
+      onProactiveRiskThresholdChange(newProactive);
+    }
   };
 
   // Compute live impact on existing 30-day trend data
@@ -128,11 +164,20 @@ export default function AnomalyThresholdConfigPanel({
     onSensitivityLevelChange('CUSTOM');
   };
 
+  const handleProactiveRiskSliderChange = (val: number) => {
+    setLocalProactiveRiskLimit(val);
+    if (onProactiveRiskThresholdChange) {
+      onProactiveRiskThresholdChange(val);
+    }
+    onSensitivityLevelChange('CUSTOM');
+  };
+
   const handleSaveAllThresholds = () => {
     const updated: HealthSignalNotificationThresholds = {
       ...thresholds,
       dailyAnomalyFrequencyThreshold: localDailyLimit,
       criticalDailyFrequencyThreshold: localCriticalLimit,
+      proactiveRiskThreshold: localProactiveRiskLimit,
       riskScoreCutoffPct: localRiskCutoff,
       minHrvMs: localHrvFloor,
       maxAmbientHeatC: localMaxTemp,
@@ -142,11 +187,11 @@ export default function AnomalyThresholdConfigPanel({
 
     onUpdateThresholds(
       updated,
-      justification || `Applied custom ${sensitivityLevel} anomaly sensitivity thresholds (Action limit: ${localDailyLimit}/day, Risk cutoff: ${localRiskCutoff}%).`
+      justification || `Applied custom ${sensitivityLevel} thresholds (Action: ${localDailyLimit}/day, Proactive Risk: ${localProactiveRiskLimit}/day, Risk cutoff: ${localRiskCutoff}%).`
     );
 
     setSaveSuccessNotice(
-      `Custom thresholds applied: Action limit ${localDailyLimit}/day, Critical limit ${localCriticalLimit}/day, Risk cutoff ${localRiskCutoff}%. Logged to System Audit Trail.`
+      `Custom thresholds applied: Action ${localDailyLimit}/day, Proactive Risk safe level ${localProactiveRiskLimit}/day, Critical limit ${localCriticalLimit}/day. Logged to System Audit Trail.`
     );
     setTimeout(() => setSaveSuccessNotice(null), 5000);
   };
@@ -266,9 +311,102 @@ export default function AnomalyThresholdConfigPanel({
             </div>
           </div>
 
+          {/* Pre-Emptive Alert Trigger Banner if 7-day Moving Avg Projection exceeds Safe Threshold */}
+          {isProactiveRiskBreached && (
+            <div className="bg-amber-950/90 border border-amber-500/70 p-3.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-200 shadow-lg animate-in fade-in">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-lg bg-amber-900/60 border border-amber-500/60 text-amber-300 shrink-0">
+                  <AlertTriangle className="h-4 w-4 animate-bounce" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <strong className="text-white font-bold">PRE-EMPTIVE PROACTIVE RISK ALERT TRIGGERED</strong>
+                    <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded font-bold uppercase">
+                      Forecast Exceedance: +{exceedanceDelta}/day
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-300/90 mt-0.5">
+                    The 7-day moving average projection reaches <strong>{peakForecastSma} events/day</strong>, exceeding your configured safe proactive risk limit of <strong>{localProactiveRiskLimit} events/day</strong>. Pre-emptive intervention is armed before an acute critical spike occurs.
+                  </p>
+                </div>
+              </div>
+              {onTriggerPreemptiveAlert && (
+                <button
+                  onClick={onTriggerPreemptiveAlert}
+                  className="flex items-center space-x-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer shadow-sm shrink-0"
+                  title="Broadcast pre-emptive warning toast to safety managers"
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  <span>Send Pre-Emptive Alert</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Granular Sliders Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {/* 1. Daily Anomaly Frequency Action Benchmark (Visualized on Chart) */}
+            {/* 1. Proactive Risk Threshold Slider (7-Day SMA Projection) */}
+            <div
+              className={`p-3.5 rounded-xl shadow-xs relative overflow-hidden transition-all ${
+                isProactiveRiskBreached
+                  ? 'bg-amber-950/40 border-2 border-amber-500/70 shadow-amber-950/30'
+                  : 'bg-slate-950/90 border border-amber-500/40'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                  'Proactive Risk' Threshold Slider
+                </span>
+                <span
+                  className={`text-sm font-mono font-bold px-2 py-0.5 rounded border ${
+                    isProactiveRiskBreached
+                      ? 'bg-amber-950 text-amber-300 border-amber-500 font-extrabold animate-pulse'
+                      : 'text-white bg-amber-950/80 border-amber-500/40'
+                  }`}
+                >
+                  {localProactiveRiskLimit.toFixed(1)} events / day
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mb-2">
+                Triggers pre-emptive supervisor notification if the 7-day moving average projection exceeds safe levels before a critical anomaly actually occurs.
+              </p>
+
+              {/* Live Comparison Gauge */}
+              <div className="bg-slate-900/90 border border-slate-800 p-2 rounded-lg mb-2 text-[11px] flex items-center justify-between">
+                <span className="text-slate-400">7-Day Projected Peak SMA:</span>
+                <span className="font-mono font-bold text-white flex items-center gap-1.5">
+                  <TrendingUp className="h-3 w-3 text-indigo-400" />
+                  <span>{peakForecastSma} events/day</span>
+                  {isProactiveRiskBreached ? (
+                    <span className="text-[10px] font-bold text-rose-400 bg-rose-950/80 px-1.5 py-0.2 rounded border border-rose-500/40">
+                      Exceeded
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/40">
+                      Safe Margin
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              <input
+                type="range"
+                min="2.0"
+                max="10.0"
+                step="0.5"
+                value={localProactiveRiskLimit}
+                onChange={(e) => handleProactiveRiskSliderChange(Number(e.target.value))}
+                className="w-full accent-amber-500 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+                <span>2.0/day (High Vigilance)</span>
+                <span>Default: 5.5</span>
+                <span>10.0/day (Permissive)</span>
+              </div>
+            </div>
+
+            {/* 2. Daily Anomaly Frequency Action Benchmark (Visualized on Chart) */}
             <div className="bg-slate-950/90 border border-cyan-500/40 p-3.5 rounded-xl shadow-xs relative overflow-hidden">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">

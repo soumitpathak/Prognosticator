@@ -3,12 +3,14 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
   CartesianGrid,
   ReferenceLine,
+  ReferenceArea,
   Brush
 } from 'recharts';
 import {
@@ -32,13 +34,14 @@ import {
   Eye,
   Sliders,
   Zap,
-  Target
+  Target,
+  History
 } from 'lucide-react';
-import { AnomalyTrendDay, FacilityZone, ActiveAnomalyAlert, HealthSignalNotificationThresholds } from '../types';
+import { AnomalyTrendDay, AnomalyTrendDayWithProjection, FacilityZone, ActiveAnomalyAlert, HealthSignalNotificationThresholds } from '../types';
 import { AnomalyTrendSummaryStats } from '../services/anomalyTrend30DayService';
 
 interface AnomalyTrend30DaysChartProps {
-  data: AnomalyTrendDay[];
+  data: AnomalyTrendDayWithProjection[];
   summary: AnomalyTrendSummaryStats;
   currentZone: FacilityZone;
   zones: FacilityZone[];
@@ -48,6 +51,7 @@ interface AnomalyTrend30DaysChartProps {
   isExporting?: boolean;
   dailyFrequencyThreshold?: number;
   criticalFrequencyThreshold?: number;
+  proactiveRiskThreshold?: number;
   sensitivityLevel?: 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM';
   onOpenThresholdPanel?: () => void;
 }
@@ -63,6 +67,7 @@ export default function AnomalyTrend30DaysChart({
   isExporting = false,
   dailyFrequencyThreshold = 5,
   criticalFrequencyThreshold = 3,
+  proactiveRiskThreshold = 5.5,
   sensitivityLevel = 'MEDIUM',
   onOpenThresholdPanel
 }: AnomalyTrend30DaysChartProps) {
@@ -76,36 +81,95 @@ export default function AnomalyTrend30DaysChart({
   const [showMovingAvg, setShowMovingAvg] = useState<boolean>(true);
   const [showResolved, setShowResolved] = useState<boolean>(false);
   const [showReferenceThreshold, setShowReferenceThreshold] = useState<boolean>(true);
+  const [showForecast, setShowForecast] = useState<boolean>(true);
+  const [showPrevPeriodComparison, setShowPrevPeriodComparison] = useState<boolean>(false);
 
   // Export Menu State
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
 
   // Selected Day Drilldown State
-  const [selectedDay, setSelectedDay] = useState<AnomalyTrendDay | null>(null);
+  const [selectedDay, setSelectedDay] = useState<AnomalyTrendDayWithProjection | null>(null);
 
-  // Filtered dataset according to selected horizon
+  // Filtered dataset according to selected horizon & forecast toggle
   const filteredData = useMemo(() => {
+    let base = data;
+    if (!showForecast) {
+      base = data.filter((d) => !d.isProjected);
+    }
     if (horizon === '7D') {
-      return data.slice(-7);
+      return base.filter((d) => !d.isProjected).slice(-7);
     }
     if (horizon === '14D') {
-      return data.slice(-14);
+      return base.filter((d) => !d.isProjected).slice(-14);
     }
-    return data;
-  }, [data, horizon]);
+    return base;
+  }, [data, horizon, showForecast]);
 
   // Compute local slice stats
   const sliceStats = useMemo(() => {
-    const total = filteredData.reduce((acc, d) => acc + d.totalAnomalies, 0);
-    const critical = filteredData.reduce((acc, d) => acc + d.criticalCount, 0);
-    const mean = filteredData.length > 0 ? (total / filteredData.length).toFixed(1) : '0';
+    const historicalSlice = filteredData.filter((d) => !d.isProjected);
+    const total = historicalSlice.reduce((acc, d) => acc + d.totalAnomalies, 0);
+    const critical = historicalSlice.reduce((acc, d) => acc + d.criticalCount, 0);
+    const mean = historicalSlice.length > 0 ? (total / historicalSlice.length).toFixed(1) : '0';
     return { total, critical, mean };
+  }, [filteredData]);
+
+  // Projected 7-day range for shaded ReferenceArea
+  const forecastRange = useMemo(() => {
+    const projectedPoints = filteredData.filter((d) => d.isProjected);
+    if (projectedPoints.length < 2) return null;
+    return {
+      start: projectedPoints[0].date,
+      end: projectedPoints[projectedPoints.length - 1].date,
+      count: projectedPoints.length
+    };
   }, [filteredData]);
 
   // Custom Recharts Dark Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const dayData: AnomalyTrendDay = payload[0].payload;
+      const dayData = payload[0].payload as AnomalyTrendDayWithProjection;
+
+      // Forecast point tooltip
+      if (dayData.isProjected) {
+        return (
+          <div className="bg-slate-900/95 border-2 border-indigo-500/80 p-3.5 rounded-xl shadow-2xl backdrop-blur-md text-xs min-w-[280px] pointer-events-none z-50">
+            <div className="flex items-center justify-between border-b border-indigo-900/80 pb-2 mb-2.5">
+              <div className="flex items-center gap-1.5 font-bold text-white">
+                <Sparkles className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
+                <span>{dayData.fullDate} ({dayData.dayOfWeek})</span>
+              </div>
+              <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 rounded font-mono font-bold">
+                7-DAY SMA FORECAST
+              </span>
+            </div>
+
+            <div className="space-y-1.5 mb-2.5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Projected Anomaly Frequency:</span>
+                <span className="font-bold text-indigo-300 font-mono text-base">~{dayData.projectedTrend} / day</span>
+              </div>
+              <div className="flex justify-between items-center text-indigo-200">
+                <span className="text-slate-400">95% Shaded Uncertainty Band:</span>
+                <span className="font-mono font-semibold">{dayData.projectedLower} – {dayData.projectedUpper} events</span>
+              </div>
+              <div className="flex justify-between items-center text-emerald-300">
+                <span className="text-slate-400">Model Projection Confidence:</span>
+                <span className="font-mono font-semibold">{dayData.projectedConfidence}%</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-300 pt-1 border-t border-slate-800">
+                <span className="text-slate-400">Underlying Algorithm:</span>
+                <span className="font-mono text-cyan-400">7-Day Simple Moving Average</span>
+              </div>
+            </div>
+
+            <div className="bg-indigo-950/40 rounded-lg p-2 border border-indigo-900/40 text-[11px] text-indigo-200">
+              <strong className="text-indigo-300 block font-semibold mb-0.5">Projected Workplace Outlook:</strong>
+              Expected ambient temp ~{dayData.avgAmbientTempC}°C, workforce HRV stability ~{dayData.avgHrvMs}ms. Shaded indigo band shows projected moving average trajectory.
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="bg-slate-900/95 border border-slate-700 p-3.5 rounded-xl shadow-2xl backdrop-blur-md text-xs min-w-[260px] pointer-events-none z-50">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
@@ -151,6 +215,28 @@ export default function AnomalyTrend30DaysChart({
               <span className="text-slate-400">Rate per 100 Workers:</span>
               <span className="font-mono text-indigo-300">{dayData.anomalyRatePer100}</span>
             </div>
+
+            {showPrevPeriodComparison && dayData.prevPeriodAnomalies !== undefined && (
+              <div className="pt-2 mt-2 border-t border-purple-900/60 bg-purple-950/40 -mx-1 px-2.5 py-1.5 rounded-lg space-y-1">
+                <div className="flex justify-between items-center text-purple-200 font-semibold text-xs">
+                  <span className="flex items-center gap-1">
+                    <History className="h-3 w-3 text-purple-400" />
+                    Prior 30D ({dayData.prevPeriodDate}):
+                  </span>
+                  <span className="font-mono text-purple-300">{dayData.prevPeriodAnomalies} events</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-400">Cycle Variance:</span>
+                  <span
+                    className={`font-mono font-bold ${
+                      (dayData.periodVariancePct || 0) <= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {(dayData.periodVariancePct || 0) > 0 ? `+${dayData.periodVariancePct}%` : `${dayData.periodVariancePct}%`} Shift
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-slate-950/80 rounded-lg p-2 border border-slate-800 space-y-1 text-[11px]">
@@ -465,6 +551,31 @@ export default function AnomalyTrend30DaysChart({
             <span className="h-2 w-2 rounded-full bg-teal-400"></span>
             <span>Mitigated / Resolved</span>
           </button>
+
+          <button
+            onClick={() => setShowForecast((v) => !v)}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition border ${
+              showForecast
+                ? 'bg-indigo-950/90 text-indigo-300 border-indigo-500/60 shadow-xs ring-1 ring-indigo-500/30'
+                : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+            }`}
+          >
+            <Sparkles className="h-3 w-3 text-indigo-400" />
+            <span>7-Day SMA Shaded Forecast</span>
+          </button>
+
+          <button
+            onClick={() => setShowPrevPeriodComparison((v) => !v)}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition border ${
+              showPrevPeriodComparison
+                ? 'bg-purple-950/90 text-purple-300 border-purple-500/60 shadow-xs ring-1 ring-purple-500/30 font-bold'
+                : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+            }`}
+            title="Toggle historical comparison between the current 30-day period and the prior 30-day period (Sep 05 - Oct 05)"
+          >
+            <History className="h-3 w-3 text-purple-400" />
+            <span>Compare Previous 30-Day Period</span>
+          </button>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -480,6 +591,47 @@ export default function AnomalyTrend30DaysChart({
         </div>
       </div>
 
+      {/* Contextual 30-Day Period Comparison Analysis Banner */}
+      {showPrevPeriodComparison && (
+        <div className="mb-3 bg-purple-950/30 border border-purple-500/40 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs text-purple-200 gap-2 animate-in fade-in">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-purple-900/60 border border-purple-500/50 text-purple-300 shrink-0">
+              <History className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="font-bold text-white flex items-center gap-1.5">
+                <span>Longitudinal 30-Day Period Contextual Analysis</span>
+                <span className="text-[10px] bg-purple-900/80 text-purple-300 border border-purple-700 px-1.5 py-0.2 rounded font-mono">
+                  Cycle Over Cycle
+                </span>
+              </div>
+              <p className="text-[11px] text-purple-300/80 mt-0.5">
+                Comparing Current Period (Oct 06 &ndash; Nov 04) against Previous Period (Sep 05 &ndash; Oct 05, pre-cooling intervention).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono self-end sm:self-auto bg-slate-950/80 px-3 py-1.5 rounded-lg border border-purple-900/60">
+            <span className="text-slate-300">
+              Current: <strong className="text-cyan-400">{summary.totalAnomalies30d}</strong> events
+            </span>
+            <span className="text-slate-600">vs</span>
+            <span className="text-slate-300">
+              Previous: <strong className="text-purple-300">{summary.prevPeriodTotal30d || 232}</strong> events
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded font-bold ${
+                (summary.periodComparisonDeltaPct || -14.7) <= 0
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  : 'bg-rose-950 text-rose-300 border border-rose-800'
+              }`}
+            >
+              {(summary.periodComparisonDeltaPct || -14.7) > 0 ? `+${summary.periodComparisonDeltaPct}%` : `${summary.periodComparisonDeltaPct || -14.7}%`} Net Shift
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Main Recharts Line Chart Container */}
       <div className="h-80 w-full bg-slate-950/80 rounded-xl p-3 border border-slate-800 relative">
         <ResponsiveContainer width="100%" height="100%">
@@ -492,6 +644,13 @@ export default function AnomalyTrend30DaysChart({
               }
             }}
           >
+            <defs>
+              <linearGradient id="forecastAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#818cf8" stopOpacity={0.35} />
+                <stop offset="95%" stopColor="#818cf8" stopOpacity={0.03} />
+              </linearGradient>
+            </defs>
+
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
             <XAxis
               dataKey="date"
@@ -512,6 +671,26 @@ export default function AnomalyTrend30DaysChart({
               wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
               iconType="circle"
             />
+
+            {/* Shaded 7-Day Predicted Region (SMA Projection Window) */}
+            {showForecast && forecastRange && (
+              <ReferenceArea
+                x1={forecastRange.start}
+                x2={forecastRange.end}
+                stroke="#6366f1"
+                strokeOpacity={0.5}
+                strokeDasharray="3 3"
+                fill="#4338ca"
+                fillOpacity={0.14}
+                label={{
+                  value: 'Predicted 7D SMA Projection Window',
+                  fill: '#a5b4fc',
+                  fontSize: 10,
+                  position: 'insideTop',
+                  offset: 8
+                }}
+              />
+            )}
 
             {showReferenceThreshold && (
               <>
@@ -541,7 +720,37 @@ export default function AnomalyTrend30DaysChart({
                     }}
                   />
                 )}
+                {proactiveRiskThreshold != null && (
+                  <ReferenceLine
+                    y={proactiveRiskThreshold}
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    strokeDasharray="5 3"
+                    label={{
+                      value: `Proactive Risk Limit: ${proactiveRiskThreshold}/day (Pre-emptive Alert)`,
+                      fill: '#f59e0b',
+                      fontSize: 10,
+                      position: 'insideTopRight'
+                    }}
+                  />
+                )}
               </>
+            )}
+
+            {/* Shaded Area for Projected Upper Confidence Bound */}
+            {showForecast && (
+              <Area
+                type="monotone"
+                dataKey="projectedUpper"
+                name="Projected Upper Uncertainty Band"
+                stroke="#818cf8"
+                strokeWidth={1}
+                strokeDasharray="2 2"
+                fill="url(#forecastAreaGradient)"
+                legendType="none"
+                tooltipType="none"
+                isAnimationActive={false}
+              />
             )}
 
             {showTotal && (
@@ -596,6 +805,22 @@ export default function AnomalyTrend30DaysChart({
               />
             )}
 
+            {/* Projected Moving Average Trend Line */}
+            {showForecast && (
+              <Line
+                type="monotone"
+                dataKey="projectedTrend"
+                name="7-Day SMA Projection"
+                stroke="#818cf8"
+                strokeWidth={2.5}
+                strokeDasharray="5 5"
+                dot={{ r: 3, fill: '#818cf8', stroke: '#4f46e5', strokeWidth: 1.5 }}
+                activeDot={{ r: 6, fill: '#c7d2fe', stroke: '#ffffff', strokeWidth: 2 }}
+                animationDuration={600}
+                connectNulls
+              />
+            )}
+
             {showResolved && (
               <Line
                 type="monotone"
@@ -606,6 +831,22 @@ export default function AnomalyTrend30DaysChart({
                 strokeDasharray="2 2"
                 dot={false}
                 animationDuration={600}
+              />
+            )}
+
+            {/* Previous 30-Day Period Comparison Line */}
+            {showPrevPeriodComparison && (
+              <Line
+                type="monotone"
+                dataKey="prevPeriodAnomalies"
+                name="Previous 30-Day Period (Cycle-over-Cycle)"
+                stroke="#c084fc"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={{ r: 2.5, fill: '#c084fc', stroke: '#9333ea', strokeWidth: 1 }}
+                activeDot={{ r: 5, fill: '#e9d5ff', stroke: '#ffffff', strokeWidth: 2 }}
+                animationDuration={600}
+                connectNulls
               />
             )}
 

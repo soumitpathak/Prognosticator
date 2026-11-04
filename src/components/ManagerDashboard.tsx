@@ -37,7 +37,8 @@ import {
   HealthSignalNotificationThresholds,
   ThresholdBreachToast,
   ToastSignalKey,
-  AnomalyAuditRecord
+  AnomalyAuditRecord,
+  CriticalAnomalyToastData
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -77,7 +78,9 @@ import HistoricalWorkforceHealthChart from './HistoricalWorkforceHealthChart';
 import ActiveAnomaliesWidget from './ActiveAnomaliesWidget';
 import ChronologicalAnomalyLogPanel from './ChronologicalAnomalyLogPanel';
 import AlertHistoryTable from './AlertHistoryTable';
+import RecentAnomaliesAuditList from './RecentAnomaliesAuditList';
 import ThresholdBreachToastContainer from './ThresholdBreachToastContainer';
+import CriticalAnomalyToast from './CriticalAnomalyToast';
 import HealthThresholdsConfigModal, { DEFAULT_HEALTH_THRESHOLDS } from './HealthThresholdsConfigModal';
 import SensorThresholdsConfigPanel from './SensorThresholdsConfigPanel';
 import { exportWorkforceHealthCsv } from '../services/workforceCsvExport';
@@ -86,13 +89,16 @@ import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenera
 import AnomalyTrend30DaysChart from './AnomalyTrend30DaysChart';
 import AnomalyThresholdConfigPanel from './AnomalyThresholdConfigPanel';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
+import PatternRecognitionPanel from './PatternRecognitionPanel';
+import DepartmentSeverityStackedBarChart from './DepartmentSeverityStackedBarChart';
 import {
   generate30DayAnomalyTrend,
+  generate30DayAnomalyTrendWithProjection,
   computeTrendSummary,
   exportSimulatedAnomalyReportPdf,
   exportSimulatedAnomalyReportCsv
 } from '../services/anomalyTrend30DayService';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3 } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -207,26 +213,223 @@ export default function ManagerDashboard() {
   const [isViewAuditMenuOpen, setIsViewAuditMenuOpen] = useState<boolean>(false);
 
   const anomalyTrend30d = useMemo(() => {
-    return generate30DayAnomalyTrend(zones, anomalyTrendZoneId);
+    return generate30DayAnomalyTrendWithProjection(zones, anomalyTrendZoneId);
   }, [zones, anomalyTrendZoneId]);
 
   const anomalyTrendSummary = useMemo(() => {
     return computeTrendSummary(anomalyTrend30d);
   }, [anomalyTrend30d]);
 
+  // Real-Time Notification Toast System State
+  const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
+  const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
+  const [criticalAnomalyToasts, setCriticalAnomalyToasts] = useState<CriticalAnomalyToastData[]>([]);
+  const lastCriticalToastTimestampsRef = useRef<Record<string, number>>({});
+
+  const handleDismissCriticalToast = useCallback((id: string) => {
+    setCriticalAnomalyToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const handleAcknowledgeCriticalToast = useCallback((id: string) => {
+    setCriticalAnomalyToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, acknowledged: true } : t))
+    );
+    setProtocolActiveNotice('Critical anomaly notification acknowledged by safety supervisor.');
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  }, []);
+
+  const handleDispatchActionForCriticalToast = useCallback((toast: CriticalAnomalyToastData) => {
+    const newDispatch: MedicalDispatchNotification = {
+      id: `DSP-${Date.now().toString().slice(-4)}-CRIT`,
+      alertId: toast.anomalyId || toast.id,
+      zone: toast.zoneName,
+      severity: 'CRITICAL',
+      recipientRole: 'On-Site Rapid Cooling Evacuation Team',
+      contactMethod: 'DUAL_CHANNEL',
+      recipientPhone: '+1 (555) 911-CRIT',
+      messagePayload: `CRITICAL ANOMALY EVACUATION [${toast.department}]: ${toast.anomalyMetric} detected with ${toast.confidenceLevelFormatted} confidence. Directive: ${toast.recommendedAction}`,
+      stagedAt: 'Just now',
+      status: 'STAGED'
+    };
+    setMedicalDispatches((prev) => [newDispatch, ...prev]);
+    handleAcknowledgeCriticalToast(toast.id);
+    setProtocolActiveNotice(
+      `Priority Medical dispatch staged for critical anomaly in ${toast.department} (${toast.zoneName}) at ${toast.confidenceLevelFormatted} confidence.`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 6000);
+  }, [handleAcknowledgeCriticalToast]);
+
+  const handleInspectCriticalToastInChart = useCallback((zoneId: string) => {
+    setAnomalyTrendZoneId(zoneId);
+    const el = document.getElementById('anomaly-trend-30d-card');
+    el?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  const triggerCriticalAnomalyNotification = useCallback(
+    (params: {
+      department?: string;
+      confidenceLevel: number;
+      anomalyId?: string;
+      workerPseudonym?: string;
+      locationZone?: string;
+      zoneId?: string;
+      anomalyMetric?: string;
+      measuredValue?: string;
+      thresholdLimit?: string;
+      reconstructionMse?: number;
+      recommendedAction?: string;
+      privacyNotice?: string;
+      force?: boolean;
+    }) => {
+      const now = Date.now();
+      const zoneKey = params.locationZone || 'default';
+      const lastTrigger = lastCriticalToastTimestampsRef.current[zoneKey] || 0;
+      if (!params.force && now - lastTrigger < 8000) return; // 8-second debounce per zone
+      lastCriticalToastTimestampsRef.current[zoneKey] = now;
+
+      const confScore = params.confidenceLevel > 1 ? params.confidenceLevel / 100 : params.confidenceLevel;
+      const confFormatted = `${(confScore * 100).toFixed(1)}%`;
+
+      // Map zone/location to department
+      let dept = params.department;
+      if (!dept) {
+        const loc = (params.locationZone || '').toLowerCase();
+        if (loc.includes('construction') || loc.includes('sector-4')) {
+          dept = 'Civil & Structural Construction';
+        } else if (loc.includes('tunnel') || loc.includes('subgrade') || loc.includes('mining')) {
+          dept = 'Underground Mining & Tunneling';
+        } else if (loc.includes('chemical') || loc.includes('refinement')) {
+          dept = 'Heavy Chemical Refinement';
+        } else if (loc.includes('warehouse') || loc.includes('logistics')) {
+          dept = 'Warehouse Logistics & Supply';
+        } else if (loc.includes('smelting') || loc.includes('foundry')) {
+          dept = 'Smelting & Metal Fabrication';
+        } else if (loc.includes('assembly') || loc.includes('manufacturing')) {
+          dept = 'Advanced Manufacturing Line';
+        } else {
+          dept = 'Industrial Operations Division';
+        }
+      }
+
+      const toastId = `CRIT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const timeFormatted = new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+
+      const newToast: CriticalAnomalyToastData = {
+        id: toastId,
+        anomalyId: params.anomalyId || `ALR-${Math.floor(1000 + Math.random() * 9000)}-CR`,
+        timestamp: new Date().toISOString(),
+        timeFormatted,
+        department: dept,
+        zoneId: params.zoneId || params.locationZone || 'Outdoor-Construction-Sector-4',
+        zoneName: params.locationZone || 'Outdoor-Construction-Sector-4',
+        confidenceLevel: confScore,
+        confidenceLevelFormatted: confFormatted,
+        reconstructionMse: params.reconstructionMse ?? 0.385,
+        anomalyMetric: params.anomalyMetric || 'Multi-Signal Cumulative Stress Spike',
+        measuredValue: params.measuredValue || 'Heart Rate 138 BPM, Skin 38.6°C',
+        thresholdLimit: params.thresholdLimit || 'HR 115 BPM, Skin 37.8°C',
+        recommendedAction:
+          params.recommendedAction ||
+          'Immediate shaded cooling extraction; stage medical dispatch liaison.',
+        workerPseudonym: params.workerPseudonym || `W-${Math.floor(1000 + Math.random() * 9000)}`,
+        cohortCount: 18,
+        privacyNotice: params.privacyNotice || 'k-Anonymity Verified (N >= 12) & ε=0.5 Differential Privacy',
+        createdAt: now,
+        autoDismissMs: 12000,
+        acknowledged: false
+      };
+
+      setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 4));
+
+      if (toastSoundEnabled) {
+        voiceAlertService.playAlertChime();
+      }
+    },
+    [toastSoundEnabled]
+  );
+
   // Custom Anomaly Detection Thresholds & Sensitivity State (Visualized on Trend Chart)
   const [dailyFrequencyThreshold, setDailyFrequencyThreshold] = useState<number>(5);
   const [criticalFrequencyThreshold, setCriticalFrequencyThreshold] = useState<number>(3);
+  const [proactiveRiskThreshold, setProactiveRiskThreshold] = useState<number>(5.5);
   const [sensitivityLevel, setSensitivityLevel] = useState<'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM'>('MEDIUM');
+
+  // Peak 7-day moving average projection across the projected forecast window
+  const peakForecastedSma = useMemo(() => {
+    const projectedDays = anomalyTrend30d.filter((d) => d.isProjected && d.projectedTrend != null);
+    if (projectedDays.length > 0) {
+      const maxVal = Math.max(...projectedDays.map((d) => d.projectedTrend || 0));
+      return Number(maxVal.toFixed(1));
+    }
+    return 6.8;
+  }, [anomalyTrend30d]);
+
+  // Pre-emptive notification trigger if 7-day moving average projection exceeds safe levels before a critical anomaly occurs
+  const triggerPreemptiveProactiveAlert = useCallback(
+    (customSma?: number, customThreshold?: number) => {
+      const sma = customSma ?? peakForecastedSma;
+      const safeLimit = customThreshold ?? proactiveRiskThreshold;
+      const delta = (sma - safeLimit).toFixed(1);
+      const activeZone = zones.find((z) => z.id === selectedZone) || zones[0];
+
+      // Trigger high-priority pre-emptive toast notification
+      const preemptiveToast: ThresholdBreachToast = {
+        id: `PREEMPTIVE-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        timeFormatted: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        signalKey: 'anomalyEngine',
+        signalName: 'Pre-Emptive Proactive Risk Threshold Exceeded',
+        measuredValue: sma,
+        measuredFormatted: `${sma} events/day (7D Moving Avg Projection)`,
+        thresholdLimit: safeLimit,
+        thresholdFormatted: `${safeLimit} events/day (Proactive Safe Limit)`,
+        unit: 'events/day',
+        deltaFormatted: `+${delta} events/day above safe limit`,
+        severity: 'HIGH',
+        zoneId: activeZone.id,
+        zoneName: activeZone.name,
+        workerCount: activeZone.count || 24,
+        recommendedAction: `PRE-EMPTIVE ACTION: Forecasted 7-day moving average (${sma}/day) exceeds proactive safe limit (${safeLimit}/day) prior to acute incident. Distribute cooling stations, schedule staggered rotations, and inspect microclimate controls.`,
+        acknowledged: false,
+        createdAt: Date.now(),
+        autoDismissMs: 14000
+      };
+
+      setActiveToasts((prev) => [preemptiveToast, ...prev].slice(0, 8));
+
+      setProtocolActiveNotice(
+        `PRE-EMPTIVE PROACTIVE NOTIFICATION: 7-day moving average projection (${sma}/day) exceeds safe level (${safeLimit}/day) in ${activeZone.name}. Pre-emptive cooling & rotation protocols activated.`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 8000);
+
+      if (toastSoundEnabled) {
+        voiceAlertService.playAlertChime();
+      }
+    },
+    [peakForecastedSma, proactiveRiskThreshold, selectedZone, zones, toastSoundEnabled]
+  );
+
+  const lastPreemptiveTriggerRef = useRef<number>(0);
+  useEffect(() => {
+    if (peakForecastedSma > proactiveRiskThreshold) {
+      const now = Date.now();
+      if (now - lastPreemptiveTriggerRef.current > 30000) {
+        lastPreemptiveTriggerRef.current = now;
+        triggerPreemptiveProactiveAlert(peakForecastedSma, proactiveRiskThreshold);
+      }
+    }
+  }, [peakForecastedSma, proactiveRiskThreshold, triggerPreemptiveProactiveAlert]);
 
   // Custom Health Signal Notification Thresholds Configuration State
   const [healthThresholds, setHealthThresholds] = useState<HealthSignalNotificationThresholds>(DEFAULT_HEALTH_THRESHOLDS);
   const [isHealthThresholdsModalOpen, setIsHealthThresholdsModalOpen] = useState<boolean>(false);
   const [isolatedHealthSignal, setIsolatedHealthSignal] = useState<string | null>(null);
 
-  // Real-Time Notification Toast System State
-  const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
-  const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
   const [activeCorrelationPair, setActiveCorrelationPair] = useState<{ signalA: string; signalB: string } | null>(null);
   const lastBreachTimestampsRef = useRef<Record<string, number>>({});
 
@@ -937,6 +1140,19 @@ export default function ManagerDashboard() {
           signalKey: 'anomalyEngine',
           privacyStatus: result.privacy_compliance
         });
+
+        triggerCriticalAnomalyNotification({
+          confidenceLevel: result.risk_probability,
+          locationZone: activeZoneObj.name,
+          zoneId: activeZoneObj.id,
+          workerPseudonym: result.worker_id,
+          anomalyMetric: 'LSTM Multidimensional Stress Vector Spike',
+          measuredValue: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}%`,
+          thresholdLimit: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
+          reconstructionMse: result.reconstruction_mse,
+          recommendedAction: result.recommended_operational_action,
+          privacyNotice: result.privacy_compliance
+        });
       }
 
       // Advance sliding chart by 1 step
@@ -1026,6 +1242,19 @@ export default function ManagerDashboard() {
       };
       setMedicalDispatches((prev) => [newDispatch, ...prev]);
 
+      triggerCriticalAnomalyNotification({
+        department: 'Civil & Structural Construction',
+        confidenceLevel: 0.962,
+        locationZone: activeZoneObj.name,
+        zoneId: activeZoneObj.id,
+        anomalyMetric: 'Extreme Ambient Heatwave Spike (46.5°C)',
+        measuredValue: '46.5°C Ambient (WBGT 47.5°C)',
+        thresholdLimit: `${healthThresholds.maxAmbientHeatC}°C Limit`,
+        reconstructionMse: 0.442,
+        recommendedAction: 'Immediate shaded extraction & automated misting cooling vests deployed.',
+        force: true
+      });
+
       setProtocolActiveNotice(
         `BURST TRIGGERED: Flash Heatwave Exceedance (46.5°C). Critical alert active & automated medical dispatch staged in queue.`
       );
@@ -1067,6 +1296,19 @@ export default function ManagerDashboard() {
         },
         true
       );
+
+      triggerCriticalAnomalyNotification({
+        department: 'Heavy Chemical Refinement',
+        confidenceLevel: 0.935,
+        locationZone: activeZoneObj.name,
+        zoneId: activeZoneObj.id,
+        anomalyMetric: 'Acoustic Machinery Overpressure Blast',
+        measuredValue: '108.5 dBA Blast',
+        thresholdLimit: `${healthThresholds.maxNoiseDb} dBA Limit`,
+        reconstructionMse: 0.391,
+        recommendedAction: 'Emergency machine shutdown & mandatory high-attenuation PPE verification.',
+        force: true
+      });
 
       const newDispatch: MedicalDispatchNotification = {
         id: `AUTO-${Math.floor(1000 + Math.random() * 9000)}-PPE`,
@@ -1117,6 +1359,20 @@ export default function ManagerDashboard() {
         },
         true
       );
+
+      triggerCriticalAnomalyNotification({
+        department: 'Civil & Structural Construction',
+        confidenceLevel: res.risk_probability,
+        locationZone: activeZoneObj.name,
+        zoneId: activeZoneObj.id,
+        workerPseudonym: burstPacket.worker_id,
+        anomalyMetric: 'Autonomic Cardiac Strain Collapse',
+        measuredValue: 'HRV 26 ms (-60% Drop), Core Temp 38.6°C',
+        thresholdLimit: `${healthThresholds.minHrvMs} ms Floor`,
+        reconstructionMse: res.reconstruction_mse,
+        recommendedAction: 'Direct worker to shaded cooling rest tent with vital sign telemetry monitoring.',
+        force: true
+      });
 
       setProtocolActiveNotice('BURST TRIGGERED: Autonomic Cardiac Collapse (-60% HRV drop to 26ms). Critical extraction flagged.');
     } else if (type === 'DROPOUT') {
@@ -1362,6 +1618,22 @@ export default function ManagerDashboard() {
           true
         );
 
+        if (freshAlert.severity === 'CRITICAL' || result.risk_probability > 0.70) {
+          triggerCriticalAnomalyNotification({
+            confidenceLevel: result.risk_probability,
+            locationZone: activeZoneObj.name,
+            zoneId: activeZoneObj.id,
+            workerPseudonym: result.worker_id,
+            anomalyMetric: freshAlert.anomaly_metric,
+            measuredValue: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}%`,
+            thresholdLimit: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
+            reconstructionMse: result.reconstruction_mse,
+            recommendedAction: freshAlert.recommended_action,
+            privacyNotice: freshAlert.privacy_status,
+            force: true
+          });
+        }
+
         // Synthesize audible voice alert for on-site supervisors
         if (voiceSettings.enabled) {
           voiceAlertService.speakAlert(freshAlert, voiceSettings);
@@ -1521,6 +1793,19 @@ export default function ManagerDashboard() {
             <span>Active Anomalies ({pendingCriticalCount} Critical)</span>
           </button>
 
+          {/* Last 10 Detected Anomalies Quick Audit Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('recent-anomalies-audit-list');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
+            title="Jump to Last 10 Detected Anomalies Scrollable Quick Audit List"
+          >
+            <Clock className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Last 10 Anomalies</span>
+          </button>
+
           {/* Sensor Signal Alert Thresholds Config Panel Jump Button */}
           <button
             onClick={() => {
@@ -1571,6 +1856,32 @@ export default function ManagerDashboard() {
           >
             <Flame className="h-3.5 w-3.5 text-rose-400" />
             <span>Org Heatmap (6 Facilities)</span>
+          </button>
+
+          {/* Department Anomaly Severity Stacked Bar Chart Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('department-severity-stacked-bar-chart');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-500/60 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart"
+          >
+            <BarChart3 className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Severity Distribution (Stacked Bar)</span>
+          </button>
+
+          {/* Telemetry Precursor Pattern Recognition Engine Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('pattern-recognition-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/60 text-purple-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Telemetry Precursor Pattern Recognition Engine (String-Matching Algorithm)"
+          >
+            <GitMerge className="h-3.5 w-3.5 text-purple-400" />
+            <span>Pattern Recognition</span>
           </button>
 
           {/* 24-Hour Workforce Health Chart Jump Button */}
@@ -1843,6 +2154,40 @@ export default function ManagerDashboard() {
           >
             <BellRing className="h-3.5 w-3.5 text-rose-400" />
             <span>Test Breach Alert</span>
+          </button>
+
+          {/* Test Real-Time Critical Anomaly Toast Notification Button (Shows Department & Model Confidence Level) */}
+          <button
+            onClick={() => {
+              triggerCriticalAnomalyNotification({
+                department: 'Civil & Structural Construction',
+                confidenceLevel: 0.948,
+                locationZone: activeZoneObj.name,
+                zoneId: activeZoneObj.id,
+                workerPseudonym: 'W-9921',
+                anomalyMetric: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
+                measuredValue: 'Heart Rate 142 BPM, Skin Temp 38.8°C',
+                thresholdLimit: 'HR Max 115 BPM, Skin 37.8°C',
+                reconstructionMse: 0.428,
+                recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
+                force: true
+              });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-rose-950/60 cursor-pointer border border-rose-400/60"
+            title="Simulate detection of a new critical anomaly to test real-time notification toast displaying Department and Confidence Level"
+          >
+            <ShieldAlert className="h-3.5 w-3.5 text-white animate-pulse" />
+            <span>Simulate Critical Toast</span>
+          </button>
+
+          {/* Test Real-Time Pre-Emptive Proactive Alert Button */}
+          <button
+            onClick={() => triggerPreemptiveProactiveAlert()}
+            className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md shadow-amber-950/50 cursor-pointer border border-amber-400"
+            title="Trigger pre-emptive proactive notification when 7-day moving average projection exceeds safe levels before a critical anomaly occurs"
+          >
+            <Zap className="h-3.5 w-3.5 text-slate-950 animate-bounce" />
+            <span>Simulate Pre-Emptive Alert</span>
           </button>
 
           {/* Download Report Button (Converts current 24h anomaly trends & threshold settings to JSON or CSV) */}
@@ -2184,6 +2529,34 @@ export default function ManagerDashboard() {
         }}
       />
 
+      {/* Last 10 Detected Anomalies Scrollable Quick Audit List Component */}
+      <RecentAnomaliesAuditList
+        alerts={activeAlerts}
+        zones={zones}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onInspectAnomaly={(alert) => {
+          setAnomalyTrendZoneId(alert.location_zone);
+          const el = document.getElementById('anomaly-trend-30d-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+      />
+
+      {/* Telemetry Precursor Pattern Recognition Engine (String-Matching Algorithm) */}
+      <PatternRecognitionPanel
+        telemetryStream={telemetryStream}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+      />
+
       {/* Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel */}
       <AnomalyThresholdConfigPanel
         thresholds={healthThresholds}
@@ -2193,6 +2566,9 @@ export default function ManagerDashboard() {
         onDailyFrequencyThresholdChange={setDailyFrequencyThreshold}
         criticalFrequencyThreshold={criticalFrequencyThreshold}
         onCriticalFrequencyThresholdChange={setCriticalFrequencyThreshold}
+        proactiveRiskThreshold={proactiveRiskThreshold}
+        onProactiveRiskThresholdChange={setProactiveRiskThreshold}
+        onTriggerPreemptiveAlert={() => triggerPreemptiveProactiveAlert()}
         sensitivityLevel={sensitivityLevel}
         onSensitivityLevelChange={setSensitivityLevel}
         onScrollToTrendChart={() => {
@@ -2214,6 +2590,7 @@ export default function ManagerDashboard() {
         isExporting={isExportingAuditReport}
         dailyFrequencyThreshold={dailyFrequencyThreshold}
         criticalFrequencyThreshold={criticalFrequencyThreshold}
+        proactiveRiskThreshold={proactiveRiskThreshold}
         sensitivityLevel={sensitivityLevel}
         onOpenThresholdPanel={() => {
           const el = document.getElementById('anomaly-threshold-config-panel');
@@ -2225,6 +2602,20 @@ export default function ManagerDashboard() {
       <OrganizationalAnomalyHeatmap
         zones={zones}
         alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+      />
+
+      {/* Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart */}
+      <DepartmentSeverityStackedBarChart
+        zones={zones}
         selectedZoneId={selectedZone}
         onSelectZone={(zoneId) => {
           setSelectedZone(zoneId);
@@ -2719,6 +3110,17 @@ export default function ManagerDashboard() {
         onSaveThresholds={handleSaveHealthThresholds}
         zones={zones}
         activeZoneId={selectedZone}
+      />
+
+      {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}
+      <CriticalAnomalyToast
+        toasts={criticalAnomalyToasts}
+        onDismiss={handleDismissCriticalToast}
+        onAcknowledge={handleAcknowledgeCriticalToast}
+        onDispatchAction={handleDispatchActionForCriticalToast}
+        onInspectInChart={handleInspectCriticalToastInChart}
+        soundEnabled={toastSoundEnabled}
+        onToggleSound={() => setToastSoundEnabled((s) => !s)}
       />
 
       {/* Real-Time Threshold Breach Notification Toast Container */}
