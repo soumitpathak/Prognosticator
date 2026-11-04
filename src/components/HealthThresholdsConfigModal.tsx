@@ -29,6 +29,7 @@ export const DEFAULT_HEALTH_THRESHOLDS: HealthSignalNotificationThresholds = {
   maxNoiseDb: 85.0,
   minTwlIndex: 115,
   riskScoreCutoffPct: 65,
+  maxHeartRateBpm: 120,
   enableSmsRadioDispatch: true,
   enableVoiceAlerts: true,
   enableInAppBeacon: true,

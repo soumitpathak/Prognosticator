@@ -16,6 +16,7 @@ import {
   Activity,
   Heart,
   Thermometer,
+  Sun,
   ShieldAlert,
   Sliders,
   Clock,
@@ -46,6 +47,7 @@ import {
   Target
 } from 'lucide-react';
 import { HealthSignalNotificationThresholds } from '../types';
+import CorrelationOverlayChart, { CORRELATION_PRESETS, CORRELATION_SIGNALS } from './CorrelationOverlayChart';
 
 interface HistoricalWorkforceHealthChartProps {
   data: TelemetryDataPoint[];
@@ -56,6 +58,8 @@ interface HistoricalWorkforceHealthChartProps {
   onExportCsv?: () => void;
   externalIsolatedSignal?: string | null;
   onSignalIsolationChange?: (signalKey: string | null) => void;
+  initialMode?: 'MULTI_STREAM' | 'CORRELATION_OVERLAY';
+  correlationPair?: { signalA: string; signalB: string } | null;
 }
 
 export interface IdentifiedAnomalyEvent {
@@ -130,8 +134,19 @@ export default function HistoricalWorkforceHealthChart({
   onOpenThresholdsModal,
   onExportCsv,
   externalIsolatedSignal,
-  onSignalIsolationChange
+  onSignalIsolationChange,
+  initialMode,
+  correlationPair
 }: HistoricalWorkforceHealthChartProps) {
+  // Chart Visualization Mode: 'MULTI_STREAM' (all signals) or 'CORRELATION_OVERLAY' (overlay 2 signals)
+  const [chartMode, setChartMode] = useState<'MULTI_STREAM' | 'CORRELATION_OVERLAY'>(
+    initialMode || 'MULTI_STREAM'
+  );
+  const [activeCorrPair, setActiveCorrPair] = useState<{ signalA: string; signalB: string }>({
+    signalA: correlationPair?.signalA || 'ambientTemp',
+    signalB: correlationPair?.signalB || 'heartRate'
+  });
+
   // Time span selector: 24h, 12h, 6h
   const [selectedHours, setSelectedHours] = useState<number>(24);
 
@@ -150,6 +165,7 @@ export default function HistoricalWorkforceHealthChart({
   const [visibleSignals, setVisibleSignals] = useState<{
     smoothedHrv: boolean;
     rawHrv: boolean;
+    heartRate: boolean;
     skinTemp: boolean;
     riskScore: boolean;
     ambientTemp: boolean;
@@ -157,9 +173,10 @@ export default function HistoricalWorkforceHealthChart({
   }>({
     smoothedHrv: true,
     rawHrv: false,
+    heartRate: true,
     skinTemp: true,
     riskScore: true,
-    ambientTemp: false,
+    ambientTemp: true,
     noiseDb: false
   });
 
@@ -521,6 +538,10 @@ export default function HistoricalWorkforceHealthChart({
         avgSkinTemp: 0,
         maxSkinTemp: 0,
         peakRisk: 0,
+        peakHeartRate: 0,
+        avgHeartRate: 0,
+        peakAmbientTemp: 0,
+        thresholdBreachesCount: 0,
         anomaliesCount: 0,
         kalmanEfficiency: 0
       };
@@ -530,21 +551,42 @@ export default function HistoricalWorkforceHealthChart({
     let minHrv = Infinity;
     let tempSum = 0;
     let maxTemp = -Infinity;
+    let hrSum = 0;
+    let maxHr = 0;
+    let maxAmbTemp = 0;
     let peakRisk = 0;
     let anomalies = 0;
+    let thresholdBreaches = 0;
     let totalJitterDiff = 0;
+
+    const maxHrLimit = thresholds?.maxHeartRateBpm ?? 115;
+    const maxAmbLimit = thresholds?.maxAmbientHeatC ?? 36.0;
+    const minHrvFloor = thresholds?.minHrvMs ?? 40;
+    const maxSkinLimit = thresholds?.maxSkinTempC ?? 37.8;
+    const maxNoiseLimit = thresholds?.maxNoiseDb ?? 85.0;
 
     historicalPoints.forEach((pt) => {
       const hrv = pt.smoothed_hrv ?? 68;
       const temp = pt.skin_temp_c ?? 36.6;
       const risk = pt.risk_score ?? 15;
       const rawHrv = pt.raw_hrv ?? hrv;
+      const hr = pt.heart_rate_bpm ?? Math.round(72 + (68 - hrv) * 1.2);
+      const amb = pt.ambient_temp_c ?? 32.0;
+      const noise = pt.noise_db ?? pt.raw_noise_db ?? 75;
 
       hrvSum += hrv;
       if (hrv < minHrv) minHrv = hrv;
       tempSum += temp;
       if (temp > maxTemp) maxTemp = temp;
+      if (hr > maxHr) maxHr = hr;
+      if (amb > maxAmbTemp) maxAmbTemp = amb;
+      hrSum += hr;
       if (risk > peakRisk) peakRisk = risk;
+
+      const isBreached = hr >= maxHrLimit || amb >= maxAmbLimit || hrv <= minHrvFloor || temp >= maxSkinLimit || noise >= maxNoiseLimit || pt.is_anomaly || risk >= (thresholds?.riskScoreCutoffPct ?? activeThresholdCutoff);
+      if (isBreached) {
+        thresholdBreaches++;
+      }
       if (pt.is_anomaly || risk >= (thresholds?.riskScoreCutoffPct ?? activeThresholdCutoff)) {
         anomalies++;
       }
@@ -554,6 +596,7 @@ export default function HistoricalWorkforceHealthChart({
     const count = historicalPoints.length;
     const avgHrv = Number((hrvSum / count).toFixed(1));
     const avgSkinTemp = Number((tempSum / count).toFixed(1));
+    const avgHeartRate = Number((hrSum / count).toFixed(0));
     const kalmanEfficiency = Math.min(
       98,
       Math.max(74, Number((84.2 + (totalJitterDiff / count) * 2.3).toFixed(1)))
@@ -565,6 +608,10 @@ export default function HistoricalWorkforceHealthChart({
       avgSkinTemp,
       maxSkinTemp: Number(maxTemp.toFixed(1)),
       peakRisk: Number(peakRisk.toFixed(1)),
+      peakHeartRate: maxHr || 118,
+      avgHeartRate,
+      peakAmbientTemp: Number(maxAmbTemp.toFixed(1)),
+      thresholdBreachesCount: thresholdBreaches,
       anomaliesCount: anomalies,
       kalmanEfficiency
     };
@@ -580,6 +627,14 @@ export default function HistoricalWorkforceHealthChart({
       }
     }
   }, [externalIsolatedSignal]);
+
+  // Sync with external correlation pair if supplied
+  React.useEffect(() => {
+    if (correlationPair) {
+      setActiveCorrPair(correlationPair);
+      setChartMode('CORRELATION_OVERLAY');
+    }
+  }, [correlationPair]);
 
   const handleToggle = (key: string) => {
     if (isolatedSignalKey) {
@@ -610,9 +665,10 @@ export default function HistoricalWorkforceHealthChart({
       setVisibleSignals({
         smoothedHrv: true,
         rawHrv: false,
+        heartRate: true,
         skinTemp: true,
         riskScore: true,
-        ambientTemp: false,
+        ambientTemp: true,
         noiseDb: false
       });
       setShowMovingAverage(true);
@@ -625,6 +681,7 @@ export default function HistoricalWorkforceHealthChart({
         setVisibleSignals({
           smoothedHrv: false,
           rawHrv: false,
+          heartRate: false,
           skinTemp: false,
           riskScore: false,
           ambientTemp: false,
@@ -635,6 +692,7 @@ export default function HistoricalWorkforceHealthChart({
         setVisibleSignals({
           smoothedHrv: true,
           rawHrv: false,
+          heartRate: false,
           skinTemp: false,
           riskScore: false,
           ambientTemp: false,
@@ -646,6 +704,7 @@ export default function HistoricalWorkforceHealthChart({
         setVisibleSignals({
           smoothedHrv: key === 'smoothedHrv',
           rawHrv: key === 'rawHrv',
+          heartRate: key === 'heartRate',
           skinTemp: key === 'skinTemp',
           riskScore: key === 'riskScore',
           ambientTemp: key === 'ambientTemp',
@@ -662,6 +721,7 @@ export default function HistoricalWorkforceHealthChart({
     setVisibleSignals({
       smoothedHrv: true,
       rawHrv: true,
+      heartRate: true,
       skinTemp: true,
       riskScore: true,
       ambientTemp: true,
@@ -677,9 +737,10 @@ export default function HistoricalWorkforceHealthChart({
     setVisibleSignals({
       smoothedHrv: true,
       rawHrv: false,
+      heartRate: true,
       skinTemp: true,
       riskScore: true,
-      ambientTemp: false,
+      ambientTemp: true,
       noiseDb: false
     });
     setShowMovingAverage(true);
@@ -693,6 +754,7 @@ export default function HistoricalWorkforceHealthChart({
       setVisibleSignals({
         smoothedHrv: true,
         rawHrv: true,
+        heartRate: true,
         skinTemp: false,
         riskScore: false,
         ambientTemp: false,
@@ -703,6 +765,7 @@ export default function HistoricalWorkforceHealthChart({
       setVisibleSignals({
         smoothedHrv: false,
         rawHrv: false,
+        heartRate: false,
         skinTemp: true,
         riskScore: false,
         ambientTemp: true,
@@ -713,6 +776,7 @@ export default function HistoricalWorkforceHealthChart({
       setVisibleSignals({
         smoothedHrv: false,
         rawHrv: false,
+        heartRate: false,
         skinTemp: false,
         riskScore: true,
         ambientTemp: false,
@@ -1005,6 +1069,30 @@ export default function HistoricalWorkforceHealthChart({
             </div>
           )}
 
+          {/* Worker Heart Rate */}
+          {pt.heart_rate_bpm !== undefined && (
+            <div className="flex justify-between items-center py-0.5">
+              <span className="text-rose-400 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+                Worker Heart Rate:
+              </span>
+              <div className="text-right">
+                <span
+                  className={`font-bold ${
+                    pt.heart_rate_bpm >= (thresholds?.maxHeartRateBpm ?? 115)
+                      ? 'text-rose-400 font-black underline'
+                      : 'text-white'
+                  }`}
+                >
+                  {pt.heart_rate_bpm} BPM
+                </span>
+                <span className="text-[10px] text-slate-400 ml-1.5">
+                  ({pt.heart_rate_bpm >= (thresholds?.maxHeartRateBpm ?? 115) ? 'Breached' : 'Nominal'})
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Worker Skin Temperature */}
           {pt.skin_temp_c !== undefined && (
             <div className="flex justify-between items-center py-0.5">
@@ -1133,6 +1221,20 @@ export default function HistoricalWorkforceHealthChart({
       description: 'Unfiltered photoplethysmography telemetry exhibiting sensor jitter and motion noise.'
     },
     {
+      key: 'heartRate',
+      label: 'Worker Heart Rate (Pulse)',
+      shortLabel: 'Heart Rate',
+      unit: 'BPM',
+      color: '#e11d48',
+      lineStyle: 'solid',
+      strokeWidth: '2px',
+      axis: 'Left (BPM)',
+      active: visibleSignals.heartRate,
+      currentValue: latestHistoricalPoint ? `${(latestHistoricalPoint.heart_rate_bpm ?? Math.round(72 + (68 - (latestHistoricalPoint.smoothed_hrv ?? 68)) * 1.2))} BPM` : '--',
+      description: 'Cardiovascular heart rate pulse tracking physical exertion, heat strain, and tachycardia.',
+      isPrimary: true
+    },
+    {
       key: 'showMovingAverage',
       label: `${maWindowHours}h Moving Avg Trend`,
       shortLabel: `${maWindowHours}h Trend MA`,
@@ -1246,8 +1348,41 @@ export default function HistoricalWorkforceHealthChart({
           </p>
         </div>
 
+        {/* View Mode Switcher: Multi-Stream vs Dual-Signal Correlation Overlay */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shadow-inner">
+            <button
+              onClick={() => setChartMode('MULTI_STREAM')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-semibold transition ${
+                chartMode === 'MULTI_STREAM'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Activity className="h-3.5 w-3.5" />
+              <span>Multi-Stream View (All 24h Signals)</span>
+            </button>
+
+            <button
+              onClick={() => setChartMode('CORRELATION_OVERLAY')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-semibold transition ${
+                chartMode === 'CORRELATION_OVERLAY'
+                  ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Dual-Signal Correlation Overlay</span>
+              <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700 px-1.5 py-0.2 rounded font-mono font-bold">
+                PEARSON r
+              </span>
+            </button>
+          </div>
+        </div>
+
         {/* Action Controls & Signal Selectors */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        {chartMode === 'MULTI_STREAM' && (
+          <div className="flex flex-wrap items-center gap-2.5">
           {/* Signal Selection Pill Buttons */}
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
             <button
@@ -1287,6 +1422,19 @@ export default function HistoricalWorkforceHealthChart({
             >
               <span className="h-2 w-2 rounded-full bg-rose-400"></span>
               <span>Skin Temp</span>
+            </button>
+
+            <button
+              onClick={() => toggleSignal('heartRate')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition text-xs ${
+                visibleSignals.heartRate
+                  ? 'bg-rose-600/20 text-rose-300 border border-rose-500/40 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Toggle Worker Heart Rate (Pulse)"
+            >
+              <Heart className="h-3 w-3 text-rose-400" />
+              <span>Heart Rate</span>
             </button>
 
             <button
@@ -1447,29 +1595,100 @@ export default function HistoricalWorkforceHealthChart({
             </button>
           )}
         </div>
+        )}
       </div>
 
-      {/* Aggregate Health Statistics Bar with Long-Term Trend & 4h Prognostic Forecast */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 my-4">
+      {chartMode === 'CORRELATION_OVERLAY' ? (
+        <div className="mt-4">
+          <CorrelationOverlayChart
+            data={data}
+            zoneName={zoneName}
+            thresholds={thresholds}
+            activeThresholdCutoff={activeThresholdCutoff}
+            initialSignalA={activeCorrPair.signalA}
+            initialSignalB={activeCorrPair.signalB}
+            onOpenThresholdsModal={onOpenThresholdsModal}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Aggregate Health Statistics Bar with Long-Term Trend & 4h Prognostic Forecast */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3 my-4">
+        {/* 1. Mean Worker HRV */}
         <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg">
           <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Mean Worker HRV</span>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-xl font-bold text-cyan-400">{stats.avgHrv} ms</span>
             <span className="text-[10px] text-slate-500 font-mono">(Min: {stats.minHrv})</span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">Baseline: 68.0 ms</span>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">Floor: {thresholds?.minHrvMs ?? 40} ms</span>
         </div>
 
+        {/* 2. Peak Heart Rate */}
+        <div className="bg-slate-950/70 border border-rose-500/30 p-3 rounded-lg">
+          <span className="text-[10px] text-rose-400 uppercase tracking-wider block font-medium flex items-center gap-1">
+            <Heart className="h-3 w-3 text-rose-400" />
+            Peak Heart Rate
+          </span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className={`text-xl font-bold ${
+              stats.peakHeartRate >= (thresholds?.maxHeartRateBpm ?? 115) ? 'text-rose-400 font-black' : 'text-white'
+            }`}>
+              {stats.peakHeartRate} BPM
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">(Avg: {stats.avgHeartRate})</span>
+          </div>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">
+            Ceiling: {thresholds?.maxHeartRateBpm ?? 115} BPM
+          </span>
+        </div>
+
+        {/* 3. Peak Ambient Temp */}
+        <div className="bg-slate-950/70 border border-amber-500/30 p-3 rounded-lg">
+          <span className="text-[10px] text-amber-400 uppercase tracking-wider block font-medium flex items-center gap-1">
+            <Sun className="h-3 w-3 text-amber-400" />
+            Peak Ambient Temp
+          </span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className={`text-xl font-bold ${
+              stats.peakAmbientTemp >= (thresholds?.maxAmbientHeatC ?? 36.0) ? 'text-amber-400 font-black' : 'text-white'
+            }`}>
+              {stats.peakAmbientTemp}°C
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">Heat Index</span>
+          </div>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">
+            Ceiling: {(thresholds?.maxAmbientHeatC ?? 36.0).toFixed(1)}°C
+          </span>
+        </div>
+
+        {/* 4. Mean Skin Temp */}
         <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg">
           <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Mean Skin Temp</span>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-xl font-bold text-rose-400">{stats.avgSkinTemp}°C</span>
             <span className="text-[10px] text-slate-500 font-mono">(Max: {stats.maxSkinTemp}°C)</span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">Thermal Ceiling: {(thresholds?.maxSkinTempC ?? 37.8).toFixed(1)}°C</span>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">Ceiling: {(thresholds?.maxSkinTempC ?? 37.8).toFixed(1)}°C</span>
         </div>
 
-        {/* Long-Term Trend Moving Average Metric Card */}
+        {/* 5. 24h Threshold Breaches */}
+        <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg">
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Threshold Breaches</span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className={`text-xl font-bold ${
+              stats.thresholdBreachesCount > 0 ? 'text-rose-400' : 'text-emerald-400'
+            }`}>
+              {stats.thresholdBreachesCount}
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">Intervals</span>
+          </div>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">
+            {stats.anomaliesCount} Anomaly Interval{stats.anomaliesCount !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {/* 6. Long-Term Trend Moving Average */}
         <div className="bg-slate-950/70 border border-emerald-500/30 p-3 rounded-lg">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-emerald-400 uppercase tracking-wider block font-semibold">
@@ -1504,14 +1723,14 @@ export default function HistoricalWorkforceHealthChart({
           </span>
         </div>
 
-        {/* 4-Hour Kalman Prognostic Trend Card */}
+        {/* 7. 4-Hour Kalman Prognostic Trend Card */}
         <div className={`bg-slate-950/70 border p-3 rounded-lg transition ${
           showPrognosticTrend ? 'border-sky-500/40 bg-sky-950/20' : 'border-slate-800 opacity-60'
         }`}>
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-sky-400 uppercase tracking-wider block font-semibold flex items-center gap-1">
               <Sparkles className="h-3 w-3 text-sky-400" />
-              +4h Prognostic Trend
+              +4h Prognostic
             </span>
             <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
               trendStats.prognosticSummary.trajectoryLabel === 'ACCELERATING_DETERIORATION'
@@ -1537,11 +1756,12 @@ export default function HistoricalWorkforceHealthChart({
             {trendStats.prognosticSummary.isBreachPredicted ? (
               <span className="text-rose-400 font-semibold">{trendStats.prognosticSummary.breachEta}</span>
             ) : (
-              <span>95% CI ±{trendStats.prognosticSummary.confidenceIntervalWidth}ms (Safe)</span>
+              <span>95% CI ±{trendStats.prognosticSummary.confidenceIntervalWidth}ms</span>
             )}
           </span>
         </div>
 
+        {/* 8. 24h Peak Risk */}
         <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg">
           <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">24h Peak Risk</span>
           <div className="flex items-baseline gap-1 mt-1">
@@ -1554,27 +1774,9 @@ export default function HistoricalWorkforceHealthChart({
             </span>
             <span className="text-[10px] text-slate-500 font-mono">LSTM Score</span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">
-            {stats.anomaliesCount} Anomaly Interval{stats.anomaliesCount !== 1 ? 's' : ''}
+          <span className="text-[10px] text-emerald-400 mt-0.5 block">
+            {stats.kalmanEfficiency}% Jitter Filtered
           </span>
-        </div>
-
-        <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg">
-          <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Kalman Filtering</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-xl font-bold text-emerald-400">{stats.kalmanEfficiency}%</span>
-            <span className="text-[10px] text-emerald-500/80 font-mono">Filtered</span>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">Adaptive State (Q=0.01)</span>
-        </div>
-
-        <div className="bg-slate-950/70 border border-slate-800 p-3 rounded-lg">
-          <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Privacy Status</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-xl font-bold text-cyan-400">N &ge; 12</span>
-            <span className="text-[10px] text-slate-500 font-mono">&epsilon;=0.5 DP</span>
-          </div>
-          <span className="text-[10px] text-emerald-400 mt-0.5 block">HIPAA / GDPR Safe</span>
         </div>
       </div>
 
@@ -1738,11 +1940,11 @@ export default function HistoricalWorkforceHealthChart({
               minTickGap={30}
             />
 
-            {/* Left Y-Axis: Physiological Values (HRV in ms, Temp in °C, Noise in dB) */}
+            {/* Left Y-Axis: Physiological Values (HRV in ms, Temp in °C, Heart Rate in BPM, Noise in dB) */}
             <YAxis
               yAxisId="left"
               stroke="#64748b"
-              domain={[20, 100]}
+              domain={[20, visibleSignals.heartRate ? 145 : 100]}
               tick={{ fontSize: 11, fill: '#94a3b8' }}
               unit=""
             />
@@ -1769,6 +1971,24 @@ export default function HistoricalWorkforceHealthChart({
             {/* Health Safety Guideline Reference Lines */}
             {showThresholds && (
               <>
+                {/* Heart Rate Ceiling Threshold Line */}
+                {visibleSignals.heartRate && (thresholds?.maxHeartRateBpm ?? 115) && (
+                  <ReferenceLine
+                    yAxisId="left"
+                    y={thresholds?.maxHeartRateBpm ?? 115}
+                    stroke="#e11d48"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    label={{
+                      value: `Max Heart Rate (${thresholds?.maxHeartRateBpm ?? 115} BPM)`,
+                      fill: '#fda4af',
+                      fontSize: 10,
+                      position: 'insideTopLeft'
+                    }}
+                  />
+                )}
+
+                {/* Critical HRV Floor Threshold Line */}
                 <ReferenceLine
                   yAxisId="left"
                   y={thresholds?.minHrvMs ?? 40}
@@ -1782,6 +2002,8 @@ export default function HistoricalWorkforceHealthChart({
                     position: 'insideBottomLeft'
                   }}
                 />
+
+                {/* Baseline Workforce HRV Reference Line */}
                 <ReferenceLine
                   yAxisId="left"
                   y={68}
@@ -1795,6 +2017,25 @@ export default function HistoricalWorkforceHealthChart({
                     position: 'insideTopLeft'
                   }}
                 />
+
+                {/* Ambient Temperature Ceiling Threshold Line */}
+                {visibleSignals.ambientTemp && thresholds?.maxAmbientHeatC && (
+                  <ReferenceLine
+                    yAxisId="left"
+                    y={thresholds.maxAmbientHeatC}
+                    stroke="#f59e0b"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    label={{
+                      value: `Max Ambient (${thresholds.maxAmbientHeatC.toFixed(1)}°C)`,
+                      fill: '#fcd34d',
+                      fontSize: 10,
+                      position: 'insideTopRight'
+                    }}
+                  />
+                )}
+
+                {/* Skin Temperature Ceiling Threshold Line */}
                 {visibleSignals.skinTemp && (
                   <ReferenceLine
                     yAxisId="left"
@@ -1810,6 +2051,25 @@ export default function HistoricalWorkforceHealthChart({
                     }}
                   />
                 )}
+
+                {/* Acoustic Noise Limit Reference Line */}
+                {visibleSignals.noiseDb && thresholds?.maxNoiseDb && (
+                  <ReferenceLine
+                    yAxisId="left"
+                    y={thresholds.maxNoiseDb}
+                    stroke="#818cf8"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    label={{
+                      value: `Noise Limit (${thresholds.maxNoiseDb.toFixed(1)} dBA)`,
+                      fill: '#a5b4fc',
+                      fontSize: 10,
+                      position: 'insideBottomRight'
+                    }}
+                  />
+                )}
+
+                {/* Critical Risk Cutoff Threshold Line */}
                 <ReferenceLine
                   yAxisId="right"
                   y={thresholds?.riskScoreCutoffPct ?? activeThresholdCutoff}
@@ -1902,6 +2162,21 @@ export default function HistoricalWorkforceHealthChart({
                 strokeDasharray="6 3"
                 dot={false}
                 activeDot={{ r: 6, fill: '#34d399', stroke: '#fff', strokeWidth: 2 }}
+                isAnimationActive={false}
+              />
+            )}
+
+            {/* Worker Heart Rate (Pulse in BPM) */}
+            {visibleSignals.heartRate && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="heart_rate_bpm"
+                name="Worker Heart Rate (BPM)"
+                stroke="#e11d48"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 5, fill: '#e11d48', stroke: '#fff', strokeWidth: 1.5 }}
                 isAnimationActive={false}
               />
             )}
@@ -2195,6 +2470,8 @@ export default function HistoricalWorkforceHealthChart({
           </span>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

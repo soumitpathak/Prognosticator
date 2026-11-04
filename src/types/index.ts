@@ -35,6 +35,7 @@ export interface HealthSignalNotificationThresholds {
   maxNoiseDb: number; // maximum acoustic noise limit (dBA)
   minTwlIndex: number; // minimum Thermal Work Limit (W/m²)
   riskScoreCutoffPct: number; // composite risk score cutoff (%)
+  maxHeartRateBpm?: number; // maximum allowable heart rate in beats per minute (e.g. 115 bpm)
   enableSmsRadioDispatch: boolean;
   enableVoiceAlerts: boolean;
   enableInAppBeacon: boolean;
@@ -162,6 +163,8 @@ export interface TelemetryDataPoint {
   sick_leave_rate_deviation: number;
   is_anomaly: boolean;
   risk_score: number;
+  heart_rate_bpm?: number;
+  raw_heart_rate_bpm?: number;
   // Equipment telemetry for predictive maintenance & multi-variable correlation
   equipment_vibration_mm_s?: number;
   equipment_bearing_temp_c?: number;
@@ -401,5 +404,28 @@ export interface ShiftHandoverReport {
   acknowledgedByIncoming: boolean;
 }
 
+// ==========================================
+// Real-Time Notification Toast Types
+// ==========================================
 
-
+export interface ThresholdBreachToast {
+  id: string;
+  timestamp: string;
+  timeFormatted: string;
+  signalKey: 'heartRate' | 'ambientTemp' | 'hrv' | 'skinTemp' | 'noise' | 'twl' | 'riskScore';
+  signalName: string;
+  measuredValue: number;
+  measuredFormatted: string;
+  thresholdLimit: number;
+  thresholdFormatted: string;
+  unit: string;
+  deltaFormatted: string;
+  severity: 'CRITICAL' | 'HIGH' | 'WARNING';
+  zoneId: string;
+  zoneName: string;
+  workerCount: number;
+  recommendedAction: string;
+  acknowledged: boolean;
+  createdAt: number;
+  autoDismissMs: number;
+}

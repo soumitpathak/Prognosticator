@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ShieldAlert,
   Activity,
@@ -33,7 +33,8 @@ import {
   SystemAuditLogEntry,
   SensorCorrelationPoint,
   VoiceAlertSettings,
-  HealthSignalNotificationThresholds
+  HealthSignalNotificationThresholds,
+  ThresholdBreachToast
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -69,10 +70,14 @@ import MaintenanceSchedulerModule from './MaintenanceSchedulerModule';
 import HistoricalWorkforceHealthChart from './HistoricalWorkforceHealthChart';
 import ActiveAnomaliesWidget from './ActiveAnomaliesWidget';
 import ChronologicalAnomalyLogPanel from './ChronologicalAnomalyLogPanel';
+import AlertHistoryTable from './AlertHistoryTable';
+import ThresholdBreachToastContainer from './ThresholdBreachToastContainer';
 import HealthThresholdsConfigModal, { DEFAULT_HEALTH_THRESHOLDS } from './HealthThresholdsConfigModal';
+import SensorThresholdsConfigPanel from './SensorThresholdsConfigPanel';
 import { exportWorkforceHealthCsv } from '../services/workforceCsvExport';
+import { downloadAnomalyReportJson, downloadAnomalyReportCsv } from '../services/reportExportService';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -152,6 +157,7 @@ export default function ManagerDashboard() {
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState<boolean>(false);
   const [isZoneBuilderOpen, setIsZoneBuilderOpen] = useState<boolean>(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState<boolean>(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceAlertSettings>(DEFAULT_VOICE_SETTINGS);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
@@ -178,6 +184,286 @@ export default function ManagerDashboard() {
   const [healthThresholds, setHealthThresholds] = useState<HealthSignalNotificationThresholds>(DEFAULT_HEALTH_THRESHOLDS);
   const [isHealthThresholdsModalOpen, setIsHealthThresholdsModalOpen] = useState<boolean>(false);
   const [isolatedHealthSignal, setIsolatedHealthSignal] = useState<string | null>(null);
+
+  // Real-Time Notification Toast System State
+  const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
+  const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
+  const [activeCorrelationPair, setActiveCorrelationPair] = useState<{ signalA: string; signalB: string } | null>(null);
+  const lastBreachTimestampsRef = useRef<Record<string, number>>({});
+
+  const checkReadingForThresholdBreaches = useCallback(
+    (pt: TelemetryDataPoint, zone: FacilityZone, force = false) => {
+      const now = Date.now();
+      const timeFormatted = new Date(pt.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const newToasts: ThresholdBreachToast[] = [];
+
+      const evaluateSignal = (
+        signalKey: ThresholdBreachToast['signalKey'],
+        signalName: string,
+        measuredVal: number,
+        limitVal: number | undefined,
+        unit: string,
+        isBreached: boolean,
+        severity: 'CRITICAL' | 'HIGH' | 'WARNING',
+        deltaStr: string,
+        recommendedAction: string,
+        autoDismissMs: number
+      ) => {
+        if (!isBreached || limitVal === undefined) return;
+        const cooldownKey = `${zone.id}-${signalKey}`;
+        const lastTriggered = lastBreachTimestampsRef.current[cooldownKey] || 0;
+        if (!force && now - lastTriggered < 15000) return; // 15-second cooldown per signal per zone
+
+        lastBreachTimestampsRef.current[cooldownKey] = now;
+
+        newToasts.push({
+          id: `TOAST-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          timestamp: pt.timestamp,
+          timeFormatted,
+          signalKey,
+          signalName,
+          measuredValue: measuredVal,
+          measuredFormatted: `${measuredVal.toFixed(1)} ${unit}`,
+          thresholdLimit: limitVal,
+          thresholdFormatted: `${limitVal.toFixed(1)} ${unit}`,
+          unit,
+          deltaFormatted: deltaStr,
+          severity,
+          zoneId: zone.id,
+          zoneName: zone.name,
+          workerCount: zone.count,
+          recommendedAction,
+          acknowledged: false,
+          createdAt: now,
+          autoDismissMs
+        });
+      };
+
+      // 1. Heart Rate
+      const hr = pt.heart_rate_bpm ?? Math.round(72 + (68 - pt.smoothed_hrv) * 1.2);
+      const hrLimit = healthThresholds.maxHeartRateBpm ?? 115;
+      if (hr > hrLimit) {
+        const delta = hr - hrLimit;
+        const sev: 'CRITICAL' | 'HIGH' = delta >= 15 ? 'CRITICAL' : 'HIGH';
+        evaluateSignal(
+          'heartRate',
+          'Heart Rate (Pulse) Exceeded',
+          hr,
+          hrLimit,
+          'BPM',
+          true,
+          sev,
+          `+${delta} BPM (+${((delta / hrLimit) * 100).toFixed(0)}%)`,
+          'Direct worker cohort to cooling shaded shelter; hydrate immediately with electrolyte solution.',
+          sev === 'CRITICAL' ? 12000 : 8000
+        );
+      }
+
+      // 2. Ambient Heat
+      const amb = pt.ambient_temp_c;
+      const ambLimit = healthThresholds.maxAmbientHeatC;
+      if (amb > ambLimit) {
+        const delta = Number((amb - ambLimit).toFixed(1));
+        const sev: 'CRITICAL' | 'HIGH' = delta >= 3.0 ? 'CRITICAL' : 'HIGH';
+        evaluateSignal(
+          'ambientTemp',
+          'Ambient Temperature Ceiling Exceeded',
+          amb,
+          ambLimit,
+          '°C',
+          true,
+          sev,
+          `+${delta}°C`,
+          'Activate industrial misting fans and initiate 15-minute rotation work-rest schedule.',
+          8000
+        );
+      }
+
+      // 3. Worker HRV Drop
+      const hrv = pt.smoothed_hrv;
+      const hrvFloor = healthThresholds.minHrvMs;
+      if (hrv < hrvFloor) {
+        const delta = Number((hrvFloor - hrv).toFixed(1));
+        const sev: 'CRITICAL' | 'HIGH' = hrv <= 30 ? 'CRITICAL' : 'HIGH';
+        evaluateSignal(
+          'hrv',
+          'Autonomic HRV Collapse (Vagal Depletion)',
+          hrv,
+          hrvFloor,
+          'ms',
+          true,
+          sev,
+          `-${delta} ms (-${((delta / hrvFloor) * 100).toFixed(0)}%)`,
+          'Critical autonomic strain detected. Direct worker to immediate medical rest break.',
+          sev === 'CRITICAL' ? 14000 : 9000
+        );
+      }
+
+      // 4. Skin Temperature
+      const skin = pt.skin_temp_c;
+      const skinLimit = healthThresholds.maxSkinTempC;
+      if (skin > skinLimit) {
+        const delta = Number((skin - skinLimit).toFixed(2));
+        const sev: 'CRITICAL' | 'HIGH' = delta >= 0.8 ? 'CRITICAL' : 'HIGH';
+        evaluateSignal(
+          'skinTemp',
+          'Worker Surface Skin Temp Exceeded',
+          skin,
+          skinLimit,
+          '°C',
+          true,
+          sev,
+          `+${delta}°C`,
+          'Immerse forearms in cool water bath; check for signs of exertional heat exhaustion.',
+          8000
+        );
+      }
+
+      // 5. Acoustic Noise
+      const noise = pt.noise_db ?? pt.raw_noise_db ?? 75;
+      const noiseLimit = healthThresholds.maxNoiseDb;
+      if (noise > noiseLimit) {
+        const delta = Number((noise - noiseLimit).toFixed(1));
+        evaluateSignal(
+          'noise',
+          'Acoustic Noise Overpressure Exceeded',
+          noise,
+          noiseLimit,
+          'dBA',
+          true,
+          delta >= 10 ? 'HIGH' : 'WARNING',
+          `+${delta} dBA`,
+          'Mandate secondary hearing protection; inspect heavy machinery vibration mounts.',
+          7000
+        );
+      }
+
+      // 6. Composite Risk Score
+      const risk = pt.risk_score;
+      const riskCutoff = healthThresholds.riskScoreCutoffPct;
+      if (risk > riskCutoff) {
+        const delta = Number((risk - riskCutoff).toFixed(1));
+        evaluateSignal(
+          'riskScore',
+          'Multidimensional Risk Cutoff Exceeded',
+          risk,
+          riskCutoff,
+          '%',
+          true,
+          risk >= 85 ? 'CRITICAL' : 'HIGH',
+          `+${delta}%`,
+          'LSTM Autoencoder flagged high multi-signal reconstruction deviation. Safety officer review required.',
+          10000
+        );
+      }
+
+      if (newToasts.length > 0) {
+        setActiveToasts((prev) => [...newToasts, ...prev].slice(0, 8));
+        if (toastSoundEnabled) {
+          voiceAlertService.playAlertChime();
+        }
+      }
+    },
+    [healthThresholds, toastSoundEnabled]
+  );
+
+  // Auto-dismiss countdown for non-acknowledged toasts
+  useEffect(() => {
+    if (activeToasts.length === 0) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setActiveToasts((prev) =>
+        prev.filter((t) => {
+          if (t.acknowledged) return false;
+          return now - t.createdAt < t.autoDismissMs;
+        })
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [activeToasts.length]);
+
+  const handleDismissToast = (id: string) => {
+    setActiveToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleAcknowledgeToast = (id: string) => {
+    setActiveToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, acknowledged: true } : t))
+    );
+    setProtocolActiveNotice('Sensor threshold breach notification acknowledged by safety manager.');
+  };
+
+  const handleClearAllToasts = () => {
+    setActiveToasts([]);
+  };
+
+  const handleInspectSignalInChart = (signalKey: string) => {
+    const el = document.getElementById('historical-health-chart-card');
+    el?.scrollIntoView({ behavior: 'smooth' });
+
+    // Set correlation overlay pairing
+    if (signalKey === 'ambientTemp' || signalKey === 'noiseDb' || signalKey === 'twl' || signalKey === 'aqi') {
+      setActiveCorrelationPair({ signalA: signalKey, signalB: 'heartRate' });
+    } else {
+      setActiveCorrelationPair({
+        signalA: 'ambientTemp',
+        signalB: signalKey === 'hrv' ? 'smoothedHrv' : signalKey
+      });
+    }
+    setIsolatedHealthSignal(signalKey);
+  };
+
+  const handleDispatchActionForToast = (toast: ThresholdBreachToast) => {
+    const isThermal = toast.signalKey === 'ambientTemp' || toast.signalKey === 'skinTemp';
+    const isNoise = toast.signalKey === 'noise';
+
+    const newDispatch: MedicalDispatchNotification = {
+      id: `DSP-${Date.now().toString().slice(-4)}-TOAST`,
+      alertId: toast.id,
+      zone: toast.zoneName,
+      severity: toast.severity === 'WARNING' ? 'MODERATE' : toast.severity,
+      recipientRole: isThermal
+        ? 'On-Site Rapid Cooling Evacuation Team'
+        : isNoise
+        ? 'Acoustic Hearing Protection Officer'
+        : 'On-Site Medical Triage Lead',
+      contactMethod: 'DUAL_CHANNEL',
+      recipientPhone: '+1 (555) 911-TOAST',
+      messagePayload: `THRESHOLD BREACH NOTIFICATION: ${toast.signalName} measured ${toast.measuredFormatted} (exceeds ${toast.thresholdFormatted}). Directive: ${toast.recommendedAction}`,
+      stagedAt: 'Just now',
+      status: 'STAGED'
+    };
+
+    setMedicalDispatches((prev) => [newDispatch, ...prev]);
+    handleAcknowledgeToast(toast.id);
+    setProtocolActiveNotice(
+      `Medical dispatch staged for ${toast.signalName} breach in ${toast.zoneName}. Priority notification queued.`
+    );
+  };
+
+  const handleSimulateBreachToast = () => {
+    const dummyBreachPoint: TelemetryDataPoint = {
+      timestamp: new Date().toISOString(),
+      timeLabel: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      heart_rate_bpm: (healthThresholds.maxHeartRateBpm ?? 115) + 12,
+      raw_heart_rate_bpm: (healthThresholds.maxHeartRateBpm ?? 115) + 16,
+      ambient_temp_c: Number((healthThresholds.maxAmbientHeatC + 2.4).toFixed(1)),
+      smoothed_hrv: Math.max(20, healthThresholds.minHrvMs - 7.5),
+      raw_hrv: Math.max(18, healthThresholds.minHrvMs - 9.0),
+      skin_temp_c: Number((healthThresholds.maxSkinTempC + 0.65).toFixed(2)),
+      noise_db: healthThresholds.maxNoiseDb + 6.5,
+      twl_index: 85,
+      risk_score: Math.min(95, healthThresholds.riskScoreCutoffPct + 14),
+      is_anomaly: true
+    };
+    checkReadingForThresholdBreaches(dummyBreachPoint, activeZoneObj, true);
+    setProtocolActiveNotice('Simulated live sensor threshold breach event triggered for active zone.');
+  };
 
   const handleSaveHealthThresholds = (
     updatedThresholds: HealthSignalNotificationThresholds,
@@ -221,6 +507,37 @@ export default function ManagerDashboard() {
     } catch (err: any) {
       console.error('CSV export failed:', err);
       setProtocolActiveNotice('Failed to export CSV: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  const handleDownloadReport = (format: 'JSON' | 'CSV') => {
+    try {
+      if (format === 'JSON') {
+        const result = downloadAnomalyReportJson({
+          data: telemetryStream,
+          thresholds: healthThresholds,
+          zone: activeZoneObj,
+          activeAlerts
+        });
+        setProtocolActiveNotice(
+          `24-Hour Anomaly Trend & Thresholds report generated and downloaded as JSON (${Math.round(result.sizeBytes / 1024)} KB): ${result.filename}`
+        );
+      } else {
+        const result = downloadAnomalyReportCsv({
+          data: telemetryStream,
+          thresholds: healthThresholds,
+          zone: activeZoneObj,
+          activeAlerts
+        });
+        setProtocolActiveNotice(
+          `24-Hour Anomaly Trend & Thresholds report generated and downloaded as CSV (${result.recordCount} records): ${result.filename}`
+        );
+      }
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+      setIsDownloadMenuOpen(false);
+    } catch (err: any) {
+      console.error('Download report failed:', err);
+      setProtocolActiveNotice(`Failed to generate report: ${err?.message || 'Unknown error'}`);
     }
   };
 
@@ -378,24 +695,32 @@ export default function ManagerDashboard() {
         const last = prev[prev.length - 1];
         if (!last) return prev;
         const now = new Date();
+        const smoothedHrv = Number(Math.max(25, last.smoothed_hrv + (Math.random() - 0.5) * 1.5).toFixed(1));
+        const rawHrv = Number(Math.max(20, smoothedHrv + jitterFactor * 1.5).toFixed(1));
+        const hr = Math.round(72 + (68 - smoothedHrv) * 1.25);
         const newPoint: TelemetryDataPoint = {
           ...last,
           timestamp: now.toISOString(),
           timeLabel: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          heart_rate_bpm: hr,
+          raw_heart_rate_bpm: Math.round(72 + (68 - rawHrv) * 1.25),
           ambient_temp_c: Number((last.ambient_temp_c + (Math.random() - 0.48) * 0.4).toFixed(1)),
           raw_noise_db: Number(Math.max(60, (last.noise_db ?? 75) + jitterFactor).toFixed(1)),
           noise_db: Number(Math.max(60, (last.noise_db ?? 75) + jitterFactor * 0.25).toFixed(1)),
           smoothed_noise_db: Number(Math.max(60, (last.noise_db ?? 75) + jitterFactor * 0.25).toFixed(1)),
-          smoothed_hrv: Number(Math.max(25, last.smoothed_hrv + (Math.random() - 0.5) * 1.5).toFixed(1)),
-          raw_hrv: Number(Math.max(20, last.smoothed_hrv + jitterFactor * 1.5).toFixed(1)),
+          smoothed_hrv: smoothedHrv,
+          raw_hrv: rawHrv,
+          skin_temp_c: Number(((last.skin_temp_c ?? 36.6) + (Math.random() - 0.49) * 0.08).toFixed(2)),
           risk_score: Number((result.risk_probability * 100).toFixed(1))
         };
+        // Trigger real-time threshold check on streaming telemetry point
+        checkReadingForThresholdBreaches(newPoint, activeZoneObj);
         return [...prev.slice(1), newPoint];
       });
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig]);
+  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches]);
 
   // Handle Burst Event Triggers
   const handleTriggerBurst = (type: 'HEATWAVE' | 'NOISE' | 'CARDIAC' | 'DROPOUT') => {
@@ -843,6 +1168,19 @@ export default function ManagerDashboard() {
             <span>Active Anomalies ({pendingCriticalCount} Critical)</span>
           </button>
 
+          {/* Sensor Signal Alert Thresholds Config Panel Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('sensor-thresholds-config-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-500/50 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Jump to Custom Sensor Signals Alert Thresholds Configuration Panel"
+          >
+            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Alert Thresholds</span>
+          </button>
+
           {/* 24-Hour Workforce Health Chart Jump Button */}
           <button
             onClick={() => {
@@ -892,6 +1230,19 @@ export default function ManagerDashboard() {
           >
             <Clock className="h-3.5 w-3.5 text-rose-400" />
             <span>Anomaly Log</span>
+          </button>
+
+          {/* Alert History Table Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('alert-history-table-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Jump to Sensor Signal Threshold Exceedance & Incident Alert History Table"
+          >
+            <History className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Alert History</span>
           </button>
 
           {/* Automated Predictive Maintenance Scheduler Jump Button */}
@@ -1055,6 +1406,74 @@ export default function ManagerDashboard() {
             <Sliders className="h-3.5 w-3.5 text-indigo-400" />
             <span>Health Thresholds</span>
           </button>
+
+          {/* Test Real-Time Breach Notification Toast Button */}
+          <button
+            onClick={handleSimulateBreachToast}
+            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/50 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer animate-pulse"
+            title="Simulate live sensor reading exceeding custom thresholds to trigger real-time notification toast alert"
+          >
+            <BellRing className="h-3.5 w-3.5 text-rose-400" />
+            <span>Test Breach Alert</span>
+          </button>
+
+          {/* Download Report Button (Converts current 24h anomaly trends & threshold settings to JSON or CSV) */}
+          <div className="relative">
+            <button
+              onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
+              className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-cyan-400/40"
+              title="Download current 24-hour anomaly trend data and threshold settings as JSON or CSV file"
+            >
+              <Download className="h-3.5 w-3.5 text-white" />
+              <span>Download Report</span>
+              <ChevronDown className={`h-3 w-3 text-white/80 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isDownloadMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsDownloadMenuOpen(false)}
+                />
+                <div className="absolute right-0 mt-1.5 w-68 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 text-xs">
+                  <div className="px-2.5 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 font-medium flex items-center justify-between">
+                    <span>Export 24h Trends &amp; Thresholds</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">RFC 4180</span>
+                  </div>
+                  <div className="py-1 space-y-1">
+                    <button
+                      onClick={() => handleDownloadReport('JSON')}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-cyan-950/70 hover:text-cyan-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <FileCode className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">JSON Report</div>
+                          <div className="text-[10px] text-slate-400">Full telemetry, thresholds &amp; alert history</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono font-bold">.json</span>
+                    </button>
+                    <button
+                      onClick={() => handleDownloadReport('CSV')}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-emerald-950/70 hover:text-emerald-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <FileSpreadsheet className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">CSV Spreadsheet</div>
+                          <div className="text-[10px] text-slate-400">24-hour time series with threshold flags</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
+                    </button>
+                  </div>
+                  <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-500">
+                    Active limits: HR ({healthThresholds.maxHeartRateBpm ?? 115} BPM), Heat ({healthThresholds.maxAmbientHeatC}°C), HRV ({healthThresholds.minHrvMs}ms)
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Export Historical Workforce Health Data CSV Button */}
           <button
@@ -1242,6 +1661,27 @@ export default function ManagerDashboard() {
         recentTelemetryPoint={telemetryStream[telemetryStream.length - 1]}
       />
 
+      {/* Custom Sensor Signals Alert Thresholds Configuration Panel (Inline Real-Time Control) */}
+      <SensorThresholdsConfigPanel
+        thresholds={healthThresholds}
+        onUpdateThresholds={handleSaveHealthThresholds}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        telemetryStream={telemetryStream}
+        onOpenAdvancedModal={() => setIsHealthThresholdsModalOpen(true)}
+        onScrollToChart={() => {
+          const el = document.getElementById('historical-health-chart-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
       {/* Historical Workforce Health Signal Data Line Chart (Last 24 Hours via Recharts) */}
       <HistoricalWorkforceHealthChart
         data={telemetryStream}
@@ -1252,6 +1692,7 @@ export default function ManagerDashboard() {
         onExportCsv={handleExportWorkforceCsv}
         externalIsolatedSignal={isolatedHealthSignal}
         onSignalIsolationChange={setIsolatedHealthSignal}
+        correlationPair={activeCorrelationPair}
       />
 
       {/* Chronological Anomaly Log Panel below Line Chart */}
@@ -1265,6 +1706,31 @@ export default function ManagerDashboard() {
         onSpeakAlert={handleSpeakAlert}
         onIsolateSignalInChart={(sigKey) => setIsolatedHealthSignal(sigKey)}
         isSpeaking={isSpeaking}
+      />
+
+      {/* Alert History Table: Timestamped Log of Past Incidents Exceeding Thresholds */}
+      <AlertHistoryTable
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        thresholds={healthThresholds}
+        zones={zones}
+        selectedZone={activeZoneObj}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        isSpeaking={isSpeaking}
+        onScrollToChart={() => {
+          const el = document.getElementById('historical-health-chart-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
       />
 
       {/* Sliding 24-Hour Recharts Telemetry Stream with 1-Hour Forecast */}
@@ -1650,6 +2116,18 @@ export default function ManagerDashboard() {
         onSaveThresholds={handleSaveHealthThresholds}
         zones={zones}
         activeZoneId={selectedZone}
+      />
+
+      {/* Real-Time Threshold Breach Notification Toast Container */}
+      <ThresholdBreachToastContainer
+        toasts={activeToasts}
+        onDismissToast={handleDismissToast}
+        onAcknowledgeToast={handleAcknowledgeToast}
+        onClearAllToasts={handleClearAllToasts}
+        onInspectSignalInChart={handleInspectSignalInChart}
+        onDispatchActionForToast={handleDispatchActionForToast}
+        soundEnabled={toastSoundEnabled}
+        onToggleSound={() => setToastSoundEnabled((s) => !s)}
       />
     </div>
   );

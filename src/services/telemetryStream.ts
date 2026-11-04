@@ -235,6 +235,7 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
   const rawHrvList: number[] = [];
   const rawSkinList: number[] = [];
   const rawNoiseList: number[] = [];
+  const rawHeartRateList: number[] = [];
 
   const rawData: Array<{
     timestamp: string;
@@ -246,6 +247,7 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
     hrv_drop_pct: number;
     raw_hrv: number;
     raw_skin_temp: number;
+    raw_heart_rate_bpm: number;
     sick_leave_rate_deviation: number;
     is_anomaly: boolean;
     equipment_vibration_mm_s?: number;
@@ -277,6 +279,9 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
     let equipVibration = 1.8 + 0.08 * (rawNoise - 60) + (Math.random() - 0.5) * 0.4;
     let equipBearingTemp = 48.0 + 0.75 * (ambientTemp - 25.0) + 0.15 * (rawNoise - 60) + (Math.random() - 0.5) * 1.5;
 
+    // Heart rate baseline: ~72-76 bpm with exertion and diurnal modulation
+    let heartRate = 72.0 + 8.0 * Math.max(0, workShiftFactor) + (ambientTemp - 28.0) * 0.8 + (Math.random() - 0.5) * 5.0;
+
     const isAnomaly = i >= anomalyStart && i <= anomalyEnd;
     if (isAnomaly) {
       ambientTemp += 8.5;
@@ -288,12 +293,14 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       sickLeaveDev += 2.4;
       equipVibration += 3.8; // Exceeds ISO 10816 4.5 mm/s limit
       equipBearingTemp += 26.5; // High thermal spike in bearing casing (> 82°C)
+      heartRate += 38.0 + (Math.random() - 0.5) * 6.0; // Tachycardic surge reaching 120-132 bpm
     }
 
     const rawHrv = Math.max(25, 68.0 * (1.0 - hrvDropPct / 100) + (Math.random() - 0.5) * 6.0);
     rawHrvList.push(rawHrv);
     rawSkinList.push(skinTemp);
     rawNoiseList.push(rawNoise);
+    rawHeartRateList.push(heartRate);
 
     rawData.push({
       timestamp: pointTime.toISOString(),
@@ -305,6 +312,7 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       hrv_drop_pct: Number(Math.min(100, Math.max(0, hrvDropPct)).toFixed(1)),
       raw_hrv: Number(rawHrv.toFixed(1)),
       raw_skin_temp: Number(skinTemp.toFixed(2)),
+      raw_heart_rate_bpm: Math.round(heartRate),
       sick_leave_rate_deviation: Number(sickLeaveDev.toFixed(2)),
       is_anomaly: isAnomaly,
       equipment_vibration_mm_s: Number(Math.max(0.5, equipVibration).toFixed(2)),
@@ -316,18 +324,21 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
   const smoothedHrvList = defaultKalman.smooth(rawHrvList);
   const smoothedSkinList = defaultKalman.smooth(rawSkinList);
   const smoothedNoiseList = defaultKalman.smooth(rawNoiseList);
+  const smoothedHeartRateList = defaultKalman.smooth(rawHeartRateList);
 
   return rawData.map((d, idx) => {
     const sHrv = smoothedHrvList[idx];
     const sTemp = smoothedSkinList[idx];
     const sNoise = smoothedNoiseList[idx];
+    const sHeartRate = smoothedHeartRateList[idx];
 
     // Compute continuous risk score 0 - 100
     const hrvDrop = Math.max(0, 68.0 - sHrv) / 68.0;
     const tempSpike = Math.max(0, sTemp - 36.5) / 36.5;
     const heatLoad = Math.max(0, d.ambient_temp_c - 32.0) / 20.0;
     const noiseFactor = Math.max(0, sNoise - 85.0) / 30.0;
-    const mse = 0.35 * hrvDrop + 0.2 * tempSpike + 0.25 * heatLoad + 0.1 * noiseFactor + 0.1 * (d.sick_leave_rate_deviation / 4.0);
+    const heartRateStrain = Math.max(0, sHeartRate - 100.0) / 40.0;
+    const mse = 0.3 * hrvDrop + 0.2 * tempSpike + 0.2 * heatLoad + 0.1 * noiseFactor + 0.1 * heartRateStrain + 0.1 * (d.sick_leave_rate_deviation / 4.0);
     const riskProb = 1.0 / (1.0 + Math.exp(-12 * (mse - 0.25)));
 
     return {
@@ -337,6 +348,8 @@ export function generateSyntheticStream(hours = 24, freqMinutes = 15): Telemetry
       smoothed_hrv: sHrv,
       skin_temp_c: sTemp,
       smoothed_skin_temp: sTemp,
+      heart_rate_bpm: Math.round(sHeartRate),
+      raw_heart_rate_bpm: d.raw_heart_rate_bpm,
       risk_score: Number((riskProb * 100).toFixed(1))
     };
   });
