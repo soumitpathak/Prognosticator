@@ -36,6 +36,9 @@ export interface HealthSignalNotificationThresholds {
   minTwlIndex: number; // minimum Thermal Work Limit (W/m²)
   riskScoreCutoffPct: number; // composite risk score cutoff (%)
   maxHeartRateBpm?: number; // maximum allowable heart rate in beats per minute (e.g. 115 bpm)
+  dailyAnomalyFrequencyThreshold?: number; // e.g. 5 events/day
+  criticalDailyFrequencyThreshold?: number; // e.g. 3 events/day
+  sensitivityLevel?: 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM';
   enableSmsRadioDispatch: boolean;
   enableVoiceAlerts: boolean;
   enableInAppBeacon: boolean;
@@ -209,7 +212,8 @@ export type AuditChangeCategory =
   | 'RESOURCE_REALLOCATION'
   | 'MAINTENANCE_DISPATCH'
   | 'BIOMETRIC_SYNC'
-  | 'SHIFT_HANDOVER';
+  | 'SHIFT_HANDOVER'
+  | 'REPORT_EXPORT';
 
 export type SafetyPersonnelRole =
   | 'EMERGENCY_MEDICAL_RESPONDER'
@@ -493,4 +497,55 @@ export interface ForecastStaffingSuggestion {
   resourceKitRecommendations: string[];
   estimatedRiskMitigationPct: number; // e.g. 46%
   status: 'PENDING_DEPLOYMENT' | 'APPLIED';
+}
+
+// ==========================================
+// 30-Day Anomaly Trend Frequency Types
+// ==========================================
+
+export interface AnomalyTrendDay {
+  dayIndex: number; // 0 (30 days ago) to 29 (today)
+  date: string; // e.g. "Oct 06"
+  fullDate: string; // e.g. "2026-10-06"
+  dayOfWeek: string; // "Mon", "Tue", etc.
+  totalAnomalies: number;
+  criticalCount: number;
+  moderateCount: number;
+  resolvedCount: number;
+  movingAvg7d: number;
+  anomalyRatePer100: number;
+  avgAmbientTempC: number;
+  avgHrvMs: number;
+  peakHour: string;
+  primaryDriver: string;
+  isHeatwavePeriod: boolean;
+  zoneCounts: Record<string, number>;
+}
+
+// ==========================================
+// Geographical & Department Anomaly Heatmap Types
+// ==========================================
+
+export interface DepartmentHeatmapRow {
+  id: string;
+  departmentName: string;
+  facilityLocation: string;
+  region: string;
+  latitude: number;
+  longitude: number;
+  cohortSize: number;
+  totalAnomalies: number;
+  criticalCount: number;
+  moderateCount: number;
+  anomalyRatePer100: number;
+  heatStrainIndex: 'EXTREME' | 'HIGH' | 'MODERATE' | 'LOW';
+  primaryRiskDriver: string;
+  trendShiftPct: number;
+  weeklyDays: number[]; // 7 numbers (Mon-Sun)
+  shiftDistribution: {
+    morning: number;
+    afternoonPeak: number;
+    evening: number;
+    night: number;
+  };
 }

@@ -83,7 +83,16 @@ import SensorThresholdsConfigPanel from './SensorThresholdsConfigPanel';
 import { exportWorkforceHealthCsv } from '../services/workforceCsvExport';
 import { downloadAnomalyReportJson, downloadAnomalyReportCsv } from '../services/reportExportService';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing } from 'lucide-react';
+import AnomalyTrend30DaysChart from './AnomalyTrend30DaysChart';
+import AnomalyThresholdConfigPanel from './AnomalyThresholdConfigPanel';
+import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
+import {
+  generate30DayAnomalyTrend,
+  computeTrendSummary,
+  exportSimulatedAnomalyReportPdf,
+  exportSimulatedAnomalyReportCsv
+} from '../services/anomalyTrend30DayService';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -191,6 +200,24 @@ export default function ManagerDashboard() {
   // Client-Side Executive PDF Export State
   const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
   const [directPdfStatus, setDirectPdfStatus] = useState<string>('');
+
+  // 30-Day Anomaly Trend Frequency Intelligence State
+  const [anomalyTrendZoneId, setAnomalyTrendZoneId] = useState<string>('ALL');
+  const [isExportingAuditReport, setIsExportingAuditReport] = useState<boolean>(false);
+  const [isViewAuditMenuOpen, setIsViewAuditMenuOpen] = useState<boolean>(false);
+
+  const anomalyTrend30d = useMemo(() => {
+    return generate30DayAnomalyTrend(zones, anomalyTrendZoneId);
+  }, [zones, anomalyTrendZoneId]);
+
+  const anomalyTrendSummary = useMemo(() => {
+    return computeTrendSummary(anomalyTrend30d);
+  }, [anomalyTrend30d]);
+
+  // Custom Anomaly Detection Thresholds & Sensitivity State (Visualized on Trend Chart)
+  const [dailyFrequencyThreshold, setDailyFrequencyThreshold] = useState<number>(5);
+  const [criticalFrequencyThreshold, setCriticalFrequencyThreshold] = useState<number>(3);
+  const [sensitivityLevel, setSensitivityLevel] = useState<'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM'>('MEDIUM');
 
   // Custom Health Signal Notification Thresholds Configuration State
   const [healthThresholds, setHealthThresholds] = useState<HealthSignalNotificationThresholds>(DEFAULT_HEALTH_THRESHOLDS);
@@ -582,6 +609,15 @@ export default function ManagerDashboard() {
     justification: string
   ) => {
     setHealthThresholds(updatedThresholds);
+    if (updatedThresholds.dailyAnomalyFrequencyThreshold !== undefined) {
+      setDailyFrequencyThreshold(updatedThresholds.dailyAnomalyFrequencyThreshold);
+    }
+    if (updatedThresholds.criticalDailyFrequencyThreshold !== undefined) {
+      setCriticalFrequencyThreshold(updatedThresholds.criticalDailyFrequencyThreshold);
+    }
+    if (updatedThresholds.sensitivityLevel) {
+      setSensitivityLevel(updatedThresholds.sensitivityLevel);
+    }
     setKalmanConfig((prev) => ({
       ...prev,
       criticalCutoffPct: updatedThresholds.riskScoreCutoffPct
@@ -661,6 +697,76 @@ export default function ManagerDashboard() {
     } catch (err: any) {
       console.error('Download report failed:', err);
       setProtocolActiveNotice(`Failed to generate report: ${err?.message || 'Unknown error'}`);
+    }
+  };
+
+  // Export Current View Anomaly Report as Simulated PDF/CSV with System Audit Logging
+  const handleExportViewAuditReport = async (format: 'PDF' | 'CSV') => {
+    setIsExportingAuditReport(true);
+    try {
+      let filename = '';
+      if (format === 'PDF') {
+        const res = await exportSimulatedAnomalyReportPdf({
+          data: anomalyTrend30d,
+          summary: anomalyTrendSummary,
+          currentZone: activeZoneObj,
+          activeAlerts,
+          thresholds: healthThresholds,
+          userName: 'Alex Mercer (EHS Lead Supervisor)'
+        });
+        filename = res.filename;
+      } else {
+        const res = exportSimulatedAnomalyReportCsv({
+          data: anomalyTrend30d,
+          summary: anomalyTrendSummary,
+          currentZone: activeZoneObj,
+          activeAlerts,
+          thresholds: healthThresholds,
+          userName: 'Alex Mercer (EHS Lead Supervisor)'
+        });
+        filename = res.filename;
+      }
+
+      // Record immutable system audit log entry
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-EXP-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor',
+        category: 'REPORT_EXPORT',
+        targetModule: '30-Day Anomaly Trend Intelligence',
+        parameter: `Anomaly View Report Export (${format})`,
+        previousValue: 'N/A (Ad-hoc Snapshot)',
+        newValue: `Exported ${format} audit document: ${filename}`,
+        justification: `Exported current view anomaly report (${format}) with 30-day trend frequency & active alerts for compliance audit logging.`,
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      // Record audit event trail
+      const auditEvent: AuditEvent = {
+        id: `AUD-EVT-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toLocaleTimeString(),
+        eventType: 'EXPORT_AUDIT',
+        zone: activeZoneObj.name,
+        cohortCount: activeZoneObj.count,
+        riskTier: activeZoneObj.status === 'CRITICAL' ? 'CRITICAL_RISK' : 'STABLE',
+        privacyEnforced: 'k-Anonymity Verified (N>=12)',
+        actionTaken: `Simulated ${format} anomaly view report exported for audit logging: ${filename}`
+      };
+      setAuditEvents((prev) => [auditEvent, ...prev]);
+
+      setProtocolActiveNotice(
+        `Current view anomaly report exported as ${format} (${filename}) and registered in System Audit Trail with immutable verification.`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+      setIsViewAuditMenuOpen(false);
+    } catch (err: any) {
+      console.error('Export view audit report failed:', err);
+      setProtocolActiveNotice(`Failed to export report: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsExportingAuditReport(false);
     }
   };
 
@@ -1428,6 +1534,45 @@ export default function ManagerDashboard() {
             <span>Alert Thresholds</span>
           </button>
 
+          {/* Anomaly Detection Sensitivity Thresholds Config Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('anomaly-threshold-config-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-500/60 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            title="Jump to Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel"
+          >
+            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Sensitivity Config ({dailyFrequencyThreshold}/day)</span>
+          </button>
+
+          {/* 30-Day Anomaly Trend Frequency Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('anomaly-trend-30d-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-cyan-950/70 hover:bg-cyan-900/70 border border-cyan-500/50 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Jump to 30-Day Anomaly Trend Frequency Recharts Analytics"
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
+            <span>30d Trend Frequency</span>
+          </button>
+
+          {/* Organization-Wide Geographical & Department Heatmap Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('org-anomaly-heatmap-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/50 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            title="Jump to Organization-Wide Geographical & Department Anomaly Frequency Heatmap"
+          >
+            <Flame className="h-3.5 w-3.5 text-rose-400" />
+            <span>Org Heatmap (6 Facilities)</span>
+          </button>
+
           {/* 24-Hour Workforce Health Chart Jump Button */}
           <button
             onClick={() => {
@@ -1772,6 +1917,66 @@ export default function ManagerDashboard() {
             )}
           </div>
 
+          {/* Export Current View Anomaly Report Button (Simulated PDF/CSV with System Audit Logging) */}
+          <div className="relative">
+            <button
+              onClick={() => setIsViewAuditMenuOpen((prev) => !prev)}
+              disabled={isExportingAuditReport}
+              className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-cyan-400/40 cursor-pointer disabled:opacity-50"
+              title="Export current view anomaly report as a simulated PDF or CSV file for audit logging purposes"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
+              <span>Export View Report (Audit Logged)</span>
+              <ChevronDown className={`h-3 w-3 text-white/80 transition-transform ${isViewAuditMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isViewAuditMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsViewAuditMenuOpen(false)}
+                />
+                <div className="absolute right-0 mt-1.5 w-72 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 text-xs">
+                  <div className="px-2.5 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 font-medium flex items-center justify-between">
+                    <span>Export View for Audit Logging</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">ISO 45001</span>
+                  </div>
+                  <div className="py-1 space-y-1">
+                    <button
+                      onClick={() => handleExportViewAuditReport('PDF')}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-cyan-950/70 hover:text-cyan-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <FileText className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">Simulated PDF Report</div>
+                          <div className="text-[10px] text-slate-400">Executive anomaly audit with 30d trend</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono font-bold">.pdf</span>
+                    </button>
+                    <button
+                      onClick={() => handleExportViewAuditReport('CSV')}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-emerald-950/70 hover:text-emerald-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <FileSpreadsheet className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">Simulated CSV File</div>
+                          <div className="text-[10px] text-slate-400">RFC 4180 raw tabular dataset for audit logs</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
+                    </button>
+                  </div>
+                  <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-400 flex items-center justify-between font-mono">
+                    <span>System Audit Trail</span>
+                    <span className="text-emerald-400">Auto-Registered &amp; Logged</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Export Historical Workforce Health Data CSV Button */}
           <button
             onClick={handleExportWorkforceCsv}
@@ -1976,6 +2181,58 @@ export default function ManagerDashboard() {
         onScrollToChart={() => {
           const el = document.getElementById('historical-health-chart-card');
           el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
+      {/* Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel */}
+      <AnomalyThresholdConfigPanel
+        thresholds={healthThresholds}
+        onUpdateThresholds={handleSaveHealthThresholds}
+        trendData={anomalyTrend30d}
+        dailyFrequencyThreshold={dailyFrequencyThreshold}
+        onDailyFrequencyThresholdChange={setDailyFrequencyThreshold}
+        criticalFrequencyThreshold={criticalFrequencyThreshold}
+        onCriticalFrequencyThresholdChange={setCriticalFrequencyThreshold}
+        sensitivityLevel={sensitivityLevel}
+        onSensitivityLevelChange={setSensitivityLevel}
+        onScrollToTrendChart={() => {
+          const el = document.getElementById('anomaly-trend-30d-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        selectedZone={activeZoneObj}
+      />
+
+      {/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (Recharts) */}
+      <AnomalyTrend30DaysChart
+        data={anomalyTrend30d}
+        summary={anomalyTrendSummary}
+        currentZone={activeZoneObj}
+        zones={zones}
+        selectedZoneId={anomalyTrendZoneId}
+        onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
+        onExportReport={handleExportViewAuditReport}
+        isExporting={isExportingAuditReport}
+        dailyFrequencyThreshold={dailyFrequencyThreshold}
+        criticalFrequencyThreshold={criticalFrequencyThreshold}
+        sensitivityLevel={sensitivityLevel}
+        onOpenThresholdPanel={() => {
+          const el = document.getElementById('anomaly-threshold-config-panel');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
+      {/* Organization-Wide Geographical & Departmental Anomaly Frequency Heatmap */}
+      <OrganizationalAnomalyHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
         }}
       />
 
@@ -2324,6 +2581,15 @@ export default function ManagerDashboard() {
             >
               <Download className="h-4 w-4 text-emerald-400" />
               <span>Export Health CSV (24h)</span>
+            </button>
+            <button
+              onClick={() => handleExportViewAuditReport('PDF')}
+              disabled={isExportingAuditReport}
+              className="bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-200 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-cyan-500/50 flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              title="Export current view anomaly report as a simulated PDF/CSV file for audit logging purposes"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
+              <span>Export View Audit Report</span>
             </button>
             <button
               onClick={() => setIsReportModalOpen(true)}

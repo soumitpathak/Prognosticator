@@ -67,6 +67,7 @@ export default function SystemAuditLog({ logs, onAddManualLog }: SystemAuditLogP
   const totalCount = logs.length;
   const thresholdCount = logs.filter((l) => l.category === 'THRESHOLD_CHANGE').length;
   const zoneConfigCount = logs.filter((l) => l.category === 'ZONE_CONFIG').length;
+  const exportCount = logs.filter((l) => l.category === 'REPORT_EXPORT').length;
   const uniqueUsers = Array.from(new Set(logs.map((l) => l.userId))).length;
 
   // Handle Export CSV
@@ -241,6 +242,17 @@ export default function SystemAuditLog({ logs, onAddManualLog }: SystemAuditLogP
             <MapPin className="h-3 w-3" />
             <span>Zone Configs ({zoneConfigCount})</span>
           </button>
+          <button
+            onClick={() => setSelectedCategory('REPORT_EXPORT')}
+            className={`px-3 py-1.5 rounded-md font-medium transition flex items-center gap-1.5 ${
+              selectedCategory === 'REPORT_EXPORT'
+                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40 shadow-xs font-semibold'
+                : 'text-slate-400 hover:text-emerald-300'
+            }`}
+          >
+            <Download className="h-3 w-3" />
+            <span>Audit Exports ({exportCount})</span>
+          </button>
         </div>
 
         {/* Search Input */}
@@ -320,9 +332,13 @@ export default function SystemAuditLog({ logs, onAddManualLog }: SystemAuditLogP
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
                           <Sliders className="h-2.5 w-2.5 mr-1" /> Threshold
                         </span>
+                      ) : log.category === 'REPORT_EXPORT' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          <Download className="h-2.5 w-2.5 mr-1" /> Audit Export
+                        </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                          <MapPin className="h-2.5 w-2.5 mr-1" /> Zone Config
+                          <MapPin className="h-2.5 w-2.5 mr-1" /> {log.category.replace('_', ' ')}
                         </span>
                       )}
                     </td>
