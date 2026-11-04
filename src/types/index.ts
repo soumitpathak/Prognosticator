@@ -408,11 +408,22 @@ export interface ShiftHandoverReport {
 // Real-Time Notification Toast Types
 // ==========================================
 
+export type ToastSignalKey =
+  | 'heartRate'
+  | 'ambientTemp'
+  | 'hrv'
+  | 'skinTemp'
+  | 'noise'
+  | 'twl'
+  | 'riskScore'
+  | 'anomalyEngine'
+  | 'predictiveMaintenance';
+
 export interface ThresholdBreachToast {
   id: string;
   timestamp: string;
   timeFormatted: string;
-  signalKey: 'heartRate' | 'ambientTemp' | 'hrv' | 'skinTemp' | 'noise' | 'twl' | 'riskScore';
+  signalKey: ToastSignalKey;
   signalName: string;
   measuredValue: number;
   measuredFormatted: string;
@@ -428,4 +439,58 @@ export interface ThresholdBreachToast {
   acknowledged: boolean;
   createdAt: number;
   autoDismissMs: number;
+  privacyComplianceNotice?: string;
+  alertType?: AlertType;
+  anomalyId?: string;
+}
+
+// ==========================================
+// Anomaly Audit Log Types
+// ==========================================
+
+export interface AnomalyAuditRecord {
+  id: string;
+  anomalyId: string;
+  timestamp: string; // ISO timestamp
+  timeFormatted: string; // e.g. "2026-11-04 09:08:15"
+  relativeTime: string; // e.g. "12 mins ago"
+  zone: string;
+  department: string;
+  anomalyMetric: string;
+  measuredValue: string;
+  thresholdLimit: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
+  confidenceScore: number; // 0 to 1, e.g. 0.948
+  confidenceScoreFormatted: string; // "94.8%"
+  modelAttribution: string; // e.g. "LSTM Autoencoder (MSE: 0.342) + Kalman Noise Filter"
+  correctiveActionTaken: string; // Action executed/dispatched
+  actionStatus: 'COMPLETED' | 'TRANSMITTED' | 'DISPATCH_STAGED' | 'VERIFIED';
+  actionTakenBy: string; // e.g. "Dr. Marcus Vance, MD" | "Automated Dispatch Relay"
+  workerId?: string;
+  equipmentId?: string;
+  privacyEnforced: string; // "k-Anonymity Verified (N >= 12)"
+  responderNotes?: string;
+}
+
+// ==========================================
+// 48-Hour Forecast Staffing & Resource Distribution Types
+// ==========================================
+
+export interface ForecastStaffingSuggestion {
+  id: string;
+  zoneId: string;
+  zoneName: string;
+  department: string;
+  forecastWindow: string; // e.g. "+12h to +16h (Afternoon Heat Peak)"
+  forecastedRiskTier: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW';
+  forecastedIncidentRate: number; // e.g. 4.8 incidents/window
+  anticipatedHealthSignal: string; // e.g. "Acute Parasympathetic HRV Collapse & Core Heat Strain"
+  currentStaffCount: number;
+  recommendedStaffCount: number;
+  staffDeficit: number; // e.g. +2
+  recommendedRoles: SafetyPersonnelRole[];
+  suggestedAction: string;
+  resourceKitRecommendations: string[];
+  estimatedRiskMitigationPct: number; // e.g. 46%
+  status: 'PENDING_DEPLOYMENT' | 'APPLIED';
 }

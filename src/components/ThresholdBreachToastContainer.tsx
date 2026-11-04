@@ -17,7 +17,9 @@ import {
   History,
   TrendingUp,
   Activity,
-  ChevronRight
+  ChevronRight,
+  Wrench,
+  ShieldCheck
 } from 'lucide-react';
 import { voiceAlertService } from '../services/voiceAlertService';
 
@@ -73,6 +75,10 @@ export default function ThresholdBreachToastContainer({
         return <ShieldAlert className="h-4 w-4 text-purple-400" />;
       case 'twl':
         return <TrendingUp className="h-4 w-4 text-emerald-400" />;
+      case 'anomalyEngine':
+        return <AlertOctagon className="h-4 w-4 text-rose-400 animate-pulse" />;
+      case 'predictiveMaintenance':
+        return <Wrench className="h-4 w-4 text-amber-400" />;
       default:
         return <AlertTriangle className="h-4 w-4 text-amber-400" />;
     }
@@ -197,9 +203,15 @@ export default function ThresholdBreachToastContainer({
                           {toast.severity}
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-400 font-mono block">
-                        {toast.zoneName}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {toast.zoneName}
+                        </span>
+                        <span className="text-[9px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/40 px-1.5 py-0.2 rounded-full font-mono flex items-center gap-1">
+                          <ShieldCheck className="h-2.5 w-2.5 text-emerald-400" />
+                          <span>{toast.privacyComplianceNotice || 'k-Anonymity Verified (N>=12)'}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
 

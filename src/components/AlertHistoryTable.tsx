@@ -81,6 +81,8 @@ export default function AlertHistoryTable({
   const [signalFilter, setSignalFilter] = useState<string>('ALL');
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
   const [zoneFilter, setZoneFilter] = useState<string>('ALL');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<string>('RECENCY_DESC');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(8);
@@ -254,7 +256,7 @@ export default function AlertHistoryTable({
 
   // Apply filters and text search
   const filteredEvents = useMemo(() => {
-    return fullAlertHistory.filter((item) => {
+    const filtered = fullAlertHistory.filter((item) => {
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -273,9 +275,24 @@ export default function AlertHistoryTable({
         return false;
       }
 
-      // Severity filter
-      if (severityFilter !== 'ALL' && item.severity !== severityFilter) {
-        return false;
+      // Severity filter (Low, Medium, Critical, All)
+      if (severityFilter !== 'ALL') {
+        if (severityFilter === 'CRITICAL' && item.severity !== 'CRITICAL') return false;
+        if (severityFilter === 'MEDIUM' && item.severity !== 'HIGH' && item.severity !== 'MODERATE') return false;
+        if (severityFilter === 'LOW' && item.severity !== 'LOW') return false;
+        if (severityFilter === 'HIGH' && item.severity !== 'HIGH') return false;
+        if (severityFilter === 'MODERATE' && item.severity !== 'MODERATE') return false;
+      }
+
+      // Department filter
+      if (departmentFilter !== 'ALL') {
+        const zoneLower = item.zone.toLowerCase();
+        const isMaint = item.signalType === 'EQUIPMENT_VIBRATION' || Boolean(item.equipmentId);
+        if (departmentFilter === 'RELIABILITY' && !isMaint) return false;
+        if (departmentFilter === 'CONSTRUCTION' && (!zoneLower.includes('construction') && !zoneLower.includes('sector-4'))) return false;
+        if (departmentFilter === 'MANUFACTURING' && (!zoneLower.includes('assembly') && !zoneLower.includes('manufacturing'))) return false;
+        if (departmentFilter === 'LOGISTICS' && (!zoneLower.includes('warehouse') && !zoneLower.includes('logistics'))) return false;
+        if (departmentFilter === 'CONDUIT' && (!zoneLower.includes('tunnel') && !zoneLower.includes('conduit'))) return false;
       }
 
       // Zone filter
@@ -292,7 +309,31 @@ export default function AlertHistoryTable({
 
       return true;
     });
-  }, [fullAlertHistory, searchQuery, signalFilter, severityFilter, zoneFilter, statusFilter, selectedZone]);
+
+    // Apply sorting
+    const severityRank = (sev: string): number => {
+      if (sev === 'CRITICAL') return 4;
+      if (sev === 'HIGH') return 3;
+      if (sev === 'MODERATE') return 2;
+      return 1;
+    };
+
+    return [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'SEVERITY_DESC':
+          return severityRank(b.severity) - severityRank(a.severity);
+        case 'SEVERITY_ASC':
+          return severityRank(a.severity) - severityRank(b.severity);
+        case 'DEPARTMENT_ASC':
+          return a.zone.localeCompare(b.zone);
+        case 'DEPARTMENT_DESC':
+          return b.zone.localeCompare(a.zone);
+        case 'RECENCY_DESC':
+        default:
+          return 0; // Natural chronologic order
+      }
+    });
+  }, [fullAlertHistory, searchQuery, signalFilter, severityFilter, departmentFilter, sortBy, zoneFilter, statusFilter, selectedZone]);
 
   // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredEvents.length / pageSize));
@@ -466,8 +507,47 @@ export default function AlertHistoryTable({
             >
               <option value="ALL">All Severities</option>
               <option value="CRITICAL">Critical</option>
-              <option value="HIGH">High</option>
-              <option value="MODERATE">Moderate</option>
+              <option value="MEDIUM">Medium (High/Mod)</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+
+          {/* Department Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 text-[11px]">Dept:</span>
+            <select
+              value={departmentFilter}
+              onChange={(e) => {
+                setDepartmentFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs focus:outline-hidden focus:border-cyan-500"
+            >
+              <option value="ALL">All Departments</option>
+              <option value="CONSTRUCTION">Construction & Civil</option>
+              <option value="MANUFACTURING">Robotics & Assembly</option>
+              <option value="LOGISTICS">Logistics & Warehousing</option>
+              <option value="CONDUIT">Subgrade Conduits</option>
+              <option value="RELIABILITY">Mechanical Reliability</option>
+            </select>
+          </div>
+
+          {/* Sort By Dropdown */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 text-[11px]">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="bg-slate-900 border border-slate-700 text-amber-300 font-medium rounded-lg px-2.5 py-1 text-xs focus:outline-hidden focus:border-cyan-500"
+            >
+              <option value="RECENCY_DESC">Most Recent</option>
+              <option value="SEVERITY_DESC">Severity (Critical &rarr; Low)</option>
+              <option value="SEVERITY_ASC">Severity (Low &rarr; Critical)</option>
+              <option value="DEPARTMENT_ASC">Department (A &rarr; Z)</option>
+              <option value="DEPARTMENT_DESC">Department (Z &rarr; A)</option>
             </select>
           </div>
 

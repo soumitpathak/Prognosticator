@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ShieldAlert,
   Activity,
@@ -17,7 +17,8 @@ import {
   Send,
   Plus,
   Zap,
-  CloudSun
+  CloudSun,
+  TrendingUp
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -34,7 +35,9 @@ import {
   SensorCorrelationPoint,
   VoiceAlertSettings,
   HealthSignalNotificationThresholds,
-  ThresholdBreachToast
+  ThresholdBreachToast,
+  ToastSignalKey,
+  AnomalyAuditRecord
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -48,6 +51,9 @@ import { predictWorkforceAnomaly } from '../services/lstmAnomalyEngine';
 import { fetchLiveZoneWeather } from '../services/weatherService';
 import { voiceAlertService, DEFAULT_VOICE_SETTINGS } from '../services/voiceAlertService';
 import AuditLogModal from './AuditLogModal';
+import AnomalyAuditLogModal from './AnomalyAuditLogModal';
+import ForecastedResourceDistributionWidget from './ForecastedResourceDistributionWidget';
+import { compileFullAnomalyAuditLog } from '../services/anomalyAuditService';
 import TelemetryInspectorModal from './TelemetryInspectorModal';
 import StreamSimulatorDrawer from './StreamSimulatorDrawer';
 import TelemetryCharts from './TelemetryCharts';
@@ -150,6 +156,7 @@ export default function ManagerDashboard() {
 
   // Modals & Drawers
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
+  const [isAnomalyAuditModalOpen, setIsAnomalyAuditModalOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
@@ -160,6 +167,11 @@ export default function ManagerDashboard() {
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState<boolean>(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceAlertSettings>(DEFAULT_VOICE_SETTINGS);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+
+  // Full Anomaly Audit Log Records (Historical timestamp, confidence score, corrective action)
+  const anomalyAuditRecords: AnomalyAuditRecord[] = useMemo(() => {
+    return compileFullAnomalyAuditLog(activeAlerts, medicalDispatches);
+  }, [activeAlerts, medicalDispatches]);
 
   useEffect(() => {
     const unsub = voiceAlertService.subscribeSpeakingState((speaking) => {
@@ -372,6 +384,70 @@ export default function ManagerDashboard() {
     [healthThresholds, toastSoundEnabled]
   );
 
+  const triggerAnomalyToast = useCallback(
+    (
+      alert: {
+        title: string;
+        metric: string;
+        measuredVal: number;
+        measuredFormatted: string;
+        limitVal: number;
+        limitFormatted: string;
+        deltaFormatted: string;
+        severity: 'CRITICAL' | 'HIGH' | 'WARNING';
+        action: string;
+        zoneName: string;
+        zoneId: string;
+        cohortCount: number;
+        signalKey?: ToastSignalKey;
+        privacyStatus?: string;
+      },
+      force = false
+    ) => {
+      const now = Date.now();
+      const cooldownKey = `anomaly-${alert.zoneId}-${alert.metric}`;
+      const lastTriggered = lastBreachTimestampsRef.current[cooldownKey] || 0;
+      if (!force && now - lastTriggered < 10000) return; // 10-second cooldown
+      lastBreachTimestampsRef.current[cooldownKey] = now;
+
+      const timeFormatted = new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+
+      const newToast: ThresholdBreachToast = {
+        id: `TOAST-ANOMALY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        timestamp: new Date().toISOString(),
+        timeFormatted,
+        signalKey: alert.signalKey || 'anomalyEngine',
+        signalName: alert.title,
+        measuredValue: alert.measuredVal,
+        measuredFormatted: alert.measuredFormatted,
+        thresholdLimit: alert.limitVal,
+        thresholdFormatted: alert.limitFormatted,
+        unit: '%',
+        deltaFormatted: alert.deltaFormatted,
+        severity: alert.severity,
+        zoneId: alert.zoneId,
+        zoneName: alert.zoneName,
+        workerCount: alert.cohortCount,
+        recommendedAction: alert.action,
+        acknowledged: false,
+        createdAt: now,
+        autoDismissMs: alert.severity === 'CRITICAL' ? 14000 : 9000,
+        privacyComplianceNotice: alert.privacyStatus || 'k-Anonymity Verified (N >= 12)'
+      };
+
+      setActiveToasts((prev) => [newToast, ...prev].slice(0, 8));
+      if (toastSoundEnabled) {
+        voiceAlertService.playAlertChime();
+      }
+    },
+    [toastSoundEnabled]
+  );
+
   // Auto-dismiss countdown for non-acknowledged toasts
   useEffect(() => {
     if (activeToasts.length === 0) return;
@@ -403,6 +479,13 @@ export default function ManagerDashboard() {
   };
 
   const handleInspectSignalInChart = (signalKey: string) => {
+    if (signalKey === 'anomalyEngine') {
+      const el = document.getElementById('active-anomalies-widget') || document.getElementById('historical-health-chart-card');
+      el?.scrollIntoView({ behavior: 'smooth' });
+      setIsolatedHealthSignal('riskScore');
+      return;
+    }
+
     const el = document.getElementById('historical-health-chart-card');
     el?.scrollIntoView({ behavior: 'smooth' });
 
@@ -469,7 +552,29 @@ export default function ManagerDashboard() {
       is_anomaly: true
     };
     checkReadingForThresholdBreaches(dummyBreachPoint, activeZoneObj, true);
-    setProtocolActiveNotice('Simulated live sensor threshold breach event triggered for active zone.');
+
+    // Also trigger Prognosticator Engine Anomaly Alert Toast
+    triggerAnomalyToast(
+      {
+        title: 'Prognosticator Engine: Acute Multidimensional Anomaly',
+        metric: 'LSTM Reconstruction Deviation Vector',
+        measuredVal: Math.min(95, healthThresholds.riskScoreCutoffPct + 14),
+        measuredFormatted: `${Math.min(95, healthThresholds.riskScoreCutoffPct + 14)}% Composite Risk`,
+        limitVal: healthThresholds.riskScoreCutoffPct,
+        limitFormatted: `${healthThresholds.riskScoreCutoffPct}% Cutoff`,
+        deltaFormatted: `+14.0% Deviation`,
+        severity: 'CRITICAL',
+        action: 'Immediate supervisory triage: activate misting cooling tents and mandate shaded hydration rest pause.',
+        zoneName: activeZoneObj.name,
+        zoneId: activeZoneObj.id,
+        cohortCount: activeZoneObj.count,
+        signalKey: 'anomalyEngine',
+        privacyStatus: 'k-Anonymity Verified (N >= 12)'
+      },
+      true
+    );
+
+    setProtocolActiveNotice('Simulated live sensor threshold breach event and Prognosticator Engine anomaly triggered for active zone.');
   };
 
   const handleSaveHealthThresholds = (
@@ -506,9 +611,14 @@ export default function ManagerDashboard() {
 
   const handleExportWorkforceCsv = () => {
     try {
-      const result = exportWorkforceHealthCsv(telemetryStream, activeZoneObj.name, healthThresholds);
+      const result = downloadAnomalyReportCsv({
+        data: telemetryStream,
+        thresholds: healthThresholds,
+        zone: activeZoneObj,
+        activeAlerts
+      });
       setProtocolActiveNotice(
-        `Workforce health historical data exported successfully as CSV (${result.recordCount} samples). File: ${result.filename}`
+        `Anonymized workforce health compliance report exported successfully as CSV (${result.recordCount} samples). File: ${result.filename}`
       );
       setTimeout(() => setProtocolActiveNotice(null), 6000);
     } catch (err: any) {
@@ -517,8 +627,14 @@ export default function ManagerDashboard() {
     }
   };
 
-  const handleDownloadReport = (format: 'JSON' | 'CSV') => {
+  const handleDownloadReport = async (format: 'JSON' | 'CSV' | 'PDF') => {
     try {
+      if (format === 'PDF') {
+        await handleDirectPdfExport();
+        setIsDownloadMenuOpen(false);
+        return;
+      }
+
       if (format === 'JSON') {
         const result = downloadAnomalyReportJson({
           data: telemetryStream,
@@ -537,7 +653,7 @@ export default function ManagerDashboard() {
           activeAlerts
         });
         setProtocolActiveNotice(
-          `24-Hour Anomaly Trend & Thresholds report generated and downloaded as CSV (${result.recordCount} records): ${result.filename}`
+          `Anonymized Compliance CSV Report generated and downloaded (${result.recordCount} records): ${result.filename}`
         );
       }
       setTimeout(() => setProtocolActiveNotice(null), 6000);
@@ -697,6 +813,26 @@ export default function ManagerDashboard() {
       const result = predictWorkforceAnomaly(packet, undefined, kalmanConfig);
       setTelemetryAlert(result);
 
+      // Real-time alert toast notification if Prognosticator Engine detects critical risk anomaly
+      if (result.risk_probability >= 0.70 || result.risk_tier === 'CRITICAL_RISK') {
+        triggerAnomalyToast({
+          title: 'Prognosticator Engine: Critical Risk Anomaly',
+          metric: 'LSTM Multidimensional Anomaly Vector',
+          measuredVal: Number((result.risk_probability * 100).toFixed(1)),
+          measuredFormatted: `${(result.risk_probability * 100).toFixed(1)}% Risk Prob`,
+          limitVal: kalmanConfig.criticalCutoffPct,
+          limitFormatted: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
+          deltaFormatted: `+${((result.risk_probability * 100) - kalmanConfig.criticalCutoffPct).toFixed(1)}%`,
+          severity: 'CRITICAL',
+          action: result.recommended_operational_action,
+          zoneName: activeZoneObj.name,
+          zoneId: activeZoneObj.id,
+          cohortCount: activeZoneObj.count,
+          signalKey: 'anomalyEngine',
+          privacyStatus: result.privacy_compliance
+        });
+      }
+
       // Advance sliding chart by 1 step
       setTelemetryStream((prev) => {
         const last = prev[prev.length - 1];
@@ -727,7 +863,7 @@ export default function ManagerDashboard() {
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches]);
+  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerAnomalyToast]);
 
   // Handle Burst Event Triggers
   const handleTriggerBurst = (type: 'HEATWAVE' | 'NOISE' | 'CARDIAC' | 'DROPOUT') => {
@@ -747,6 +883,27 @@ export default function ManagerDashboard() {
       };
       const res = predictWorkforceAnomaly(burstPacket, undefined, kalmanConfig);
       setTelemetryAlert(res);
+
+      // Trigger Real-Time Toast Alert for Prognosticator Heatwave Anomaly
+      triggerAnomalyToast(
+        {
+          title: 'Flash Heatwave Exceedance Burst',
+          metric: 'Extreme Wet-Bulb Heat Index',
+          measuredVal: 46.5,
+          measuredFormatted: '46.5°C Ambient (47.5°C Heat Index)',
+          limitVal: healthThresholds.maxAmbientHeatC,
+          limitFormatted: `${healthThresholds.maxAmbientHeatC}°C Limit`,
+          deltaFormatted: `+${(46.5 - healthThresholds.maxAmbientHeatC).toFixed(1)}°C`,
+          severity: 'CRITICAL',
+          action: 'Immediate shaded extraction and automated misting cooling vests deployed.',
+          zoneName: activeZoneObj.name,
+          zoneId: activeZoneObj.id,
+          cohortCount: activeZoneObj.count,
+          signalKey: 'ambientTemp',
+          privacyStatus: 'k-Anonymity Verified (N >= 12)'
+        },
+        true
+      );
 
       // Auto-stage medical cooling dispatch
       const newDispatch: MedicalDispatchNotification = {
@@ -784,6 +941,27 @@ export default function ManagerDashboard() {
       };
       setActiveAlerts((prev) => [burstAlert, ...prev]);
 
+      // Trigger Real-Time Toast Alert for Acoustic Blast
+      triggerAnomalyToast(
+        {
+          title: 'Acoustic Machinery Overpressure Blast',
+          metric: 'OSHA Acoustic Limit Breach',
+          measuredVal: 108.5,
+          measuredFormatted: '108.5 dBA Blast',
+          limitVal: healthThresholds.maxNoiseDb,
+          limitFormatted: `${healthThresholds.maxNoiseDb} dBA Limit`,
+          deltaFormatted: `+${(108.5 - healthThresholds.maxNoiseDb).toFixed(1)} dBA`,
+          severity: 'CRITICAL',
+          action: 'Emergency machine shutdown & mandatory high-attenuation PPE verification.',
+          zoneName: activeZoneObj.name,
+          zoneId: activeZoneObj.id,
+          cohortCount: activeZoneObj.count,
+          signalKey: 'noise',
+          privacyStatus: 'k-Anonymity Verified (N >= 12)'
+        },
+        true
+      );
+
       const newDispatch: MedicalDispatchNotification = {
         id: `AUTO-${Math.floor(1000 + Math.random() * 9000)}-PPE`,
         alertId: burstAlert.id,
@@ -813,8 +991,49 @@ export default function ManagerDashboard() {
       const res = predictWorkforceAnomaly(burstPacket, undefined, kalmanConfig);
       setTelemetryAlert(res);
 
+      // Trigger Real-Time Toast Alert for Cardiac Autonomic Collapse
+      triggerAnomalyToast(
+        {
+          title: 'Autonomic Cardiac Strain Collapse',
+          metric: 'HRV Vagal Depletion Spike',
+          measuredVal: 26,
+          measuredFormatted: '26 ms (-60% HRV)',
+          limitVal: healthThresholds.minHrvMs,
+          limitFormatted: `${healthThresholds.minHrvMs} ms Floor`,
+          deltaFormatted: `-${(healthThresholds.minHrvMs - 26).toFixed(0)} ms Drop`,
+          severity: 'CRITICAL',
+          action: 'Direct worker to shaded cooling rest tent with vital sign telemetry monitoring.',
+          zoneName: activeZoneObj.name,
+          zoneId: activeZoneObj.id,
+          cohortCount: activeZoneObj.count,
+          signalKey: 'hrv',
+          privacyStatus: 'k-Anonymity Verified (N >= 12)'
+        },
+        true
+      );
+
       setProtocolActiveNotice('BURST TRIGGERED: Autonomic Cardiac Collapse (-60% HRV drop to 26ms). Critical extraction flagged.');
     } else if (type === 'DROPOUT') {
+      triggerAnomalyToast(
+        {
+          title: 'Kalman State Imputation Verified',
+          metric: 'Sensor Packet Loss Reconstructed',
+          measuredVal: 3,
+          measuredFormatted: '3 Dropped Packets Imputed',
+          limitVal: 0,
+          limitFormatted: 'Zero Drop Baseline',
+          deltaFormatted: 'Covariance R=0.10',
+          severity: 'WARNING',
+          action: 'State trajectory maintained by Kalman filter without false alarm interruption.',
+          zoneName: activeZoneObj.name,
+          zoneId: activeZoneObj.id,
+          cohortCount: activeZoneObj.count,
+          signalKey: 'anomalyEngine',
+          privacyStatus: 'Mathematical Imputation (Zero PII Disclosed)'
+        },
+        true
+      );
+
       setProtocolActiveNotice(
         'BURST TRIGGERED: 3 Sensor Packets Dropped. Kalman State Filter successfully imputed missing state with covariance R=0.10.'
       );
@@ -1016,6 +1235,27 @@ export default function ManagerDashboard() {
         };
         setActiveAlerts((prev) => [freshAlert, ...prev.slice(0, 7)]);
 
+        // Trigger real-time anomaly toast notification
+        triggerAnomalyToast(
+          {
+            title: `Prognosticator Engine: ${freshAlert.anomaly_metric}`,
+            metric: 'LSTM Anomaly Detection',
+            measuredVal: Number((result.risk_probability * 100).toFixed(1)),
+            measuredFormatted: `${(result.risk_probability * 100).toFixed(1)}% Risk Prob`,
+            limitVal: kalmanConfig.criticalCutoffPct,
+            limitFormatted: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
+            deltaFormatted: `+${((result.risk_probability * 100) - kalmanConfig.criticalCutoffPct).toFixed(1)}%`,
+            severity: freshAlert.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH',
+            action: freshAlert.recommended_action,
+            zoneName: activeZoneObj.name,
+            zoneId: activeZoneObj.id,
+            cohortCount: activeZoneObj.count,
+            signalKey: 'anomalyEngine',
+            privacyStatus: freshAlert.privacy_status
+          },
+          true
+        );
+
         // Synthesize audible voice alert for on-site supervisors
         if (voiceSettings.enabled) {
           voiceAlertService.speakAlert(freshAlert, voiceSettings);
@@ -1199,6 +1439,42 @@ export default function ManagerDashboard() {
           >
             <LineChart className="h-3.5 w-3.5 text-cyan-400" />
             <span>24h Health Signals</span>
+          </button>
+
+          {/* 48-Hour Incident Volume Projection Forecast Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('incident-projection-chart-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Jump to 48-Hour Potential Incident Volume Projection Trend Analysis Graph (Recharts)"
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-amber-400" />
+            <span>48h Forecast</span>
+          </button>
+
+          {/* 48-Hour Forecast Staffing & Resource Distribution Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('forecasted-resource-widget');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-500/50 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+            title="Jump to Forecasted Risk Staffing & Resource Distribution Widget"
+          >
+            <Users className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Forecast Staffing</span>
+          </button>
+
+          {/* Anomaly Audit Log Modal Trigger Button */}
+          <button
+            onClick={() => setIsAnomalyAuditModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            title="Open Anomaly Audit Log Modal: Timestamp, Model Confidence Score, and Corrective Action Taken for Every Flagged Anomaly"
+          >
+            <History className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Anomaly Audit Log</span>
           </button>
           {/* Incident Hotspots NLG Jump Button */}
           <button
@@ -1448,34 +1724,48 @@ export default function ManagerDashboard() {
                   </div>
                   <div className="py-1 space-y-1">
                     <button
-                      onClick={() => handleDownloadReport('JSON')}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-cyan-950/70 hover:text-cyan-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <FileCode className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">JSON Report</div>
-                          <div className="text-[10px] text-slate-400">Full telemetry, thresholds &amp; alert history</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono font-bold">.json</span>
-                    </button>
-                    <button
                       onClick={() => handleDownloadReport('CSV')}
                       className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-emerald-950/70 hover:text-emerald-200 text-slate-200 rounded-lg transition group cursor-pointer"
                     >
                       <div className="flex items-center space-x-2.5">
                         <FileSpreadsheet className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
                         <div>
-                          <div className="font-semibold text-white">CSV Spreadsheet</div>
-                          <div className="text-[10px] text-slate-400">24-hour time series with threshold flags</div>
+                          <div className="font-semibold text-white">Compliance CSV</div>
+                          <div className="text-[10px] text-slate-400">RFC 4180 with Privacy Shield preambles</div>
                         </div>
                       </div>
                       <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
                     </button>
+                    <button
+                      onClick={() => handleDownloadReport('PDF')}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-cyan-950/70 hover:text-cyan-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <FileText className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">Executive Safety PDF</div>
+                          <div className="text-[10px] text-slate-400">Charts capture, anomaly logs &amp; legal audit</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono font-bold">.pdf</span>
+                    </button>
+                    <button
+                      onClick={() => handleDownloadReport('JSON')}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-indigo-950/70 hover:text-indigo-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <FileCode className="h-4 w-4 text-indigo-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">JSON Data Dump</div>
+                          <div className="text-[10px] text-slate-400">Raw telemetry, thresholds &amp; alert history</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-1.5 py-0.5 rounded font-mono font-bold">.json</span>
+                    </button>
                   </div>
-                  <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-500">
-                    Active limits: HR ({healthThresholds.maxHeartRateBpm ?? 115} BPM), Heat ({healthThresholds.maxAmbientHeatC}°C), HRV ({healthThresholds.minHrvMs}ms)
+                  <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-400 flex items-center justify-between font-mono">
+                    <span>Privacy Shield Enforced</span>
+                    <span className="text-emerald-400">&epsilon;=0.5 / N&ge;12</span>
                   </div>
                 </div>
               </>
@@ -1764,6 +2054,32 @@ export default function ManagerDashboard() {
         currentZone={activeZoneObj}
       />
 
+      {/* 48-Hour Forecasted Risk Staffing & Resource Distribution Widget */}
+      <ForecastedResourceDistributionWidget
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        currentZone={activeZoneObj}
+        onApplyReallocation={(order) => {
+          setProtocolActiveNotice(
+            `Staffing Distribution Applied: Reallocated personnel to ${order.toZone} to prevent forecasted health signals.`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+      />
+
       {/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap & Predictive Maintenance) */}
       <ActiveAlertsSection
         alerts={activeAlerts}
@@ -2023,6 +2339,14 @@ export default function ManagerDashboard() {
               <ShieldCheck className="h-4 w-4 text-indigo-400" />
               <span>Audit Log</span>
             </button>
+            <button
+              onClick={() => setIsAnomalyAuditModalOpen(true)}
+              className="bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-200 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-cyan-500/50 flex items-center gap-1.5 shadow-sm"
+              title="Open Anomaly Audit Log: Historical timestamp, confidence score, and corrective action taken"
+            >
+              <History className="h-4 w-4 text-cyan-400" />
+              <span>Anomaly Audit Log</span>
+            </button>
           </div>
         </div>
       </div>
@@ -2051,6 +2375,12 @@ export default function ManagerDashboard() {
         isOpen={isAuditModalOpen}
         onClose={() => setIsAuditModalOpen(false)}
         auditEvents={auditEvents}
+      />
+
+      <AnomalyAuditLogModal
+        isOpen={isAnomalyAuditModalOpen}
+        onClose={() => setIsAnomalyAuditModalOpen(false)}
+        auditRecords={anomalyAuditRecords}
       />
 
       <TelemetryInspectorModal
