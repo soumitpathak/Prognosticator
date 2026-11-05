@@ -1,4 +1,11 @@
-import { ActiveAnomalyAlert, VoiceAlertSettings } from '../types';
+import { ActiveAnomalyAlert, VoiceAlertSettings, SeverityAudioToggles } from '../types';
+
+export const DEFAULT_SEVERITY_AUDIO_TOGGLES: SeverityAudioToggles = {
+  CRITICAL: true,
+  HIGH: true,
+  MODERATE: true,
+  LOW: false
+};
 
 export const DEFAULT_VOICE_SETTINGS: VoiceAlertSettings = {
   enabled: true,
@@ -7,7 +14,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceAlertSettings = {
   pitch: 1.0,
   announceCriticalOnly: false,
   chimeSound: true,
-  selectedVoiceName: ''
+  selectedVoiceName: '',
+  severityAudioToggles: DEFAULT_SEVERITY_AUDIO_TOGGLES
 };
 
 class VoiceAlertService {
@@ -44,10 +52,21 @@ class VoiceAlertService {
   }
 
   /**
-   * Synthesize a two-tone industrial warning chime using Web Audio API
+   * Synthesize a severity-specific warning chime using Web Audio API
    */
-  public async playAlertChime(): Promise<void> {
+  public async playAlertChime(
+    severity: 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'WARNING' = 'CRITICAL',
+    toggles?: SeverityAudioToggles
+  ): Promise<void> {
     if (typeof window === 'undefined') return;
+
+    // Check if audio for this specific severity level is muted
+    if (toggles) {
+      const key = severity === 'WARNING' ? 'MODERATE' : severity;
+      if (toggles[key as keyof SeverityAudioToggles] === false) {
+        return; // Muted by user toggle
+      }
+    }
 
     try {
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -62,29 +81,69 @@ class VoiceAlertService {
       }
 
       const now = this.audioCtx.currentTime;
-
-      // Primary oscillator: High attention tone
       const osc1 = this.audioCtx.createOscillator();
       const gain1 = this.audioCtx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(880, now); // A5
-      osc1.frequency.setValueAtTime(880, now + 0.12);
-      osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.28); // E5
 
-      gain1.gain.setValueAtTime(0, now);
-      gain1.gain.linearRampToValueAtTime(0.25, now + 0.02);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      if (severity === 'CRITICAL') {
+        // High urgency two-tone (880Hz -> 659Hz)
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(880, now); // A5
+        osc1.frequency.setValueAtTime(880, now + 0.12);
+        osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.28); // E5
 
-      osc1.connect(gain1);
-      gain1.connect(this.audioCtx.destination);
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.28, now + 0.02);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
 
-      osc1.start(now);
-      osc1.stop(now + 0.4);
+        osc1.connect(gain1);
+        gain1.connect(this.audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.45);
+      } else if (severity === 'HIGH') {
+        // High severity alert tone (740Hz -> 587Hz)
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(739.99, now); // F#5
+        osc1.frequency.exponentialRampToValueAtTime(587.33, now + 0.22); // D5
 
-      // Return a short promise to let the chime play before speech begins
-      await new Promise((r) => setTimeout(r, 350));
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.22, now + 0.02);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+        osc1.connect(gain1);
+        gain1.connect(this.audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.38);
+      } else if (severity === 'MODERATE' || severity === 'WARNING') {
+        // Moderate alert tone (523Hz -> 659Hz)
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(523.25, now); // C5
+        osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.18); // E5
+
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.18, now + 0.02);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+        osc1.connect(gain1);
+        gain1.connect(this.audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.32);
+      } else {
+        // Low advisory blip (440Hz)
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(440, now); // A4
+
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.12, now + 0.02);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+        osc1.connect(gain1);
+        gain1.connect(this.audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.22);
+      }
+
+      await new Promise((r) => setTimeout(r, 320));
     } catch (err) {
-      // AudioContext might be blocked until gesture, gracefully continue
       console.warn('Audio chime playback omitted or blocked:', err);
     }
   }
@@ -99,7 +158,9 @@ class VoiceAlertService {
         ? 'Priority One Critical Alert.'
         : alert.severity === 'HIGH'
         ? 'High Severity Notice.'
-        : 'Safety Telemetry Notice.';
+        : alert.severity === 'MODERATE'
+        ? 'Moderate Advisory.'
+        : 'Low Severity Telemetry Notice.';
 
     const locationClean = alert.location_zone.replace(/-/g, ' ');
 
@@ -128,6 +189,15 @@ class VoiceAlertService {
   ): Promise<void> {
     if (!settings.enabled) return;
     if (settings.announceCriticalOnly && alert.severity !== 'CRITICAL') return;
+
+    // Check if muted for this specific severity level
+    if (settings.severityAudioToggles) {
+      const isEnabled = settings.severityAudioToggles[alert.severity];
+      if (isEnabled === false) {
+        return; // Muted for this severity level
+      }
+    }
+
     if (!this.isSupported()) return;
 
     // Deduplication within 10 seconds for the same alert ID
@@ -140,7 +210,7 @@ class VoiceAlertService {
 
     // Play chime if enabled
     if (settings.chimeSound) {
-      await this.playAlertChime();
+      await this.playAlertChime(alert.severity, settings.severityAudioToggles);
     }
 
     const speechText = this.formatAlertSpeech(alert);

@@ -87,7 +87,13 @@ import { exportWorkforceHealthCsv } from '../services/workforceCsvExport';
 import { downloadAnomalyReportJson, downloadAnomalyReportCsv } from '../services/reportExportService';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
 import AnomalyTrend30DaysChart from './AnomalyTrend30DaysChart';
+import D3AnomalyTrend30DaysChart from './D3AnomalyTrend30DaysChart';
 import AnomalyThresholdConfigPanel from './AnomalyThresholdConfigPanel';
+import HistoricalAnomalyEventLog from './HistoricalAnomalyEventLog';
+import AlgorithmSensitivityConfigPanel from './AlgorithmSensitivityConfigPanel';
+import AudioNotificationSeverityTogglePanel from './AudioNotificationSeverityTogglePanel';
+import HistoricalAnomalyCsvExportModal from './HistoricalAnomalyCsvExportModal';
+import HistoricalAnomalyPdfExportModal from './HistoricalAnomalyPdfExportModal';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
 import PatternRecognitionPanel from './PatternRecognitionPanel';
 import DepartmentSeverityStackedBarChart from './DepartmentSeverityStackedBarChart';
@@ -202,6 +208,69 @@ export default function ManagerDashboard() {
   const handleStopSpeaking = () => {
     voiceAlertService.cancelSpeech();
   };
+
+  // Compliance CSV Export Modal State
+  const [isComplianceCsvExportModalOpen, setIsComplianceCsvExportModalOpen] = useState<boolean>(false);
+
+  const handleHistoricalComplianceExportLogged = (
+    filename: string,
+    recordCount: number,
+    standard: string
+  ) => {
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-EXP-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Lead Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Historical Anomaly Events Log',
+      parameter: 'Compliance CSV Export',
+      previousValue: 'N/A',
+      newValue: `Exported ${recordCount} anomaly records under ${standard}: ${filename}`,
+      justification: `Audited historical anomaly CSV export for statutory ${standard} compliance reporting.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Historical Anomaly Events Log exported to CSV for compliance reporting (${recordCount} records, ${standard}). File: ${filename}`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 7000);
+  };
+
+  // Historical Anomaly Formatted PDF Export Modal State
+  const [isCompliancePdfExportModalOpen, setIsCompliancePdfExportModalOpen] = useState<boolean>(false);
+
+  const handleHistoricalCompliancePdfExportLogged = (
+    filename: string,
+    recordCount: number,
+    standard: string
+  ) => {
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-PDF-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Lead Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Historical Anomaly Events Log',
+      parameter: 'Compliance Formatted PDF Export',
+      previousValue: 'N/A',
+      newValue: `Generated and exported ${recordCount} anomaly records as formatted PDF under ${standard}: ${filename}`,
+      justification: `Audited historical anomaly formatted PDF document export for statutory ${standard} compliance reporting.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Historical Anomaly Events Log exported to formatted PDF document (${recordCount} records, ${standard}). File: ${filename}`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 7000);
+  };
+
+  // 30-Day Trend Chart Engine Selector (D3.js Vector Engine default)
+  const [trendChartEngine, setTrendChartEngine] = useState<'D3' | 'RECHARTS'>('D3');
 
   // Client-Side Executive PDF Export State
   const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
@@ -347,10 +416,10 @@ export default function ManagerDashboard() {
       setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 4));
 
       if (toastSoundEnabled) {
-        voiceAlertService.playAlertChime();
+        voiceAlertService.playAlertChime('CRITICAL', voiceSettings.severityAudioToggles);
       }
     },
-    [toastSoundEnabled]
+    [toastSoundEnabled, voiceSettings.severityAudioToggles]
   );
 
   // Custom Anomaly Detection Thresholds & Sensitivity State (Visualized on Trend Chart)
@@ -408,10 +477,10 @@ export default function ManagerDashboard() {
       setTimeout(() => setProtocolActiveNotice(null), 8000);
 
       if (toastSoundEnabled) {
-        voiceAlertService.playAlertChime();
+        voiceAlertService.playAlertChime('HIGH', voiceSettings.severityAudioToggles);
       }
     },
-    [peakForecastedSma, proactiveRiskThreshold, selectedZone, zones, toastSoundEnabled]
+    [peakForecastedSma, proactiveRiskThreshold, selectedZone, zones, toastSoundEnabled, voiceSettings.severityAudioToggles]
   );
 
   const lastPreemptiveTriggerRef = useRef<number>(0);
@@ -607,11 +676,12 @@ export default function ManagerDashboard() {
       if (newToasts.length > 0) {
         setActiveToasts((prev) => [...newToasts, ...prev].slice(0, 8));
         if (toastSoundEnabled) {
-          voiceAlertService.playAlertChime();
+          const maxSev = newToasts.some((t) => t.severity === 'CRITICAL') ? 'CRITICAL' : 'HIGH';
+          voiceAlertService.playAlertChime(maxSev, voiceSettings.severityAudioToggles);
         }
       }
     },
-    [healthThresholds, toastSoundEnabled]
+    [healthThresholds, toastSoundEnabled, voiceSettings.severityAudioToggles]
   );
 
   const triggerAnomalyToast = useCallback(
@@ -672,10 +742,11 @@ export default function ManagerDashboard() {
 
       setActiveToasts((prev) => [newToast, ...prev].slice(0, 8));
       if (toastSoundEnabled) {
-        voiceAlertService.playAlertChime();
+        const mappedSev = alert.severity === 'WARNING' ? 'MODERATE' : alert.severity;
+        voiceAlertService.playAlertChime(mappedSev, voiceSettings.severityAudioToggles);
       }
     },
-    [toastSoundEnabled]
+    [toastSoundEnabled, voiceSettings.severityAudioToggles]
   );
 
   // Auto-dismiss countdown for non-acknowledged toasts
@@ -1832,6 +1903,19 @@ export default function ManagerDashboard() {
             <span>Sensitivity Config ({dailyFrequencyThreshold}/day)</span>
           </button>
 
+          {/* Algorithm Sensitivity Configuration Panel Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('algorithm-sensitivity-config-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-indigo-900/90 hover:bg-indigo-800/90 border border-indigo-400/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Algorithm Sensitivity Thresholds Configuration Panel (LSTM & Kalman Filter)"
+          >
+            <Sliders className="h-3.5 w-3.5 text-cyan-300" />
+            <span>Algorithm Sensitivity</span>
+          </button>
+
           {/* 30-Day Anomaly Trend Frequency Jump Button */}
           <button
             onClick={() => {
@@ -1982,6 +2066,52 @@ export default function ManagerDashboard() {
           >
             <History className="h-3.5 w-3.5 text-emerald-400" />
             <span>Alert History</span>
+          </button>
+
+          {/* Historical Anomaly Events Log (Severity Scores & Timestamps) Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('historical-anomaly-event-log-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Historical Anomaly Events Log (Severity Scores & Timestamp Details)"
+          >
+            <History className="h-3.5 w-3.5 text-rose-400" />
+            <span>Historical Events Log</span>
+          </button>
+
+          {/* Audio Alert Severity Toggles Jump Button */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('audio-notification-severity-toggle-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Mute or enable real-time audio alerts for specific severity levels"
+          >
+            <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Audio Alert Toggles</span>
+          </button>
+
+          {/* Export Historical Anomaly Formatted PDF Button */}
+          <button
+            onClick={() => setIsCompliancePdfExportModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-900/90 to-blue-900/90 hover:from-cyan-800 hover:to-blue-800 border border-cyan-500/60 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Export historical anomaly event log as a formatted PDF document with executive KPI summary"
+          >
+            <FileText className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Export Formatted PDF</span>
+          </button>
+
+          {/* Export Historical Anomaly Compliance CSV Button */}
+          <button
+            onClick={() => setIsComplianceCsvExportModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Export historical anomaly event log to CSV for ISO 45001 / OSHA compliance reporting"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Export Compliance CSV</span>
           </button>
 
           {/* Automated Predictive Maintenance Scheduler Jump Button */}
@@ -2557,6 +2687,52 @@ export default function ManagerDashboard() {
         }}
       />
 
+      {/* Dedicated Algorithm Sensitivity Configuration Panel for Anomaly Detection Algorithms */}
+      <AlgorithmSensitivityConfigPanel
+        kalmanConfig={kalmanConfig}
+        onUpdateKalmanConfig={(newConfig) => {
+          setKalmanConfig(newConfig);
+          const newPacket = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, newConfig);
+          setTelemetryAlert(res);
+        }}
+        healthThresholds={healthThresholds}
+        onUpdateHealthThresholds={handleSaveHealthThresholds}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        onScrollToHistoricalLog={() => {
+          const el = document.getElementById('historical-anomaly-event-log-panel');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
+      {/* Real-Time Audio Alerts Notification Toggle System per Severity Level */}
+      <AudioNotificationSeverityTogglePanel
+        voiceSettings={voiceSettings}
+        onUpdateVoiceSettings={setVoiceSettings}
+        onLogAuditAction={(cat, action, justification) => {
+          const auditEntry: SystemAuditLogEntry = {
+            id: `AUD-AUD-${Date.now().toString().slice(-4)}`,
+            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+            userId: 'USR-MGR-2026',
+            userName: 'Alex Mercer',
+            userRole: 'EHS Safety Manager',
+            category: 'THRESHOLD_CHANGE',
+            targetModule: 'Real-Time Audio Notification Engine',
+            parameter: 'Severity Audio Toggles',
+            previousValue: 'N/A',
+            newValue: action,
+            justification: justification || 'Adjusted acoustic audio alert permissions per severity tier.',
+            approvalStatus: 'VERIFIED'
+          };
+          setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+        }}
+      />
+
       {/* Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel */}
       <AnomalyThresholdConfigPanel
         thresholds={healthThresholds}
@@ -2578,25 +2754,82 @@ export default function ManagerDashboard() {
         selectedZone={activeZoneObj}
       />
 
-      {/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (Recharts) */}
-      <AnomalyTrend30DaysChart
-        data={anomalyTrend30d}
-        summary={anomalyTrendSummary}
-        currentZone={activeZoneObj}
-        zones={zones}
-        selectedZoneId={anomalyTrendZoneId}
-        onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
-        onExportReport={handleExportViewAuditReport}
-        isExporting={isExportingAuditReport}
-        dailyFrequencyThreshold={dailyFrequencyThreshold}
-        criticalFrequencyThreshold={criticalFrequencyThreshold}
-        proactiveRiskThreshold={proactiveRiskThreshold}
-        sensitivityLevel={sensitivityLevel}
-        onOpenThresholdPanel={() => {
-          const el = document.getElementById('anomaly-threshold-config-panel');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
+      {/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (D3.js Vector Engine / Recharts) */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 px-1 gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="text-xs font-semibold text-slate-300">Longitudinal Trend Visualizer:</span>
+          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs shadow-xs">
+            <button
+              onClick={() => setTrendChartEngine('D3')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
+                trendChartEngine === 'D3'
+                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="h-3 w-3 text-cyan-200" />
+              <span>D3.js Vector Engine (Default)</span>
+            </button>
+            <button
+              onClick={() => setTrendChartEngine('RECHARTS')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
+                trendChartEngine === 'RECHARTS'
+                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BarChart3 className="h-3 w-3" />
+              <span>Recharts Engine</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate-400 font-mono hidden md:flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>D3.js SVG Vector Rendering &bull; Multi-Series &bull; 7D SMA Projection</span>
+        </div>
+      </div>
+
+      {trendChartEngine === 'D3' ? (
+        <D3AnomalyTrend30DaysChart
+          data={anomalyTrend30d}
+          summary={anomalyTrendSummary}
+          currentZone={activeZoneObj}
+          zones={zones}
+          selectedZoneId={anomalyTrendZoneId}
+          onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
+          onExportReport={handleExportViewAuditReport}
+          isExporting={isExportingAuditReport}
+          dailyFrequencyThreshold={dailyFrequencyThreshold}
+          criticalFrequencyThreshold={criticalFrequencyThreshold}
+          proactiveRiskThreshold={proactiveRiskThreshold}
+          sensitivityLevel={sensitivityLevel}
+          onOpenThresholdPanel={() => {
+            const el = document.getElementById('anomaly-threshold-config-panel');
+            el?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
+        />
+      ) : (
+        <AnomalyTrend30DaysChart
+          data={anomalyTrend30d}
+          summary={anomalyTrendSummary}
+          currentZone={activeZoneObj}
+          zones={zones}
+          selectedZoneId={anomalyTrendZoneId}
+          onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
+          onExportReport={handleExportViewAuditReport}
+          isExporting={isExportingAuditReport}
+          dailyFrequencyThreshold={dailyFrequencyThreshold}
+          criticalFrequencyThreshold={criticalFrequencyThreshold}
+          proactiveRiskThreshold={proactiveRiskThreshold}
+          sensitivityLevel={sensitivityLevel}
+          onOpenThresholdPanel={() => {
+            const el = document.getElementById('anomaly-threshold-config-panel');
+            el?.scrollIntoView({ behavior: 'smooth' });
+          }}
+        />
+      )}
 
       {/* Organization-Wide Geographical & Departmental Anomaly Frequency Heatmap */}
       <OrganizationalAnomalyHeatmap
@@ -2638,6 +2871,29 @@ export default function ManagerDashboard() {
         externalIsolatedSignal={isolatedHealthSignal}
         onSignalIsolationChange={setIsolatedHealthSignal}
         correlationPair={activeCorrelationPair}
+      />
+
+      {/* Dedicated Historical Anomaly Events Log Component with Severity Scores & Timestamp Details */}
+      <HistoricalAnomalyEventLog
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        thresholds={healthThresholds}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        onOpenSensitivityPanel={() => {
+          const el = document.getElementById('algorithm-sensitivity-config-panel');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onOpenComplianceExportModal={() => setIsComplianceCsvExportModalOpen(true)}
+        onOpenCompliancePdfExportModal={() => setIsCompliancePdfExportModalOpen(true)}
+        isSpeaking={isSpeaking}
       />
 
       {/* Chronological Anomaly Log Panel below Line Chart */}
@@ -3110,6 +3366,28 @@ export default function ManagerDashboard() {
         onSaveThresholds={handleSaveHealthThresholds}
         zones={zones}
         activeZoneId={selectedZone}
+      />
+
+      {/* Historical Anomaly Log Statutory Compliance CSV Export Modal */}
+      <HistoricalAnomalyCsvExportModal
+        isOpen={isComplianceCsvExportModalOpen}
+        onClose={() => setIsComplianceCsvExportModalOpen(false)}
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        thresholds={healthThresholds}
+        onExportLogged={handleHistoricalComplianceExportLogged}
+      />
+
+      {/* Historical Anomaly Log Formatted PDF Document Export Modal */}
+      <HistoricalAnomalyPdfExportModal
+        isOpen={isCompliancePdfExportModalOpen}
+        onClose={() => setIsCompliancePdfExportModalOpen(false)}
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        thresholds={healthThresholds}
+        onExportLogged={handleHistoricalCompliancePdfExportLogged}
       />
 
       {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}

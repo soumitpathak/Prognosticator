@@ -255,6 +255,13 @@ export interface DeploymentOrder {
   status: 'ACTIVE' | 'COMPLETED';
 }
 
+export interface SeverityAudioToggles {
+  CRITICAL: boolean;
+  HIGH: boolean;
+  MODERATE: boolean;
+  LOW: boolean;
+}
+
 export interface VoiceAlertSettings {
   enabled: boolean;
   volume: number; // 0 to 1
@@ -263,6 +270,7 @@ export interface VoiceAlertSettings {
   announceCriticalOnly: boolean;
   chimeSound: boolean;
   selectedVoiceName?: string;
+  severityAudioToggles?: SeverityAudioToggles;
 }
 
 export interface SystemAuditLogEntry {
