@@ -97,6 +97,10 @@ import HistoricalAnomalyPdfExportModal from './HistoricalAnomalyPdfExportModal';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
 import PatternRecognitionPanel from './PatternRecognitionPanel';
 import DepartmentSeverityStackedBarChart from './DepartmentSeverityStackedBarChart';
+import PopulationHealthSparkline, { MiniSparkline } from './PopulationHealthSparkline';
+import HistoricalPopulationHealthAnomaliesLog from './HistoricalPopulationHealthAnomaliesLog';
+import TemporalAnomalyHeatmap from './TemporalAnomalyHeatmap';
+import RiskHeatmapRadarWidget from './RiskHeatmapRadarWidget';
 import {
   generate30DayAnomalyTrend,
   generate30DayAnomalyTrendWithProjection,
@@ -104,7 +108,7 @@ import {
   exportSimulatedAnomalyReportPdf,
   exportSimulatedAnomalyReportCsv
 } from '../services/anomalyTrend30DayService';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3 } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -164,8 +168,8 @@ export default function ManagerDashboard() {
   // Live Weather State
   const [currentWeather, setCurrentWeather] = useState<ZoneWeatherData | null>(null);
 
-  // Streaming IoT Hub Simulator State
-  const [isStreamingActive, setIsStreamingActive] = useState<boolean>(false);
+  // Streaming IoT Hub Simulator State (Active by default for continuous anomaly detection)
+  const [isStreamingActive, setIsStreamingActive] = useState<boolean>(true);
   const [jitterEnabled, setJitterEnabled] = useState<boolean>(true);
   const [packetCounter, setPacketCounter] = useState<number>(142);
 
@@ -299,11 +303,15 @@ export default function ManagerDashboard() {
     setCriticalAnomalyToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const handleClearAllCriticalToasts = useCallback(() => {
+    setCriticalAnomalyToasts([]);
+  }, []);
+
   const handleAcknowledgeCriticalToast = useCallback((id: string) => {
     setCriticalAnomalyToasts((prev) =>
       prev.map((t) => (t.id === id ? { ...t, acknowledged: true } : t))
     );
-    setProtocolActiveNotice('Critical anomaly notification acknowledged by safety supervisor.');
+    setProtocolActiveNotice('Population health anomaly notification acknowledged by safety supervisor.');
     setTimeout(() => setProtocolActiveNotice(null), 5000);
   }, []);
 
@@ -312,21 +320,23 @@ export default function ManagerDashboard() {
       id: `DSP-${Date.now().toString().slice(-4)}-CRIT`,
       alertId: toast.anomalyId || toast.id,
       zone: toast.zoneName,
-      severity: 'CRITICAL',
+      severity: toast.riskTier === 'HIGH_RISK' ? 'HIGH' : 'CRITICAL',
       recipientRole: 'On-Site Rapid Cooling Evacuation Team',
       contactMethod: 'DUAL_CHANNEL',
       recipientPhone: '+1 (555) 911-CRIT',
-      messagePayload: `CRITICAL ANOMALY EVACUATION [${toast.department}]: ${toast.anomalyMetric} detected with ${toast.confidenceLevelFormatted} confidence. Directive: ${toast.recommendedAction}`,
+      messagePayload: `POPULATION HEALTH ANOMALY EVACUATION [${toast.department}]: ${toast.anomalyMetric} detected with ${toast.confidenceLevelFormatted} confidence. Directive: ${toast.recommendedAction}`,
       stagedAt: 'Just now',
       status: 'STAGED'
     };
     setMedicalDispatches((prev) => [newDispatch, ...prev]);
-    handleAcknowledgeCriticalToast(toast.id);
+    setCriticalAnomalyToasts((prev) =>
+      prev.map((t) => (t.id === toast.id ? { ...t, acknowledged: true, dispatched: true } : t))
+    );
     setProtocolActiveNotice(
-      `Priority Medical dispatch staged for critical anomaly in ${toast.department} (${toast.zoneName}) at ${toast.confidenceLevelFormatted} confidence.`
+      `Priority Medical dispatch staged for population health anomaly in ${toast.department} (${toast.zoneName}) at ${toast.confidenceLevelFormatted} confidence.`
     );
     setTimeout(() => setProtocolActiveNotice(null), 6000);
-  }, [handleAcknowledgeCriticalToast]);
+  }, []);
 
   const handleInspectCriticalToastInChart = useCallback((zoneId: string) => {
     setAnomalyTrendZoneId(zoneId);
@@ -348,12 +358,16 @@ export default function ManagerDashboard() {
       reconstructionMse?: number;
       recommendedAction?: string;
       privacyNotice?: string;
+      riskTier?: 'CRITICAL_RISK' | 'HIGH_RISK' | 'MODERATE_RISK';
+      riskProbability?: number;
+      attributions?: Record<string, number>;
+      cohortCount?: number;
       force?: boolean;
     }) => {
       const now = Date.now();
       const zoneKey = params.locationZone || 'default';
       const lastTrigger = lastCriticalToastTimestampsRef.current[zoneKey] || 0;
-      if (!params.force && now - lastTrigger < 8000) return; // 8-second debounce per zone
+      if (!params.force && now - lastTrigger < 6000) return; // 6-second debounce per zone
       lastCriticalToastTimestampsRef.current[zoneKey] = now;
 
       const confScore = params.confidenceLevel > 1 ? params.confidenceLevel / 100 : params.confidenceLevel;
@@ -380,13 +394,15 @@ export default function ManagerDashboard() {
         }
       }
 
-      const toastId = `CRIT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const toastId = `POP-HEALTH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const timeFormatted = new Date().toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
         hour12: false
       });
+
+      const effectiveRiskTier = params.riskTier || (confScore >= 0.75 ? 'CRITICAL_RISK' : 'HIGH_RISK');
 
       const newToast: CriticalAnomalyToastData = {
         id: toastId,
@@ -406,17 +422,21 @@ export default function ManagerDashboard() {
           params.recommendedAction ||
           'Immediate shaded cooling extraction; stage medical dispatch liaison.',
         workerPseudonym: params.workerPseudonym || `W-${Math.floor(1000 + Math.random() * 9000)}`,
-        cohortCount: 18,
+        cohortCount: params.cohortCount || 18,
         privacyNotice: params.privacyNotice || 'k-Anonymity Verified (N >= 12) & ε=0.5 Differential Privacy',
         createdAt: now,
-        autoDismissMs: 12000,
-        acknowledged: false
+        autoDismissMs: effectiveRiskTier === 'CRITICAL_RISK' ? 14000 : 10000,
+        acknowledged: false,
+        riskTier: effectiveRiskTier,
+        riskProbability: params.riskProbability ?? confScore,
+        attributions: params.attributions
       };
 
       setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 4));
 
       if (toastSoundEnabled) {
-        voiceAlertService.playAlertChime('CRITICAL', voiceSettings.severityAudioToggles);
+        const chimeSev = effectiveRiskTier === 'HIGH_RISK' ? 'HIGH' : 'CRITICAL';
+        voiceAlertService.playAlertChime(chimeSev, voiceSettings.severityAudioToggles);
       }
     },
     [toastSoundEnabled, voiceSettings.severityAudioToggles]
@@ -1180,6 +1200,37 @@ export default function ManagerDashboard() {
     syncLiveWeather(activeZoneObj);
   }, [activeZoneObj.id, syncLiveWeather]);
 
+  // Initial demonstration high-risk population health anomaly toast alert on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      triggerCriticalAnomalyNotification({
+        department: 'Civil & Structural Construction',
+        confidenceLevel: 0.948,
+        riskProbability: 0.892,
+        riskTier: 'CRITICAL_RISK',
+        locationZone: 'Outdoor-Construction-Sector-4',
+        zoneId: 'Outdoor-Construction-Sector-4',
+        cohortCount: 18,
+        workerPseudonym: 'W-9921',
+        anomalyMetric: 'Acute Autonomic & Core Temperature Strain',
+        measuredValue: 'Heart Rate 138 BPM, Skin Temp 38.6°C, TWL 92.4 W/m²',
+        thresholdLimit: 'HR Max 115 BPM, Skin 37.8°C',
+        reconstructionMse: 0.385,
+        recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
+        privacyNotice: 'k-Anonymity Verified (N >= 12) & ε=0.5 Differential Privacy',
+        attributions: {
+          'Heart Rate Variability (HRV) Drop': 0.42,
+          'Ambient Heat Index Load': 0.31,
+          'Skin Temperature Elevation': 0.18,
+          'Cumulative Sleep Deficit': 0.09
+        },
+        force: true
+      });
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [triggerCriticalAnomalyNotification]);
+
   // Streaming IoT Hub Simulator Interval
   useEffect(() => {
     if (!isStreamingActive) return;
@@ -1193,17 +1244,20 @@ export default function ManagerDashboard() {
       const result = predictWorkforceAnomaly(packet, undefined, kalmanConfig);
       setTelemetryAlert(result);
 
-      // Real-time alert toast notification if Prognosticator Engine detects critical risk anomaly
-      if (result.risk_probability >= 0.70 || result.risk_tier === 'CRITICAL_RISK') {
+      // Real-time alert toast notification if Prognosticator Engine detects high-risk or critical population health anomaly
+      if (result.risk_probability >= 0.65 || result.risk_tier === 'CRITICAL_RISK') {
+        const isCrit = result.risk_tier === 'CRITICAL_RISK' || result.risk_probability >= 0.75;
         triggerAnomalyToast({
-          title: 'Prognosticator Engine: Critical Risk Anomaly',
+          title: isCrit
+            ? 'Prognosticator Engine: Critical Risk Anomaly'
+            : 'Prognosticator Engine: High-Risk Population Strain',
           metric: 'LSTM Multidimensional Anomaly Vector',
           measuredVal: Number((result.risk_probability * 100).toFixed(1)),
           measuredFormatted: `${(result.risk_probability * 100).toFixed(1)}% Risk Prob`,
           limitVal: kalmanConfig.criticalCutoffPct,
           limitFormatted: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
           deltaFormatted: `+${((result.risk_probability * 100) - kalmanConfig.criticalCutoffPct).toFixed(1)}%`,
-          severity: 'CRITICAL',
+          severity: isCrit ? 'CRITICAL' : 'HIGH',
           action: result.recommended_operational_action,
           zoneName: activeZoneObj.name,
           zoneId: activeZoneObj.id,
@@ -1214,15 +1268,21 @@ export default function ManagerDashboard() {
 
         triggerCriticalAnomalyNotification({
           confidenceLevel: result.risk_probability,
+          riskProbability: result.risk_probability,
+          riskTier: isCrit ? 'CRITICAL_RISK' : 'HIGH_RISK',
           locationZone: activeZoneObj.name,
           zoneId: activeZoneObj.id,
+          cohortCount: activeZoneObj.count,
           workerPseudonym: result.worker_id,
-          anomalyMetric: 'LSTM Multidimensional Stress Vector Spike',
-          measuredValue: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}%`,
+          anomalyMetric: isCrit
+            ? 'Acute Autonomic Deceleration & Thermal Strain'
+            : 'Elevated Multi-Signal Population Heat Stress',
+          measuredValue: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}% (MSE: ${result.reconstruction_mse.toFixed(3)})`,
           thresholdLimit: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
           reconstructionMse: result.reconstruction_mse,
           recommendedAction: result.recommended_operational_action,
-          privacyNotice: result.privacy_compliance
+          privacyNotice: result.privacy_compliance,
+          attributions: result.explainable_attributions
         });
       }
 
@@ -1741,6 +1801,29 @@ export default function ManagerDashboard() {
   const handleCustomPacketFromSimulator = (customPacket: TelemetryPacket) => {
     const result = predictWorkforceAnomaly(customPacket, undefined, kalmanConfig);
     setTelemetryAlert(result);
+
+    if (result.risk_probability >= 0.65 || result.risk_tier === 'CRITICAL_RISK') {
+      const isCrit = result.risk_tier === 'CRITICAL_RISK' || result.risk_probability >= 0.75;
+      triggerCriticalAnomalyNotification({
+        confidenceLevel: result.risk_probability,
+        riskProbability: result.risk_probability,
+        riskTier: isCrit ? 'CRITICAL_RISK' : 'HIGH_RISK',
+        locationZone: customPacket.location_zone || activeZoneObj.name,
+        zoneId: customPacket.location_zone || activeZoneObj.id,
+        cohortCount: customPacket.cohort_size || activeZoneObj.count,
+        workerPseudonym: result.worker_id,
+        anomalyMetric: isCrit
+          ? 'Acute Autonomic Deceleration & Thermal Strain'
+          : 'Elevated Multi-Signal Population Heat Stress',
+        measuredValue: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}% (MSE: ${result.reconstruction_mse.toFixed(3)})`,
+        thresholdLimit: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
+        reconstructionMse: result.reconstruction_mse,
+        recommendedAction: result.recommended_operational_action,
+        privacyNotice: result.privacy_compliance,
+        attributions: result.explainable_attributions,
+        force: true
+      });
+    }
 
     if (customPacket.cohort_size) {
       setZones((prev) =>
@@ -2276,6 +2359,45 @@ export default function ManagerDashboard() {
             <span>Health Thresholds</span>
           </button>
 
+          {/* Jump to Historical Population Health Log */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('historical-population-health-log-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+            title="Scroll directly to the historical log of the last 5 detected population health anomalies"
+          >
+            <History className="h-3.5 w-3.5 text-rose-400" />
+            <span>Last 5 Anomalies Log</span>
+          </button>
+
+          {/* Jump to 24-Hour Temporal Heat-Map */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('temporal-anomaly-heatmap-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+            title="Scroll directly to the 24-Hour Temporal Health Anomaly Heat-Map"
+          >
+            <Clock className="h-3.5 w-3.5 text-orange-400" />
+            <span>24h Heat-Map</span>
+          </button>
+
+          {/* Jump to Population Health Risk Heatmap Radar Widget */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('risk-heatmap-radar-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+            title="Scroll directly to the Population Health Risk Heatmap and 4-tier Radar Chart"
+          >
+            <Compass className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Risk Heatmap (Radar)</span>
+          </button>
+
           {/* Test Real-Time Breach Notification Toast Button */}
           <button
             onClick={handleSimulateBreachToast}
@@ -2286,28 +2408,69 @@ export default function ManagerDashboard() {
             <span>Test Breach Alert</span>
           </button>
 
-          {/* Test Real-Time Critical Anomaly Toast Notification Button (Shows Department & Model Confidence Level) */}
+          {/* Test Real-Time Critical & High-Risk Population Health Anomaly Notification Buttons */}
           <button
             onClick={() => {
               triggerCriticalAnomalyNotification({
                 department: 'Civil & Structural Construction',
                 confidenceLevel: 0.948,
+                riskProbability: 0.892,
+                riskTier: 'CRITICAL_RISK',
                 locationZone: activeZoneObj.name,
                 zoneId: activeZoneObj.id,
+                cohortCount: activeZoneObj.count,
                 workerPseudonym: 'W-9921',
                 anomalyMetric: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
-                measuredValue: 'Heart Rate 142 BPM, Skin Temp 38.8°C',
+                measuredValue: 'Heart Rate 142 BPM, Skin Temp 38.8°C, TWL 92.4 W/m²',
                 thresholdLimit: 'HR Max 115 BPM, Skin 37.8°C',
                 reconstructionMse: 0.428,
                 recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
+                attributions: {
+                  'Heart Rate Variability (HRV) Drop': 0.42,
+                  'Ambient Heat Index Load': 0.31,
+                  'Skin Temperature Elevation': 0.18,
+                  'Cumulative Sleep Deficit': 0.09
+                },
                 force: true
               });
             }}
             className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-rose-950/60 cursor-pointer border border-rose-400/60"
-            title="Simulate detection of a new critical anomaly to test real-time notification toast displaying Department and Confidence Level"
+            title="Simulate detection of a new critical population anomaly to test real-time notification toast displaying Department, Cohort, and Confidence Level"
           >
             <ShieldAlert className="h-3.5 w-3.5 text-white animate-pulse" />
-            <span>Simulate Critical Toast</span>
+            <span>Simulate Critical Anomaly</span>
+          </button>
+
+          <button
+            onClick={() => {
+              triggerCriticalAnomalyNotification({
+                department: 'Smelting & Metal Fabrication',
+                confidenceLevel: 0.864,
+                riskProbability: 0.785,
+                riskTier: 'HIGH_RISK',
+                locationZone: 'Smelting-Foundry-Line-A',
+                zoneId: 'Smelting-Foundry-Line-A',
+                cohortCount: 22,
+                workerPseudonym: 'W-4412',
+                anomalyMetric: 'Blast Furnace Thermal Strain Creep & Elevated Core Load',
+                measuredValue: 'Skin Temp 38.2°C, Heart Rate 128 BPM, Ambient 45.1°C',
+                thresholdLimit: 'Skin Max 37.8°C, Ambient 40.0°C',
+                reconstructionMse: 0.322,
+                recommendedAction: 'Rotate cohort out of smelting pit; provide mandatory 250ml electrolyte oral fluid.',
+                attributions: {
+                  'Ambient Heat Index Load': 0.44,
+                  'Skin Temperature Elevation': 0.28,
+                  'Heart Rate Variability (HRV) Drop': 0.20,
+                  'Cumulative Sleep Deficit': 0.08
+                },
+                force: true
+              });
+            }}
+            className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md shadow-amber-950/50 cursor-pointer border border-amber-400"
+            title="Simulate detection of a high-risk population heat anomaly"
+          >
+            <Flame className="h-3.5 w-3.5 text-slate-950" />
+            <span>Simulate High-Risk Heat</span>
           </button>
 
           {/* Test Real-Time Pre-Emptive Proactive Alert Button */}
@@ -2455,17 +2618,27 @@ export default function ManagerDashboard() {
           {/* Export Historical Workforce Health Data CSV Button */}
           <button
             onClick={handleExportWorkforceCsv}
-            className="flex items-center space-x-1.5 bg-emerald-950/80 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            className="flex items-center space-x-1.5 bg-emerald-950/80 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
             title="Export current 24-hour historical workforce health data as a CSV file for offline reporting"
           >
             <Download className="h-3.5 w-3.5 text-emerald-400" />
             <span>Export Health CSV</span>
           </button>
 
+          {/* Export Historical Anomaly Compliance CSV Button */}
+          <button
+            onClick={() => setIsComplianceCsvExportModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Export historical anomaly log into a certified CSV file for OSHA 1910 and ISO 45001 compliance reporting"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Compliance CSV Export</span>
+          </button>
+
           {/* Compliance Report Modal Trigger */}
           <button
             onClick={() => setIsReportModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs cursor-pointer"
           >
             <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
             <span>Reports &amp; Print</span>
@@ -2505,57 +2678,124 @@ export default function ManagerDashboard() {
         </div>
       )}
 
+      {/* Real-Time Population Health Score Fluctuation Sparkline (Powered by Recharts) */}
+      <PopulationHealthSparkline
+        telemetryStream={telemetryStream}
+        selectedZone={activeZoneObj}
+        zones={zones}
+        onScrollToFullChart={() => {
+          const el = document.getElementById('historical-health-chart-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        className="mb-6"
+      />
+
       {/* Macro Analytics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 font-medium">Active Monitored Workforce</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-white">1,420 Active</h3>
-            <span className="text-xs text-emerald-400 font-semibold flex items-center">
-              <Users className="h-3 w-3 mr-1" /> 100% Anonymized
-            </span>
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Active Monitored Workforce</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-white">1,420 Active</h3>
+              <span className="text-xs text-emerald-400 font-semibold flex items-center">
+                <Users className="h-3 w-3 mr-1" /> 100% Anonymized
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 font-mono">Resilience Trend</span>
+            <MiniSparkline
+              data={telemetryStream.slice(-15).map((p) => Math.round(100 - p.risk_score * 0.6))}
+              color="#10b981"
+              height={26}
+              width={70}
+            />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 font-medium">Active Critical Alerts</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-rose-400">{pendingCriticalCount}</h3>
-            <span className="text-xs text-rose-400 font-semibold flex items-center">
-              <ShieldAlert className="h-3 w-3 mr-1" /> Immediate Action
-            </span>
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Active Critical Alerts</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-rose-400">{pendingCriticalCount}</h3>
+              <span className="text-xs text-rose-400 font-semibold flex items-center">
+                <ShieldAlert className="h-3 w-3 mr-1" /> Immediate Action
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 font-mono">Risk Variance</span>
+            <MiniSparkline
+              data={telemetryStream.slice(-15).map((p) => p.risk_score)}
+              color="#f43f5e"
+              height={26}
+              width={70}
+            />
           </div>
         </div>
 
         {/* Equipment Predictive Maintenance Macro Metric Card */}
-        <div className="bg-slate-900 border border-amber-500/30 p-4 rounded-xl">
-          <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5">
-            <Wrench className="h-3.5 w-3.5 text-amber-400" />
-            Predictive Maintenance
-          </p>
-          <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-amber-400">
-              {activeAlerts.filter((a) => a.alert_type === 'PREDICTIVE_MAINTENANCE' && !a.acknowledged).length} Pending
-            </h3>
-            <span className="text-[11px] text-amber-300/80 font-mono">
-              Vibration / Heat
-            </span>
+        <div className="bg-slate-900 border border-amber-500/30 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5">
+              <Wrench className="h-3.5 w-3.5 text-amber-400" />
+              Predictive Maintenance
+            </p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-amber-400">
+                {activeAlerts.filter((a) => a.alert_type === 'PREDICTIVE_MAINTENANCE' && !a.acknowledged).length} Pending
+              </h3>
+              <span className="text-[11px] text-amber-300/80 font-mono">
+                Vibration / Heat
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 font-mono">ISO 10816 Curve</span>
+            <MiniSparkline
+              data={telemetryStream.slice(-15).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
+              color="#f59e0b"
+              height={26}
+              width={70}
+            />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 font-medium">Avg Wet-Bulb Heat Index</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-amber-400">{activeZoneObj.heatIndex || 42.5}°C</h3>
-            <span className="text-xs text-slate-400">Severe Thermal Load</span>
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Avg Wet-Bulb Heat Index</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-amber-400">{activeZoneObj.heatIndex || 42.5}°C</h3>
+              <span className="text-xs text-slate-400">Severe Thermal Load</span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 font-mono">Heat Wave Index</span>
+            <MiniSparkline
+              data={telemetryStream.slice(-15).map((p) => p.ambient_temp_c)}
+              color="#f97316"
+              height={26}
+              width={70}
+            />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 font-medium">Model Lead Time (Backtested)</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <h3 className="text-2xl font-bold text-cyan-400">3.8 Hours</h3>
-            <span className="text-xs text-cyan-400 font-semibold">Prior to Incident</span>
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Model Lead Time (Backtested)</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-cyan-400">3.8 Hours</h3>
+              <span className="text-xs text-cyan-400 font-semibold">Prior to Incident</span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 font-mono">HRV Autonomic</span>
+            <MiniSparkline
+              data={telemetryStream.slice(-15).map((p) => p.smoothed_hrv)}
+              color="#06b6d4"
+              height={26}
+              width={70}
+            />
           </div>
         </div>
       </div>
@@ -2575,6 +2815,32 @@ export default function ManagerDashboard() {
         }}
         onSpeakAlert={handleSpeakAlert}
         isSpeaking={isSpeaking}
+      />
+
+      {/* Historical Population Health Anomalies Log (Lists the Last 5 Detected Events with Timestamps and Severity Levels) */}
+      <HistoricalPopulationHealthAnomaliesLog
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onInspectAnomaly={(alert) => {
+          setAnomalyTrendZoneId(alert.location_zone);
+          const el = document.getElementById('anomaly-trend-30d-card') || document.getElementById('historical-health-chart-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        onOpenComplianceExportModal={() => setIsComplianceCsvExportModalOpen(true)}
+        isSpeaking={isSpeaking}
+        className="mb-6"
       />
 
       {/* Incident Hotspots Summary Widget (Text-Based Natural Language Generation) */}
@@ -2844,6 +3110,39 @@ export default function ManagerDashboard() {
           const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
           setTelemetryAlert(res);
         }}
+      />
+
+      {/* 24-Hour Temporal Health Anomaly Heat-Map Visualization (Using Recharts) */}
+      <TemporalAnomalyHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+      {/* Population Health Risk Heatmap Widget (Categorizes into Low, Medium, High, Critical using Radar Chart) */}
+      <RiskHeatmapRadarWidget
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
       />
 
       {/* Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart */}
@@ -3395,6 +3694,7 @@ export default function ManagerDashboard() {
         toasts={criticalAnomalyToasts}
         onDismiss={handleDismissCriticalToast}
         onAcknowledge={handleAcknowledgeCriticalToast}
+        onClearAll={handleClearAllCriticalToasts}
         onDispatchAction={handleDispatchActionForCriticalToast}
         onInspectInChart={handleInspectCriticalToastInChart}
         soundEnabled={toastSoundEnabled}

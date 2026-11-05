@@ -39,7 +39,7 @@ interface ChronologicalAnomalyLogPanelProps {
   isSpeaking?: boolean;
 }
 
-type SeverityFilter = 'ALL_HIGH_PRIORITY' | 'CRITICAL' | 'HIGH' | 'ALL';
+type SeverityFilter = 'ALL_HIGH_PRIORITY' | 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'ALL';
 type StatusFilter = 'ALL' | 'UNACKNOWLEDGED' | 'ACKNOWLEDGED';
 
 export default function ChronologicalAnomalyLogPanel({
@@ -55,7 +55,7 @@ export default function ChronologicalAnomalyLogPanel({
 }: ChronologicalAnomalyLogPanelProps) {
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL_HIGH_PRIORITY');
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [zoneFilter, setZoneFilter] = useState<string>(selectedZoneId || 'ALL');
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
@@ -80,6 +80,10 @@ export default function ChronologicalAnomalyLogPanel({
           if (alert.severity !== 'CRITICAL') return false;
         } else if (severityFilter === 'HIGH') {
           if (alert.severity !== 'HIGH') return false;
+        } else if (severityFilter === 'MODERATE') {
+          if (alert.severity !== 'MODERATE') return false;
+        } else if (severityFilter === 'LOW') {
+          if (alert.severity !== 'LOW') return false;
         }
 
         // Status filter
@@ -386,46 +390,66 @@ export default function ChronologicalAnomalyLogPanel({
             </div>
 
             {/* Severity Filter Tabs */}
-            <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[11px] font-medium">
-              <button
-                onClick={() => setSeverityFilter('ALL_HIGH_PRIORITY')}
-                className={`px-2.5 py-1 rounded transition ${
-                  severityFilter === 'ALL_HIGH_PRIORITY'
-                    ? 'bg-rose-600 text-white font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                High-Priority
-              </button>
-              <button
-                onClick={() => setSeverityFilter('CRITICAL')}
-                className={`px-2.5 py-1 rounded transition ${
-                  severityFilter === 'CRITICAL'
-                    ? 'bg-rose-600 text-white font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-rose-300'
-                }`}
-              >
-                Critical Only
-              </button>
-              <button
-                onClick={() => setSeverityFilter('HIGH')}
-                className={`px-2.5 py-1 rounded transition ${
-                  severityFilter === 'HIGH'
-                    ? 'bg-amber-600 text-white font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-amber-300'
-                }`}
-              >
-                High Only
-              </button>
+            <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[11px] font-medium flex-wrap gap-0.5">
               <button
                 onClick={() => setSeverityFilter('ALL')}
-                className={`px-2.5 py-1 rounded transition ${
+                className={`px-2 py-1 rounded transition cursor-pointer ${
                   severityFilter === 'ALL'
                     ? 'bg-slate-700 text-white font-bold shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                All Severities
+                All
+              </button>
+              <button
+                onClick={() => setSeverityFilter('CRITICAL')}
+                className={`px-2 py-1 rounded transition cursor-pointer ${
+                  severityFilter === 'CRITICAL'
+                    ? 'bg-rose-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-rose-300'
+                }`}
+              >
+                Critical
+              </button>
+              <button
+                onClick={() => setSeverityFilter('HIGH')}
+                className={`px-2 py-1 rounded transition cursor-pointer ${
+                  severityFilter === 'HIGH'
+                    ? 'bg-amber-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-amber-300'
+                }`}
+              >
+                High
+              </button>
+              <button
+                onClick={() => setSeverityFilter('MODERATE')}
+                className={`px-2 py-1 rounded transition cursor-pointer ${
+                  severityFilter === 'MODERATE'
+                    ? 'bg-yellow-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-yellow-300'
+                }`}
+              >
+                Medium / Mod
+              </button>
+              <button
+                onClick={() => setSeverityFilter('LOW')}
+                className={`px-2 py-1 rounded transition cursor-pointer ${
+                  severityFilter === 'LOW'
+                    ? 'bg-cyan-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-cyan-300'
+                }`}
+              >
+                Low
+              </button>
+              <button
+                onClick={() => setSeverityFilter('ALL_HIGH_PRIORITY')}
+                className={`px-2 py-1 rounded transition cursor-pointer ${
+                  severityFilter === 'ALL_HIGH_PRIORITY'
+                    ? 'bg-rose-950 text-rose-300 border border-rose-500/40 font-bold shadow-xs'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                High Priority
               </button>
             </div>
 

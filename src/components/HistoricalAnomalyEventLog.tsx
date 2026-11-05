@@ -822,20 +822,21 @@ export default function HistoricalAnomalyEventLog({
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Severity Tier Filter */}
           <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 text-[11px]">Tier:</span>
+            <span className="text-slate-400 text-[11px]">Severity:</span>
             <select
               value={severityFilter}
               onChange={(e) => {
                 setSeverityFilter(e.target.value as any);
                 setCurrentPage(1);
               }}
-              className="bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs focus:outline-hidden focus:border-cyan-500 font-sans"
+              className="bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs focus:outline-hidden focus:border-cyan-500 font-sans cursor-pointer"
+              title="Filter by severity level (Low, Medium, High, Critical)"
             >
-              <option value="ALL">All Tiers</option>
-              <option value="CRITICAL">Critical Risk</option>
-              <option value="HIGH">High Severity</option>
-              <option value="MODERATE">Moderate</option>
-              <option value="LOW">Low / Noise</option>
+              <option value="ALL">All Severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MODERATE">Medium / Moderate</option>
+              <option value="LOW">Low</option>
             </select>
           </div>
 

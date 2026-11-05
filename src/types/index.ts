@@ -589,6 +589,10 @@ export interface CriticalAnomalyToastData {
   createdAt: number;
   autoDismissMs: number;
   acknowledged: boolean;
+  riskTier?: 'CRITICAL_RISK' | 'HIGH_RISK' | 'MODERATE_RISK';
+  riskProbability?: number;
+  attributions?: Record<string, number>;
+  dispatched?: boolean;
 }
 
 export interface AnomalyTrendDayWithProjection extends AnomalyTrendDay {
