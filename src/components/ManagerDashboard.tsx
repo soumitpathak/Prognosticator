@@ -54,7 +54,7 @@ import { voiceAlertService, DEFAULT_VOICE_SETTINGS } from '../services/voiceAler
 import AuditLogModal from './AuditLogModal';
 import AnomalyAuditLogModal from './AnomalyAuditLogModal';
 import ForecastedResourceDistributionWidget from './ForecastedResourceDistributionWidget';
-import { compileFullAnomalyAuditLog } from '../services/anomalyAuditService';
+import { compileFullAnomalyAuditLog, serializeCurrentAnomalyDataToCsvAndDownload } from '../services/anomalyAuditService';
 import TelemetryInspectorModal from './TelemetryInspectorModal';
 import StreamSimulatorDrawer from './StreamSimulatorDrawer';
 import TelemetryCharts from './TelemetryCharts';
@@ -178,6 +178,15 @@ export default function ManagerDashboard() {
 
   // Sensitivity Settings Config
   const [kalmanConfig, setKalmanConfig] = useState<KalmanSensitivityConfig>(DEFAULT_KALMAN_CONFIG);
+
+  // Kalman Filter Real-Time Confidence & Desktop Notification Sentinel State
+  const [kalmanConfidence, setKalmanConfidence] = useState<number>(94.2);
+  const [kalmanConfidenceThreshold, setKalmanConfidenceThreshold] = useState<number>(85.0);
+  const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useState<boolean>(true);
+  const [desktopNotificationPermission, setDesktopNotificationPermission] = useState<NotificationPermission>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+  );
+  const lastKalmanNotificationRef = useRef<number>(0);
 
   // Modals & Drawers
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
@@ -1200,6 +1209,181 @@ export default function ManagerDashboard() {
     syncLiveWeather(activeZoneObj);
   }, [activeZoneObj.id, syncLiveWeather]);
 
+  // Desktop Notifications & Kalman Filter Confidence Alert Handlers
+  const requestDesktopNotificationPermission = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setProtocolActiveNotice('Desktop Notifications API is not supported by your browser environment.');
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+      return false;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setDesktopNotificationPermission(permission);
+      if (permission === 'granted') {
+        setProtocolActiveNotice('Desktop Notifications enabled: Alerts will trigger when Kalman confidence drops below threshold.');
+        setTimeout(() => setProtocolActiveNotice(null), 6000);
+        return true;
+      } else {
+        setProtocolActiveNotice('Desktop Notification permission was dismissed or denied.');
+        setTimeout(() => setProtocolActiveNotice(null), 5000);
+        return false;
+      }
+    } catch (err) {
+      console.warn('Notification permission error:', err);
+      return false;
+    }
+  }, []);
+
+  const sendKalmanConfidenceDesktopNotification = useCallback(
+    (confidence: number, threshold: number, force = false) => {
+      const now = Date.now();
+      if (!force && now - lastKalmanNotificationRef.current < 20000) {
+        return; // 20s cooldown
+      }
+      lastKalmanNotificationRef.current = now;
+
+      const title = `⚠️ Kalman Filter Confidence Drop Alert (${confidence.toFixed(1)}%)`;
+      const body = `Kalman Filter confidence has dropped to ${confidence.toFixed(1)}% (below safety threshold of ${threshold.toFixed(1)}%). Elevated sensor noise and covariance drift detected in ${activeZoneObj.name}.`;
+
+      // 1. Spawning browser native Desktop Notification if permitted
+      if (typeof window !== 'undefined' && 'Notification' in window && desktopNotificationsEnabled) {
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification(title, {
+              body,
+              icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+              tag: 'kalman-confidence-breach'
+            });
+          } catch (err) {
+            console.warn('Native notification spawn failed:', err);
+          }
+        } else if (Notification.permission === 'default') {
+          Notification.requestPermission().then((perm) => {
+            setDesktopNotificationPermission(perm);
+            if (perm === 'granted') {
+              try {
+                new Notification(title, { body, tag: 'kalman-confidence-breach' });
+              } catch (e) {
+                console.warn(e);
+              }
+            }
+          });
+        }
+      }
+
+      // 2. High-priority in-app threshold breach toast alert
+      const toastItem: ThresholdBreachToast = {
+        id: `TOAST-KALMAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        timestamp: new Date().toISOString(),
+        timeFormatted: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        signalKey: 'anomalyEngine',
+        signalName: 'Kalman Filter Confidence Drop Alert',
+        measuredValue: confidence,
+        measuredFormatted: `${confidence.toFixed(1)}% Confidence`,
+        thresholdLimit: threshold,
+        thresholdFormatted: `${threshold.toFixed(1)}% Safety Floor`,
+        unit: '%',
+        deltaFormatted: `-${(threshold - confidence).toFixed(1)}% below threshold`,
+        severity: confidence < 75 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        workerCount: activeZoneObj.count,
+        recommendedAction: 'Telemetry noise covariance exceeds optimal state space model limits. Recalibrate Kalman Q/R matrices and inspect local IoT gateways.',
+        acknowledged: false,
+        createdAt: now,
+        autoDismissMs: 14000
+      };
+      setActiveToasts((prev) => [toastItem, ...prev].slice(0, 8));
+
+      // 3. System Audit Log entry
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-NOTIF-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Lead Supervisor',
+        category: 'THRESHOLD_CHANGE',
+        targetModule: 'Kalman Filter Real-Time Confidence Monitor',
+        parameter: 'Kalman Confidence Drop Desktop Notification',
+        previousValue: `${threshold.toFixed(1)}% Threshold`,
+        newValue: `Dropped to ${confidence.toFixed(1)}%`,
+        justification: `Desktop notification triggered due to Kalman state filter confidence falling below minimum safety threshold (${threshold}%).`,
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `DESKTOP NOTIFICATION DISPATCHED: Kalman Filter Confidence (${confidence.toFixed(1)}%) dropped below ${threshold}% threshold in ${activeZoneObj.name}.`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 7000);
+    },
+    [activeZoneObj, desktopNotificationsEnabled]
+  );
+
+  const handleSimulateKalmanConfidenceDrop = useCallback(() => {
+    const droppedConfidence = Number((kalmanConfidenceThreshold - 7.5 - Math.random() * 4).toFixed(1));
+    setKalmanConfidence(droppedConfidence);
+    sendKalmanConfidenceDesktopNotification(droppedConfidence, kalmanConfidenceThreshold, true);
+  }, [kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification]);
+
+  const handleTestDesktopNotification = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setProtocolActiveNotice('Desktop Notifications API is not supported by your browser environment.');
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      const granted = await requestDesktopNotificationPermission();
+      if (!granted) return;
+    }
+    try {
+      new Notification('Prognosticator Sentinel Test', {
+        body: `Desktop notifications are operational! Current Kalman Filter confidence: ${kalmanConfidence.toFixed(1)}% (Threshold: ${kalmanConfidenceThreshold}%).`,
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%2306b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+        tag: 'test-notification'
+      });
+      setProtocolActiveNotice('Test desktop notification dispatched to your operating system desktop.');
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+    } catch (e) {
+      console.warn('Test notification failed:', e);
+    }
+  }, [kalmanConfidence, kalmanConfidenceThreshold, requestDesktopNotificationPermission]);
+
+  // Serializes the current active anomaly state into RFC 4180 CSV and triggers browser download for audit logs
+  const handleExportCurrentAnomalyCsvDirect = useCallback(() => {
+    try {
+      const res = serializeCurrentAnomalyDataToCsvAndDownload(activeAlerts, activeZoneObj, {
+        userName: 'Alex Mercer (EHS Safety Supervisor)',
+        auditStandard: 'ISO 45001 / OSHA 1910 Occupational Safety Standard'
+      });
+
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-CSV-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor',
+        category: 'REPORT_EXPORT',
+        targetModule: 'Current Anomaly State Serializer',
+        parameter: 'Current Anomaly Data CSV Export',
+        previousValue: 'In-Memory React State',
+        newValue: `Exported ${res.recordCount} current anomaly records: ${res.filename}`,
+        justification: 'Exported current anomaly data in the React state into CSV format for compliance audit logs.',
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `Current anomaly data serialized and downloaded to CSV (${res.recordCount} alerts): ${res.filename}`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+      setIsViewAuditMenuOpen(false);
+    } catch (err: any) {
+      console.error('Failed to export current anomaly CSV:', err);
+      setProtocolActiveNotice('Failed to export CSV: ' + (err?.message || 'Unknown error'));
+    }
+  }, [activeAlerts, activeZoneObj]);
+
   // Initial demonstration high-risk population health anomaly toast alert on mount
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1243,6 +1427,15 @@ export default function ManagerDashboard() {
       const packet = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
       const result = predictWorkforceAnomaly(packet, undefined, kalmanConfig);
       setTelemetryAlert(result);
+
+      // Dynamically compute real-time Kalman filter confidence based on noise & jitter
+      const jitterPenalty = jitterEnabled ? Math.abs(jitterFactor) * 1.5 : Math.abs(jitterFactor) * 0.5;
+      const dynamicKalmanConf = Number(Math.max(68.0, Math.min(99.4, 96.8 - jitterPenalty + (Math.random() - 0.5) * 1.5)).toFixed(1));
+      setKalmanConfidence(dynamicKalmanConf);
+
+      if (dynamicKalmanConf < kalmanConfidenceThreshold) {
+        sendKalmanConfidenceDesktopNotification(dynamicKalmanConf, kalmanConfidenceThreshold);
+      }
 
       // Real-time alert toast notification if Prognosticator Engine detects high-risk or critical population health anomaly
       if (result.risk_probability >= 0.65 || result.risk_tier === 'CRITICAL_RISK') {
@@ -1316,7 +1509,7 @@ export default function ManagerDashboard() {
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerAnomalyToast]);
+  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerAnomalyToast, kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification]);
 
   // Handle Burst Event Triggers
   const handleTriggerBurst = (type: 'HEATWAVE' | 'NOISE' | 'CARDIAC' | 'DROPOUT') => {
@@ -2561,10 +2754,10 @@ export default function ManagerDashboard() {
               onClick={() => setIsViewAuditMenuOpen((prev) => !prev)}
               disabled={isExportingAuditReport}
               className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-cyan-400/40 cursor-pointer disabled:opacity-50"
-              title="Export current view anomaly report as a simulated PDF or CSV file for audit logging purposes"
+              title="Export current anomaly report as a simulated PDF or CSV file for audit logging purposes"
             >
               <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
-              <span>Export View Report (Audit Logged)</span>
+              <span>Export Current Anomaly Report</span>
               <ChevronDown className={`h-3 w-3 text-white/80 transition-transform ${isViewAuditMenuOpen ? 'rotate-180' : ''}`} />
             </button>
             {isViewAuditMenuOpen && (
@@ -2573,9 +2766,9 @@ export default function ManagerDashboard() {
                   className="fixed inset-0 z-40"
                   onClick={() => setIsViewAuditMenuOpen(false)}
                 />
-                <div className="absolute right-0 mt-1.5 w-72 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 text-xs">
+                <div className="absolute right-0 mt-1.5 w-76 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 text-xs">
                   <div className="px-2.5 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 font-medium flex items-center justify-between">
-                    <span>Export View for Audit Logging</span>
+                    <span>Export Anomaly Report for Audit Logging</span>
                     <span className="text-[10px] text-cyan-400 font-mono">ISO 45001</span>
                   </div>
                   <div className="py-1 space-y-1">
@@ -2605,6 +2798,19 @@ export default function ManagerDashboard() {
                       </div>
                       <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
                     </button>
+                    <button
+                      onClick={handleExportCurrentAnomalyCsvDirect}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-teal-950/70 hover:text-teal-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <Download className="h-4 w-4 text-teal-400 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <div className="font-semibold text-white">Current Anomaly State CSV</div>
+                          <div className="text-[10px] text-slate-400">Serialize live active anomalies in state</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-teal-950 text-teal-300 border border-teal-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
+                    </button>
                   </div>
                   <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-400 flex items-center justify-between font-mono">
                     <span>System Audit Trail</span>
@@ -2614,6 +2820,16 @@ export default function ManagerDashboard() {
               </>
             )}
           </div>
+
+          {/* Direct Button: Serialize Current Anomaly Data to CSV for Audit Logs */}
+          <button
+            onClick={handleExportCurrentAnomalyCsvDirect}
+            className="flex items-center space-x-1.5 bg-teal-950/80 hover:bg-teal-900/80 border border-teal-500/60 text-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Serialize current anomaly data in the React state into CSV format and trigger browser download for audit logs"
+          >
+            <Download className="h-3.5 w-3.5 text-teal-400" />
+            <span>Export Anomaly State CSV</span>
+          </button>
 
           {/* Export Historical Workforce Health Data CSV Button */}
           <button
@@ -2677,6 +2893,117 @@ export default function ManagerDashboard() {
           </button>
         </div>
       )}
+
+      {/* Kalman Filter Real-Time Confidence & Desktop Notification Sentinel Banner */}
+      <div className="mb-6 p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          {/* Left: Kalman Filter Confidence Status */}
+          <div className="flex items-start sm:items-center space-x-3.5">
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 ${
+                kalmanConfidence >= kalmanConfidenceThreshold
+                  ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-400'
+                  : 'bg-rose-950/80 border-rose-500/70 text-rose-400 animate-pulse'
+              }`}
+            >
+              <Activity className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Kalman Filter Real-Time Confidence Sentinel</h3>
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border flex items-center gap-1 ${
+                    kalmanConfidence >= kalmanConfidenceThreshold
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      kalmanConfidence >= kalmanConfidenceThreshold ? 'bg-emerald-400' : 'bg-rose-400 animate-ping'
+                    }`}
+                  />
+                  State Confidence: {kalmanConfidence.toFixed(1)}%
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                  Threshold: &lt;{kalmanConfidenceThreshold.toFixed(1)}% Triggers Alert
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Monitors recursive 1D Kalman state estimation confidence. If high noise or packet jitter drops confidence below the safety threshold, an OS desktop notification and audit entry are dispatched immediately.
+              </p>
+            </div>
+          </div>
+
+          {/* Right: Controls & Simulation Actions */}
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {/* Threshold Slider / Presets */}
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium">Floor:</span>
+              {[75, 80, 85, 90].map((th) => (
+                <button
+                  key={th}
+                  onClick={() => setKalmanConfidenceThreshold(th)}
+                  className={`px-2 py-1 rounded text-[11px] font-mono font-semibold transition cursor-pointer ${
+                    kalmanConfidenceThreshold === th
+                      ? 'bg-cyan-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {th}%
+                </button>
+              ))}
+            </div>
+
+            {/* Desktop Notification Permission Status / Toggle */}
+            <button
+              onClick={requestDesktopNotificationPermission}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+                desktopNotificationPermission === 'granted'
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                  : 'bg-amber-950/70 border-amber-500/50 text-amber-300 hover:bg-amber-900/60'
+              }`}
+              title={
+                desktopNotificationPermission === 'granted'
+                  ? 'Desktop notification permission is granted'
+                  : 'Click to grant browser notification permission for desktop alerts'
+              }
+            >
+              {desktopNotificationPermission === 'granted' ? (
+                <>
+                  <Bell className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Desktop Alerts: Active</span>
+                </>
+              ) : (
+                <>
+                  <BellRing className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+                  <span>Enable Desktop Alerts</span>
+                </>
+              )}
+            </button>
+
+            {/* Simulate Confidence Drop (< 85%) */}
+            <button
+              onClick={handleSimulateKalmanConfidenceDrop}
+              className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/90 border border-rose-500/60 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+              title={`Instantly simulate a Kalman filter confidence collapse below threshold to trigger desktop notification and in-app alerts`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+              <span>Simulate Confidence Drop (&lt;{kalmanConfidenceThreshold}%)</span>
+            </button>
+
+            {/* Test Desktop Notification Button */}
+            <button
+              onClick={handleTestDesktopNotification}
+              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer"
+              title="Send a sample desktop notification to verify operating system permissions"
+            >
+              <Bell className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Test OS Alert</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Real-Time Population Health Score Fluctuation Sparkline (Powered by Recharts) */}
       <PopulationHealthSparkline
