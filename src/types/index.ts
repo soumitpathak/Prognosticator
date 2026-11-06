@@ -564,6 +564,17 @@ export interface DepartmentHeatmapRow {
   };
 }
 
+export interface DepartmentRiskThreshold {
+  departmentId: string;
+  departmentName: string;
+  facilityLocation: string;
+  thresholdPct: number;
+  defaultThresholdPct: number;
+  currentRiskScore: number;
+  isBreached: boolean;
+  primaryRiskDriver: string;
+}
+
 // ==========================================
 // Real-Time Critical Anomaly Toast Notification Types
 // ==========================================
@@ -602,3 +613,78 @@ export interface AnomalyTrendDayWithProjection extends AnomalyTrendDay {
   projectedLower?: number | null;
   projectedConfidence?: number;
 }
+
+// ==========================================
+// Incident Response Workflow Types
+// ==========================================
+
+export type IncidentWorkflowStatus = 'Pending' | 'Investigating' | 'Resolved';
+
+export interface IncidentAssignee {
+  id: string;
+  name: string;
+  role: string;
+  team: 'MEDICAL_TRIAGE' | 'ACOUSTIC_DEFENSE' | 'THERMAL_COOLING' | 'MECHANICAL_RELIABILITY' | 'HAZMAT_SAFETY' | 'EHS_LEAD';
+  avatarInitials: string;
+  phone: string;
+  activeIncidentsCount: number;
+}
+
+export interface IncidentActivityLogEntry {
+  timestamp: string;
+  action: string;
+  actor: string;
+  notes?: string;
+  previousStatus?: IncidentWorkflowStatus;
+  newStatus?: IncidentWorkflowStatus;
+}
+
+export interface IncidentAssignment {
+  eventId: string;
+  status: IncidentWorkflowStatus;
+  assigneeId?: string;
+  assigneeName?: string;
+  assigneeRole?: string;
+  assignedAt?: string;
+  updatedAt: string;
+  resolutionNotes?: string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+  activityLog: IncidentActivityLogEntry[];
+}
+
+// ==========================================
+// LSTM 12-Hour Predictive Risk Forecast Types
+// ==========================================
+
+export interface Lstm12hForecastHour {
+  hourOffset: number; // 1 to 12
+  timeLabel: string; // e.g. "+1h (16:00)"
+  absoluteTime: string; // e.g. "16:00"
+  projectedRiskScore: number; // 0 to 100
+  projectedRiskTier: 'CRITICAL_RISK' | 'HIGH_RISK' | 'MODERATE_RISK' | 'LOW_RISK';
+  reconstructionMse: number;
+  confidenceLower: number;
+  confidenceUpper: number;
+  confidencePct: number;
+  primaryProjectedDriver: string;
+  ambientHeatForecastC: number;
+  hrvRestForecastMs: number;
+  isProjectedPeak?: boolean;
+  predictedThresholdBreach?: string;
+  recommendedMitigation?: string;
+}
+
+export interface Lstm12hForecastResult {
+  generatedAt: string;
+  baselineCurrentRisk: number;
+  projectedPeakRisk: number;
+  peakHourOffset: number;
+  peakTimeLabel: string;
+  riskInflectionVelocity: number; // delta percentage
+  hoursInHighOrCriticalRisk: number;
+  modelConfidenceIndex: number; // e.g. 94.6%
+  scenario: 'BASELINE' | 'HEAT_SURGE' | 'MITIGATED';
+  hours: Lstm12hForecastHour[];
+  keyDriversSummary: string;
+}
+

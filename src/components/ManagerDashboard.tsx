@@ -38,7 +38,11 @@ import {
   ThresholdBreachToast,
   ToastSignalKey,
   AnomalyAuditRecord,
-  CriticalAnomalyToastData
+  CriticalAnomalyToastData,
+  DepartmentRiskThreshold,
+  Lstm12hForecastResult,
+  Lstm12hForecastHour,
+  IncidentAssignment
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -95,6 +99,12 @@ import AudioNotificationSeverityTogglePanel from './AudioNotificationSeverityTog
 import HistoricalAnomalyCsvExportModal from './HistoricalAnomalyCsvExportModal';
 import HistoricalAnomalyPdfExportModal from './HistoricalAnomalyPdfExportModal';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
+import GeographicalZoneRiskHeatmap from './GeographicalZoneRiskHeatmap';
+import NotificationCenter from './NotificationCenter';
+import DepartmentRiskThresholdConfigPanel, { DEFAULT_DEPARTMENT_RISK_THRESHOLDS } from './DepartmentRiskThresholdConfigPanel';
+import AggregateRiskScoreTrend24hChart from './AggregateRiskScoreTrend24hChart';
+import LstmRiskForecastingPanel12h from './LstmRiskForecastingPanel12h';
+import AnomalyTelemetryDetailModal from './AnomalyTelemetryDetailModal';
 import RecentAnomalyTriggersRunningLogPanel from './RecentAnomalyTriggersRunningLogPanel';
 import PatternRecognitionPanel from './PatternRecognitionPanel';
 import DepartmentSeverityStackedBarChart from './DepartmentSeverityStackedBarChart';
@@ -202,6 +212,23 @@ export default function ManagerDashboard() {
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState<boolean>(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceAlertSettings>(DEFAULT_VOICE_SETTINGS);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+
+  // Anomaly Telemetry Detail Modal State
+  const [selectedAnomalyForDetail, setSelectedAnomalyForDetail] = useState<ActiveAnomalyAlert | null>(null);
+  const [isAnomalyDetailModalOpen, setIsAnomalyDetailModalOpen] = useState<boolean>(false);
+
+  const handleOpenAnomalyDetails = (alert: ActiveAnomalyAlert) => {
+    setSelectedAnomalyForDetail(alert);
+    setIsAnomalyDetailModalOpen(true);
+  };
+
+  const handleAcknowledgeAllAlerts = () => {
+    setActiveAlerts((prev) =>
+      prev.map((a) => ({ ...a, acknowledged: true }))
+    );
+    setProtocolActiveNotice('All high-risk event notifications marked as acknowledged by safety supervisor.');
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  };
 
   // Full Anomaly Audit Log Records (Historical timestamp, confidence score, corrective action)
   const anomalyAuditRecords: AnomalyAuditRecord[] = useMemo(() => {
@@ -1280,6 +1307,130 @@ export default function ManagerDashboard() {
   const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
   const pendingCriticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL' && !a.acknowledged).length;
   const stagedDispatchCount = medicalDispatches.filter((d) => d.status === 'STAGED').length;
+
+  // ==========================================
+  // Department-Specific Custom Risk Score Thresholds State
+  // ==========================================
+  const [departmentRiskThresholds, setDepartmentRiskThresholds] = useState<DepartmentRiskThreshold[]>(
+    DEFAULT_DEPARTMENT_RISK_THRESHOLDS
+  );
+
+  // Computed department threshold breaches for Notification Center alert badge
+  const departmentThresholdBreaches = useMemo(() => {
+    return departmentRiskThresholds
+      .filter((d) => d.currentRiskScore > d.thresholdPct)
+      .map((d) => ({
+        departmentId: d.departmentId,
+        departmentName: d.departmentName,
+        currentRisk: d.currentRiskScore,
+        threshold: d.thresholdPct,
+        facilityLocation: d.facilityLocation
+      }));
+  }, [departmentRiskThresholds]);
+
+  const handleSaveDepartmentThresholds = useCallback(
+    (updated: DepartmentRiskThreshold[], justification: string) => {
+      setDepartmentRiskThresholds(updated);
+      const breachedCount = updated.filter((d) => d.currentRiskScore > d.thresholdPct).length;
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-DTH-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Lead Supervisor',
+        category: 'THRESHOLD_CHANGE',
+        targetModule: 'Department Risk Score Thresholds',
+        parameter: 'Custom Division Risk Cutoffs',
+        previousValue: 'Previous Threshold Configuration',
+        newValue: `Configured ${updated.length} department thresholds (${breachedCount} exceeding limit)`,
+        justification: justification || 'Audited adjustment of department-specific risk score threshold parameters.',
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `Department risk score thresholds saved to audit log! ${breachedCount} department(s) currently exceed configured thresholds.`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+    },
+    []
+  );
+
+  const handleResetDepartmentThresholds = useCallback(() => {
+    setDepartmentRiskThresholds(DEFAULT_DEPARTMENT_RISK_THRESHOLDS);
+    setProtocolActiveNotice('Department risk score thresholds restored to default levels (Balanced 75%).');
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  }, []);
+
+  // Simulated CSV Export of Current Anomaly Telemetry Data Formatted for Enterprise Reporting Compliance
+  const handleSimulatedComplianceCsvExport = useCallback(() => {
+    const res = serializeCurrentAnomalyDataToCsvAndDownload(activeAlerts, activeZoneObj, {
+      auditStandard: 'ISO 45001:2018 / OSHA 1910 Compliance Framework',
+      userName: 'Alex Mercer (EHS Safety Supervisor)'
+    });
+
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-CSV-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Lead Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Enterprise Anomaly Telemetry Export',
+      parameter: 'Compliance CSV Export',
+      previousValue: 'N/A',
+      newValue: `Exported ${res.recordCount} anomaly telemetry records: ${res.filename}`,
+      justification: 'Simulated compliance CSV export for enterprise safety audit and statutory reporting.',
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Simulated enterprise compliance CSV exported successfully (${res.recordCount} telemetry records, ISO 45001 / OSHA 1910). File: ${res.filename}`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 7000);
+  }, [activeAlerts, activeZoneObj]);
+
+  // Stage Pre-Emptive Protocols from 12-Hour LSTM Predictive Risk Forecast
+  const handleStageLstmPreemptiveMitigation = useCallback(
+    (forecast: Lstm12hForecastResult, targetHour: Lstm12hForecastHour) => {
+      const newDispatch: MedicalDispatchNotification = {
+        id: `LSTM-DSP-${Date.now().toString().slice(-4)}`,
+        alertId: `LSTM-PREDICT-${targetHour.hourOffset}H`,
+        zone: activeZoneObj.name,
+        severity: targetHour.projectedRiskScore >= 80 ? 'CRITICAL' : 'HIGH',
+        recipientRole: 'Pre-Emptive Thermal Defense & Rapid Hydration Team',
+        contactMethod: 'DUAL_CHANNEL',
+        recipientPhone: '+1 (555) 911-LSTM',
+        messagePayload: `LSTM 12H FORECAST MITIGATION [${targetHour.timeLabel}]: Projected Risk ${targetHour.projectedRiskScore}% (${targetHour.primaryProjectedDriver}). Directive: ${targetHour.recommendedMitigation || 'Deploy rapid shaded hydration trailers.'}`,
+        stagedAt: 'Just now',
+        status: 'STAGED'
+      };
+      setMedicalDispatches((prev) => [newDispatch, ...prev]);
+
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-LSTM-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Lead Supervisor',
+        category: 'MAINTENANCE_DISPATCH',
+        targetModule: '12-Hour LSTM Predictive Risk Forecaster',
+        parameter: 'Pre-Emptive Protocol Staging',
+        previousValue: `${forecast.baselineCurrentRisk}% Baseline Risk`,
+        newValue: `Staged protocols for ${targetHour.timeLabel} (${targetHour.projectedRiskScore}% Projected Peak)`,
+        justification: `Staged pre-emptive mitigation based on LSTM temporal cell projection for ${targetHour.timeLabel} to prevent predicted acute hazard.`,
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `Pre-emptive protocol staged for LSTM projected peak (${targetHour.timeLabel}, ${targetHour.projectedRiskScore}%). Dispatch team alerted.`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 7000);
+    },
+    [activeZoneObj]
+  );
 
   // Sync hyper-local live weather via Open-Meteo API
   const syncLiveWeather = useCallback(async (zone: FacilityZone) => {
@@ -2779,6 +2930,16 @@ export default function ManagerDashboard() {
             <span>Simulate Pre-Emptive Alert</span>
           </button>
 
+          {/* Dedicated Simulated Compliance CSV Export Button */}
+          <button
+            onClick={handleSimulatedComplianceCsvExport}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-600 hover:from-emerald-600 hover:to-teal-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-emerald-400/40 cursor-pointer"
+            title="Trigger a simulated CSV export of current anomaly telemetry data formatted for enterprise reporting compliance (ISO 45001 / OSHA 1910)"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-300" />
+            <span>Export Compliance CSV</span>
+          </button>
+
           {/* Download Report Button (Converts current 24h anomaly trends & threshold settings to JSON or CSV) */}
           <div className="relative">
             <button
@@ -3380,6 +3541,99 @@ export default function ManagerDashboard() {
         }}
         onSpeakAlert={handleSpeakAlert}
         isSpeaking={isSpeaking}
+      />
+
+      {/* Visual Heatmap Highlighting Geographical Zones & Workforce Segments Showing High-Risk Anomaly Markers */}
+      <GeographicalZoneRiskHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchAction={(actionData) => {
+          const newDispatch: MedicalDispatchNotification = {
+            id: `DSP-MAP-${Date.now().toString().slice(-4)}`,
+            alertId: `ALR-ZONE-${Date.now().toString().slice(-4)}`,
+            zone: actionData.zoneName,
+            severity: actionData.severity,
+            recipientRole: 'On-Site Rapid Cooling Evacuation Team',
+            contactMethod: 'DUAL_CHANNEL',
+            recipientPhone: '+1 (555) 911-ZONE',
+            messagePayload: actionData.directive,
+            stagedAt: 'Just now',
+            status: 'STAGED'
+          };
+          setMedicalDispatches((prev) => [newDispatch, ...prev]);
+          setProtocolActiveNotice(
+            `Medical dispatch staged from Geographical Zone Heatmap: ${actionData.directive}`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        className="mb-6"
+      />
+
+      {/* High-Risk Event Notification Center (Scrollable Queue of Recent High-Risk Events with Timestamp, Anomaly Type, and View Details) */}
+      <NotificationCenter
+        alerts={activeAlerts}
+        zones={zones}
+        onViewDetails={handleOpenAnomalyDetails}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onAcknowledgeAll={handleAcknowledgeAllAlerts}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        departmentThresholdBreaches={departmentThresholdBreaches}
+        onOpenDepartmentThresholds={() => {
+          const el = document.getElementById('department-risk-threshold-config-panel');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
+            setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
+          }
+        }}
+        onExportComplianceCsv={handleSimulatedComplianceCsvExport}
+        className="mb-6"
+      />
+
+      {/* Configuration Panel for Custom Department Risk Score Threshold Values */}
+      <DepartmentRiskThresholdConfigPanel
+        departmentThresholds={departmentRiskThresholds}
+        onSaveThresholds={handleSaveDepartmentThresholds}
+        onResetDefaults={handleResetDepartmentThresholds}
+        className="mb-6"
+      />
+
+      {/* Real-Time 24-Hour Aggregate Risk Score Progression Trend Line Chart (Using Recharts & 24H Linear Regression Forecast) */}
+      <AggregateRiskScoreTrend24hChart
+        telemetryStream={telemetryStream}
+        selectedZone={activeZoneObj}
+        onInspectHour={(pt) => {
+          setIsolatedHealthSignal('riskScore');
+          const el = document.getElementById('historical-health-chart-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        className="mb-6"
+      />
+
+      {/* 12-Hour LSTM Predictive Risk Forecasting Panel (Autoencoder temporal simulation & scenario modeling) */}
+      <LstmRiskForecastingPanel12h
+        alerts={activeAlerts}
+        selectedZone={activeZoneObj}
+        onStageMitigation={handleStageLstmPreemptiveMitigation}
+        className="mb-6"
       />
 
       {/* Historical Population Health Anomalies Log (Lists the Last 5 Detected Events with Timestamps and Severity Levels) */}
@@ -4253,6 +4507,27 @@ export default function ManagerDashboard() {
         selectedZoneId={selectedZone}
         thresholds={healthThresholds}
         onExportLogged={handleHistoricalCompliancePdfExportLogged}
+      />
+
+      {/* Comprehensive Anomaly Telemetry Parameters & Kalman State Diagnostics Modal */}
+      <AnomalyTelemetryDetailModal
+        isOpen={isAnomalyDetailModalOpen}
+        onClose={() => {
+          setIsAnomalyDetailModalOpen(false);
+          setSelectedAnomalyForDetail(null);
+        }}
+        anomaly={selectedAnomalyForDetail}
+        zone={activeZoneObj}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
       />
 
       {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}
