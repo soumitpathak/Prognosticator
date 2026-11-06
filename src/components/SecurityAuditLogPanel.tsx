@@ -154,6 +154,7 @@ interface SecurityAuditLogPanelProps {
   onAcknowledgeAll?: () => void;
   onViewDetails?: (alert: ActiveAnomalyAlert) => void;
   onExportCsv?: () => void;
+  onOpenSignedCompliancePdf?: () => void;
   className?: string;
 }
 
@@ -165,6 +166,7 @@ export default function SecurityAuditLogPanel({
   onAcknowledgeAll,
   onViewDetails,
   onExportCsv,
+  onOpenSignedCompliancePdf,
   className = ''
 }: SecurityAuditLogPanelProps) {
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -559,6 +561,17 @@ export default function SecurityAuditLogPanel({
             >
               <CheckCheck className="h-3.5 w-3.5 text-cyan-400" />
               <span>Acknowledge All</span>
+            </button>
+          )}
+
+          {onOpenSignedCompliancePdf && (
+            <button
+              onClick={onOpenSignedCompliancePdf}
+              className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-md border border-emerald-400/50"
+              title="Compile Security Audit Log and recent NLP anomaly insights into a signed PDF report for quarterly compliance"
+            >
+              <FileText className="h-3.5 w-3.5 text-white" />
+              <span>Signed Quarterly PDF</span>
             </button>
           )}
 

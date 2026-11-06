@@ -157,7 +157,9 @@ import { exportCurrentAnomalyLogsAndTrendsCsv } from '../services/complianceCsvE
 import QuickSnapshotModal from './QuickSnapshotModal';
 import ProactiveMaintenanceSchedulerCard from './ProactiveMaintenanceSchedulerCard';
 import AnomalyDensityHeatmap from './AnomalyDensityHeatmap';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera } from 'lucide-react';
+import AutomatedResponseModule from './AutomatedResponseModule';
+import SignedComplianceReportModal from './SignedComplianceReportModal';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -271,6 +273,7 @@ export default function ManagerDashboard() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
   const [isAnomalyAuditModalOpen, setIsAnomalyAuditModalOpen] = useState<boolean>(false);
   const [isQuickSnapshotModalOpen, setIsQuickSnapshotModalOpen] = useState<boolean>(false);
+  const [isSignedCompliancePdfModalOpen, setIsSignedCompliancePdfModalOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
@@ -2900,6 +2903,16 @@ export default function ManagerDashboard() {
             <span>Quick Snapshot</span>
           </button>
 
+          {/* Signed Quarterly Compliance Report PDF Button */}
+          <button
+            onClick={() => setIsSignedCompliancePdfModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400 cursor-pointer"
+            title="Compile the Security Audit Log and recent anomaly insights into a signed PDF report for quarterly compliance reporting"
+          >
+            <FileText className="h-3.5 w-3.5 text-white" />
+            <span>Signed Quarterly PDF</span>
+          </button>
+
           {/* Export Compliance CSV Button: Current Anomaly Logs & Trend Data */}
           <button
             onClick={handleExportAnomalyLogsAndTrendDataCsv}
@@ -2908,6 +2921,19 @@ export default function ManagerDashboard() {
           >
             <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
             <span>Export Compliance CSV</span>
+          </button>
+
+          {/* Quick Trigger: Automated Response Module (HVAC/Ventilation) */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('automated-response-module');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Automated Response Module for corrective HVAC and ventilation closed-loop remediation"
+          >
+            <Wind className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Automated HVAC Response</span>
           </button>
 
           {/* Quick Trigger: Anomaly Algorithm Sensitivity Settings */}
@@ -4304,6 +4330,20 @@ export default function ManagerDashboard() {
 
       {/* Proactive Maintenance Scheduler: Triggers when LSTM-Kalman engine predicts sensor component failure within 72h */}
       <ProactiveMaintenanceSchedulerCard
+        className="mb-6"
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onNavigateToZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const el = document.getElementById('anomaly-density-floor-plan-heatmap');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
+      {/* Automated Response Module: Corrective HVAC/Ventilation Adjustments for Low-to-Medium Environmental Anomalies */}
+      <AutomatedResponseModule
         className="mb-6"
         onNotice={(msg) => {
           setProtocolActiveNotice(msg);
@@ -5917,6 +5957,7 @@ export default function ManagerDashboard() {
         onAcknowledgeAll={handleAcknowledgeAllAlerts}
         onViewDetails={handleOpenAnomalyDetails}
         onExportCsv={handleExportAnomalyLogsAndTrendDataCsv}
+        onOpenSignedCompliancePdf={() => setIsSignedCompliancePdfModalOpen(true)}
         className="mb-6"
       />
 
@@ -5931,6 +5972,12 @@ export default function ManagerDashboard() {
       )}
 
       {/* Modals & Drawers */}
+      <SignedComplianceReportModal
+        isOpen={isSignedCompliancePdfModalOpen}
+        onClose={() => setIsSignedCompliancePdfModalOpen(false)}
+        auditRecords={anomalyAuditRecords}
+      />
+
       <DailySummaryReportModal
         isOpen={isDailySummaryReportOpen}
         onClose={() => setIsDailySummaryReportOpen(false)}
