@@ -18,7 +18,8 @@ import {
   Plus,
   Zap,
   CloudSun,
-  TrendingUp
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -65,6 +66,12 @@ import TelemetryCharts from './TelemetryCharts';
 import ActiveAlertsSection from './ActiveAlertsSection';
 import SensorCorrelationScatterPlot from './SensorCorrelationScatterPlot';
 import ReportExportModal from './ReportExportModal';
+import HealthMetricsPdfExportModal from './HealthMetricsPdfExportModal';
+import WorkforceHealth30DaysTrendChart from './WorkforceHealth30DaysTrendChart';
+import DepartmentHealthComparisonSplitCard from './DepartmentHealthComparisonSplitCard';
+import D3WorkplaceZoneRiskHeatmap from './D3WorkplaceZoneRiskHeatmap';
+import DepartmentZoneSearchLookup, { DepartmentZoneEntity } from './DepartmentZoneSearchLookup';
+import DateRangePicker, { DateRangeSelection, DEFAULT_DATE_RANGE } from './DateRangePicker';
 import KalmanSettingsModal, { DEFAULT_KALMAN_CONFIG } from './KalmanSettingsModal';
 import MedicalDispatchModal from './MedicalDispatchModal';
 import CustomZoneBuilderModal from './CustomZoneBuilderModal';
@@ -139,7 +146,7 @@ import { causalCorrelationEngineService } from '../services/causalCorrelationEng
 import SystemComplianceAuditModule from './SystemComplianceAuditModule';
 import PredictiveMaintenanceModule from './PredictiveMaintenanceModule';
 import CorrelationEngineModule from './CorrelationEngineModule';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -219,6 +226,10 @@ export default function ManagerDashboard() {
   );
   const lastKalmanNotificationRef = useRef<number>(0);
 
+  // Longitudinal Date Range & Timeframe Filter State (Filters Historical Trends & Department Split Comparison)
+  const [healthDateRange, setHealthDateRange] = useState<DateRangeSelection>(DEFAULT_DATE_RANGE);
+  const [selectedComparisonDeptId, setSelectedComparisonDeptId] = useState<string>('Outdoor-Construction-Sector-4');
+
   // Subscribe to centralized browser desktop notification service
   useEffect(() => {
     const unsub = desktopNotificationService.subscribe((cfg) => {
@@ -251,6 +262,7 @@ export default function ManagerDashboard() {
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isHealthMetricsPdfModalOpen, setIsHealthMetricsPdfModalOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState<boolean>(false);
   const [isZoneBuilderOpen, setIsZoneBuilderOpen] = useState<boolean>(false);
@@ -415,6 +427,29 @@ export default function ManagerDashboard() {
 
     setProtocolActiveNotice(
       `Historical Anomaly Events Log exported to formatted PDF document (${recordCount} records, ${standard}). File: ${filename}`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 7000);
+  };
+
+  const handleHealthMetricsReportExported = (filename: string, recordCount: number) => {
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-PDF-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Lead Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Real-Time Health Metrics & KPI Display',
+      parameter: 'Health Metrics Mock PDF Report Export',
+      previousValue: 'N/A (Ad-hoc Snapshot)',
+      newValue: `Generated and exported PDF document: ${filename}`,
+      justification: `Executed mock PDF generation process for current health metrics display with 24h operational KPIs, multi-signal vitals, and statutory compliance seals.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Health Metrics Report PDF successfully generated & downloaded: ${filename}. Registered in System Audit Trail.`
     );
     setTimeout(() => setProtocolActiveNotice(null), 7000);
   };
@@ -977,6 +1012,47 @@ export default function ManagerDashboard() {
         );
       }
 
+      // 7. Thermal Work Limit (TWL) Dropping Below Safety Threshold
+      const twl = pt.twl_index;
+      const twlFloor = healthThresholds.minTwlIndex ?? 115;
+      if (twl !== undefined && twl < twlFloor) {
+        const delta = Number((twlFloor - twl).toFixed(0));
+        const sev: 'CRITICAL' | 'HIGH' = twl <= 95 ? 'CRITICAL' : 'HIGH';
+        evaluateSignal(
+          'twl',
+          'Thermal Work Limit (TWL) Dropped Below Safety Threshold',
+          twl,
+          twlFloor,
+          'W/m²',
+          true,
+          sev,
+          `-${delta} W/m² (-${Math.round((delta / twlFloor) * 100)}%)`,
+          'TWL index fell below safe thermal limit. Mandate immediate 15-minute shaded cooling rotation and oral electrolyte rehydration.',
+          sev === 'CRITICAL' ? 14000 : 9000
+        );
+      }
+
+      // 8. Workforce Physiological Health Score Dropping Below Safe Homeostasis Floor
+      const healthHomeostasisScore = Math.max(
+        0,
+        Math.min(100, Math.round(100 - risk * 0.45 - Math.max(0, 65 - pt.smoothed_hrv) * 0.7 - Math.max(0, 130 - (pt.twl_index ?? 140)) * 0.2))
+      );
+      if (healthHomeostasisScore < 65) {
+        const delta = 65 - healthHomeostasisScore;
+        evaluateSignal(
+          'riskScore',
+          'Workforce Health Index Dropped Below Safety Threshold',
+          healthHomeostasisScore,
+          65,
+          '%',
+          true,
+          healthHomeostasisScore <= 45 ? 'CRITICAL' : 'HIGH',
+          `-${delta}% below homeostasis floor`,
+          'Severe cumulative physiological strain detected across cohort. Dispatch field safety officer to conduct wellness triage.',
+          10000
+        );
+      }
+
       if (newToasts.length > 0) {
         setActiveToasts((prev) => [...newToasts, ...prev].slice(0, 8));
         if (toastSoundEnabled) {
@@ -1180,6 +1256,88 @@ export default function ManagerDashboard() {
     );
 
     setProtocolActiveNotice('Simulated live sensor threshold breach event and Prognosticator Engine anomaly triggered for active zone.');
+  };
+
+  const handleSimulateHealthMetricDrop = (type: 'HRV' | 'TWL' | 'MULTI') => {
+    const nowIso = new Date().toISOString();
+    let pt: TelemetryDataPoint;
+    if (type === 'HRV') {
+      const smoothedHrv = Math.max(18, healthThresholds.minHrvMs - 9.5);
+      pt = {
+        timestamp: nowIso,
+        timeLabel: 'Now (HRV Drop Alert)',
+        smoothed_hrv: smoothedHrv,
+        raw_hrv: Math.max(16, healthThresholds.minHrvMs - 12.0),
+        hrv_drop_pct: 36.5,
+        ambient_temp_c: 34.0,
+        skin_temp_c: 37.0,
+        raw_skin_temp: 37.1,
+        smoothed_skin_temp: 37.0,
+        heart_rate_bpm: 88,
+        noise_db: 74,
+        raw_noise_db: 75,
+        smoothed_noise_db: 74,
+        twl_index: 145,
+        aqi: 46,
+        sick_leave_rate_deviation: 0.05,
+        risk_score: 68,
+        is_anomaly: true
+      };
+      setProtocolActiveNotice(
+        `Real-Time Alert Triggered: Worker HRV dropped below safety threshold (${pt.smoothed_hrv}ms vs ${healthThresholds.minHrvMs}ms safety floor). Toast warning dispatched.`
+      );
+    } else if (type === 'TWL') {
+      const twlVal = Math.max(70, (healthThresholds.minTwlIndex ?? 115) - 20);
+      pt = {
+        timestamp: nowIso,
+        timeLabel: 'Now (TWL Drop Alert)',
+        smoothed_hrv: 52.0,
+        raw_hrv: 49.5,
+        hrv_drop_pct: 12.0,
+        ambient_temp_c: 41.5,
+        skin_temp_c: 37.7,
+        raw_skin_temp: 37.9,
+        smoothed_skin_temp: 37.7,
+        heart_rate_bpm: 96,
+        noise_db: 78,
+        raw_noise_db: 79,
+        smoothed_noise_db: 78,
+        twl_index: twlVal,
+        aqi: 54,
+        sick_leave_rate_deviation: 0.07,
+        risk_score: 72,
+        is_anomaly: true
+      };
+      setProtocolActiveNotice(
+        `Real-Time Alert Triggered: Thermal Work Limit (TWL) dropped below safety threshold (${pt.twl_index} W/m² vs ${healthThresholds.minTwlIndex} W/m² limit). Toast warning dispatched.`
+      );
+    } else {
+      pt = {
+        timestamp: nowIso,
+        timeLabel: 'Now (Multi-Metric Drop)',
+        smoothed_hrv: Math.max(18, healthThresholds.minHrvMs - 12.0),
+        raw_hrv: Math.max(15, healthThresholds.minHrvMs - 14.0),
+        hrv_drop_pct: 42.0,
+        ambient_temp_c: 42.5,
+        skin_temp_c: 38.2,
+        raw_skin_temp: 38.4,
+        smoothed_skin_temp: 38.2,
+        heart_rate_bpm: (healthThresholds.maxHeartRateBpm ?? 115) + 8,
+        noise_db: 84,
+        raw_noise_db: 86,
+        smoothed_noise_db: 84,
+        twl_index: Math.max(65, (healthThresholds.minTwlIndex ?? 115) - 25),
+        aqi: 68,
+        sick_leave_rate_deviation: 0.15,
+        risk_score: 90,
+        is_anomaly: true
+      };
+      setProtocolActiveNotice(
+        'Critical Real-Time Alert Triggered: Multiple workforce health metrics dropped below safety thresholds! Warning toasts active.'
+      );
+    }
+    checkReadingForThresholdBreaches(pt, activeZoneObj, true);
+    setTimeout(() => setProtocolActiveNotice(null), 8000);
   };
 
   const handleSaveHealthThresholds = (
@@ -2621,31 +2779,42 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* Global Search Bar: Quick navigation to specific zones, sensor IDs, or recent alert reports */}
-        <div className="w-full xl:w-96 xl:mx-2">
-          <GlobalSearchBar
+        {/* Top Navigation Search Bar: Allows users to quickly look up specific departments or worker zones by ID */}
+        <div className="w-full xl:w-[400px] xl:mx-2">
+          <DepartmentZoneSearchLookup
             zones={zones}
-            alerts={activeAlerts}
-            onSelectZone={(zoneId) => {
-              setSelectedZone(zoneId);
-              const z = zones.find((item) => item.id === zoneId);
+            selectedZoneId={selectedZone}
+            onSelectEntity={(entity) => {
+              setSelectedZone(entity.rawZoneId);
+              setSelectedComparisonDeptId(entity.rawZoneId);
+              setAnomalyTrendZoneId(entity.rawZoneId);
+              const z = zones.find((item) => item.id === entity.rawZoneId) || activeZoneObj;
               if (z) {
                 const newPacket = generatePacketForZone(z, z.status === 'CRITICAL');
                 const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
                 setTelemetryAlert(res);
               }
-            }}
-            onSelectAlert={(alertId) => {
-              const a = activeAlerts.find((item) => item.id === alertId);
-              if (a) {
-                setSelectedZone(a.location_zone);
-              }
+              setProtocolActiveNotice(
+                `Quick Lookup: Focused on ${entity.type === 'DEPARTMENT' ? 'Department' : 'Worker Zone'} [${entity.id}] ${entity.name}`
+              );
+              setTimeout(() => setProtocolActiveNotice(null), 6000);
             }}
           />
         </div>
 
         {/* Global Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Longitudinal Timeframe / Date Range Filter in Top Navigation */}
+          <DateRangePicker
+            value={healthDateRange}
+            onChange={(newRange) => {
+              setHealthDateRange(newRange);
+              setProtocolActiveNotice(
+                `Timeframe filter updated: ${newRange.label} (${newRange.daysCount} days applied)`
+              );
+              setTimeout(() => setProtocolActiveNotice(null), 6000);
+            }}
+          />
           {/* Team Mobile Alerts & Read Receipts Button */}
           <button
             onClick={() => setIsTeamAlertModalOpen(true)}
@@ -3526,6 +3695,16 @@ export default function ManagerDashboard() {
             <span>Export Anomaly State CSV</span>
           </button>
 
+          {/* Export Health Metrics Report PDF Button */}
+          <button
+            onClick={() => setIsHealthMetricsPdfModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-cyan-950/40 cursor-pointer"
+            title="Trigger mock PDF generation process for current health metrics display"
+          >
+            <FileText className="h-3.5 w-3.5 text-white" />
+            <span>Export Report</span>
+          </button>
+
           {/* Export Historical Workforce Health Data CSV Button */}
           <button
             onClick={handleExportWorkforceCsv}
@@ -3764,6 +3943,16 @@ export default function ManagerDashboard() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Export Report Mock PDF Button for Health Metrics Display */}
+            <button
+              onClick={() => setIsHealthMetricsPdfModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs transition shadow-md shadow-cyan-900/40 cursor-pointer border border-cyan-400/50"
+              title="Trigger mock PDF generation process for current health metrics display"
+            >
+              <FileText className="h-3.5 w-3.5 text-white" />
+              <span>Export Report</span>
+            </button>
+
             <button
               onClick={handleExportDailySummaryCsv}
               className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs transition shadow-xs cursor-pointer"
@@ -3902,6 +4091,106 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* Real-Time Health Metric Safety Alert System Monitor Bar */}
+      <div id="real-time-alert-system-panel" className="mb-6 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400">
+              <BellRing className="h-5 w-5 text-rose-400 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  Real-Time Health Metric Safety Alert System
+                </h3>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  Active &bull; Toast Warnings Armed
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Evaluates streaming telemetry packets every 3.2s &bull; Immediately fires warning toasts when health metrics drop below safety floors
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => handleSimulateHealthMetricDrop('HRV')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/60 text-rose-200 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Test real-time warning toast when worker HRV drops below the 40ms safety threshold"
+            >
+              <Activity className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+              <span>Simulate HRV Drop (&lt;40ms)</span>
+            </button>
+
+            <button
+              onClick={() => handleSimulateHealthMetricDrop('TWL')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-500/60 text-amber-200 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Test real-time warning toast when Thermal Work Limit drops below 115 W/m²"
+            >
+              <TrendingDown className="h-3.5 w-3.5 text-amber-400" />
+              <span>Simulate TWL Drop (&lt;115)</span>
+            </button>
+
+            <button
+              onClick={() => handleSimulateHealthMetricDrop('MULTI')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition shadow-md shadow-red-950/50 cursor-pointer"
+              title="Simulate severe multi-signal health drop across HRV, TWL, and pulse"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-white" />
+              <span>Acute Multi-Drop Alert</span>
+            </button>
+
+            <button
+              onClick={() => setIsHealthThresholdsModalOpen(true)}
+              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+              title="Configure custom health signal notification thresholds"
+            >
+              <Settings className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Thresholds</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Live Safety Floor Badges */}
+        <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-3 flex-wrap text-[11px] font-mono text-slate-400">
+            <span className="text-slate-300 font-semibold">Active Safety Thresholds:</span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              HRV Safety Floor: <strong className="text-cyan-400">&ge;{healthThresholds.minHrvMs} ms</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              TWL Safe Work Limit: <strong className="text-blue-400">&ge;{healthThresholds.minTwlIndex} W/m²</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              Health Homeostasis: <strong className="text-emerald-400">&ge;65%</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              Pulse Ceiling: <strong className="text-rose-400">&le;{healthThresholds.maxHeartRateBpm ?? 115} BPM</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              Skin Temp Ceiling: <strong className="text-amber-400">&le;{healthThresholds.maxSkinTempC}°C</strong>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] font-mono">
+            <span className="text-slate-400">Active Warning Toasts:</span>
+            <span className={`px-2 py-0.5 rounded font-bold ${activeToasts.length > 0 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 'bg-slate-950 text-slate-500'}`}>
+              {activeToasts.length} Active
+            </span>
+            {activeToasts.length > 0 && (
+              <button
+                onClick={handleClearAllToasts}
+                className="text-slate-500 hover:text-rose-400 underline cursor-pointer ml-1"
+              >
+                Clear Toasts
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Proximity Alert Warning System: Triggers if High-Risk Anomaly Overlaps High-Density Worker Cluster */}
       <ProximityAlertBanner
         zones={zones}
@@ -3951,6 +4240,23 @@ export default function ManagerDashboard() {
         onNavigateToMaintenance={(endpointId) => {
           setManagerTab('predictiveMaintenance');
         }}
+      />
+
+      {/* D3-Powered Workplace Zone Health Risk Clusters Heatmap */}
+      <D3WorkplaceZoneRiskHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
       />
 
       {/* Explainable AI (XAI) Log Window: Top Contributing Factors for High-Risk Anomaly Detections by LSTM-Kalman Engine */}
@@ -4775,6 +5081,52 @@ export default function ManagerDashboard() {
         className="mb-6"
       />
 
+      {/* Longitudinal Health Analytics & Timeframe Filter Header Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl mb-4 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-cyan-400">
+            <Calendar className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <span>Longitudinal Workforce Health Analytics &amp; Comparative Baselines</span>
+              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30">
+                Filtered: {healthDateRange.preset}
+              </span>
+            </h3>
+            <p className="text-xs text-slate-400">
+              Filter historical trends and department comparison metrics across specific operational timeframes
+            </p>
+          </div>
+        </div>
+
+        {/* Date Range Picker Control */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <DateRangePicker
+            value={healthDateRange}
+            onChange={(newRange) => {
+              setHealthDateRange(newRange);
+              setProtocolActiveNotice(
+                `Timeframe filter updated: ${newRange.label} (${newRange.daysCount} days applied)`
+              );
+              setTimeout(() => setProtocolActiveNotice(null), 6000);
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Split-View Department Health Metrics vs Previous Month Historical Averages Comparison Card */}
+      <DepartmentHealthComparisonSplitCard
+        zones={zones}
+        dateRange={healthDateRange}
+        selectedDepartmentId={selectedComparisonDeptId}
+        onSelectDepartmentId={(id) => {
+          setSelectedComparisonDeptId(id);
+          setSelectedZone(id);
+        }}
+        className="mb-6"
+      />
+
       {/* Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart */}
       <DepartmentSeverityStackedBarChart
         zones={zones}
@@ -4789,6 +5141,16 @@ export default function ManagerDashboard() {
         }}
       />
 
+      {/* Historical Trend of Workforce Health Metrics Line Chart (Recharts) */}
+      <WorkforceHealth30DaysTrendChart
+        selectedZone={activeZoneObj}
+        zones={zones}
+        thresholds={healthThresholds}
+        dateRange={healthDateRange}
+        onTriggerThresholdAlert={checkReadingForThresholdBreaches}
+        className="mb-6"
+      />
+
       {/* Historical Workforce Health Signal Data Line Chart (Last 24 Hours via Recharts) */}
       <HistoricalWorkforceHealthChart
         data={telemetryStream}
@@ -4797,6 +5159,7 @@ export default function ManagerDashboard() {
         thresholds={healthThresholds}
         onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
         onExportCsv={handleExportWorkforceCsv}
+        onExportReport={() => setIsHealthMetricsPdfModalOpen(true)}
         externalIsolatedSignal={isolatedHealthSignal}
         onSignalIsolationChange={setIsolatedHealthSignal}
         correlationPair={activeCorrelationPair}
@@ -5365,6 +5728,17 @@ export default function ManagerDashboard() {
         selectedZoneId={selectedZone}
         thresholds={healthThresholds}
         onExportLogged={handleHistoricalCompliancePdfExportLogged}
+      />
+
+      {/* Health Metrics Current Display Mock PDF Export Modal */}
+      <HealthMetricsPdfExportModal
+        isOpen={isHealthMetricsPdfModalOpen}
+        onClose={() => setIsHealthMetricsPdfModalOpen(false)}
+        zone={activeZoneObj}
+        telemetryStream={telemetryStream}
+        activeAlerts={activeAlerts}
+        thresholds={healthThresholds}
+        onReportExported={handleHealthMetricsReportExported}
       />
 
       {/* Comprehensive Anomaly Telemetry Parameters & Kalman State Diagnostics Modal */}

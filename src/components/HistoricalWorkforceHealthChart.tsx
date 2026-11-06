@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   Download,
   FileSpreadsheet,
+  FileText,
   Settings,
   TrendingUp,
   TrendingDown,
@@ -56,6 +57,7 @@ interface HistoricalWorkforceHealthChartProps {
   thresholds?: HealthSignalNotificationThresholds;
   onOpenThresholdsModal?: () => void;
   onExportCsv?: () => void;
+  onExportReport?: () => void;
   externalIsolatedSignal?: string | null;
   onSignalIsolationChange?: (signalKey: string | null) => void;
   initialMode?: 'MULTI_STREAM' | 'CORRELATION_OVERLAY';
@@ -133,6 +135,7 @@ export default function HistoricalWorkforceHealthChart({
   thresholds,
   onOpenThresholdsModal,
   onExportCsv,
+  onExportReport,
   externalIsolatedSignal,
   onSignalIsolationChange,
   initialMode,
@@ -1587,11 +1590,23 @@ export default function HistoricalWorkforceHealthChart({
           {onExportCsv && (
             <button
               onClick={onExportCsv}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/70 hover:bg-emerald-900/70 text-emerald-300 text-xs font-bold transition shadow-xs"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/70 hover:bg-emerald-900/70 text-emerald-300 text-xs font-bold transition shadow-xs cursor-pointer"
               title="Export Current Historical 24-Hour Workforce Health Data as a CSV file"
             >
               <Download className="h-3.5 w-3.5 text-emerald-400" />
               <span>Export 24h CSV</span>
+            </button>
+          )}
+
+          {/* Export Report Mock PDF Button */}
+          {onExportReport && (
+            <button
+              onClick={onExportReport}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/50 bg-gradient-to-r from-cyan-900/80 to-blue-900/80 hover:from-cyan-800 hover:to-blue-800 text-cyan-200 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Trigger mock PDF generation process for current health metrics display"
+            >
+              <FileText className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Export Report</span>
             </button>
           )}
         </div>
