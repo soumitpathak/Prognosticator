@@ -105,6 +105,11 @@ import DepartmentRiskThresholdConfigPanel, { DEFAULT_DEPARTMENT_RISK_THRESHOLDS 
 import AggregateRiskScoreTrend24hChart from './AggregateRiskScoreTrend24hChart';
 import WorkforceRiskTrend7DaysChart from './WorkforceRiskTrend7DaysChart';
 import DailySummaryReportModal from './DailySummaryReportModal';
+import DailySummaryConfigModal from './DailySummaryConfigModal';
+import SpatialZoneRiskHeatmap from './SpatialZoneRiskHeatmap';
+import ExplainableAiLogWindow from './ExplainableAiLogWindow';
+import ScenarioSimulationModal from './ScenarioSimulationModal';
+import { ScenarioSimulationOutput } from '../services/lstmAnomalyEngine';
 import ProximityAlertBanner from './ProximityAlertBanner';
 import LstmRiskForecastingPanel12h from './LstmRiskForecastingPanel12h';
 import AnomalyTelemetryDetailModal from './AnomalyTelemetryDetailModal';
@@ -236,6 +241,11 @@ export default function ManagerDashboard() {
 
   // Daily Summary Report Modal State
   const [isDailySummaryReportOpen, setIsDailySummaryReportOpen] = useState<boolean>(false);
+  const [isDailySummaryConfigOpen, setIsDailySummaryConfigOpen] = useState<boolean>(false);
+
+  // Scenario Simulation & Explainable AI Modal State
+  const [isScenarioSimulationOpen, setIsScenarioSimulationOpen] = useState<boolean>(false);
+  const [isExplainableAiModalOpen, setIsExplainableAiModalOpen] = useState<boolean>(false);
 
   // Synchronized Incident Workflow Assignments
   const [incidentAssignments, setIncidentAssignments] = useState<Record<string, IncidentAssignment>>(
@@ -247,6 +257,17 @@ export default function ManagerDashboard() {
       ...prev,
       [assignment.eventId]: assignment
     }));
+  };
+
+  const handleInjectSimulatedScenario = (
+    packet: TelemetryPacket,
+    scenarioData: ScenarioSimulationOutput
+  ) => {
+    handleCustomPacketFromSimulator(packet);
+    setProtocolActiveNotice(
+      `Scenario Simulation Active in ${packet.location_zone}: ${scenarioData.riskScorePct}% predicted risk (${scenarioData.riskTier}). Top feature: ${scenarioData.topAttributions[0]?.featureName} (${scenarioData.topAttributions[0]?.attributionPct}%).`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 8000);
   };
 
   const handleExportDailySummaryCsv = () => {
@@ -3578,6 +3599,24 @@ export default function ManagerDashboard() {
               <Mail className="h-3.5 w-3.5 text-white" />
               <span>Daily Summary Report (24h)</span>
             </button>
+
+            <button
+              onClick={() => setIsDailySummaryConfigOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-cyan-300 font-semibold text-xs transition shadow-xs cursor-pointer"
+              title="Configure authorized email recipients and automated delivery triggers for high-risk anomalies"
+            >
+              <Settings className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Auto-Delivery Config</span>
+            </button>
+
+            <button
+              onClick={() => setIsScenarioSimulationOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs transition shadow-md shadow-indigo-900/40 cursor-pointer"
+              title="Open Scenario Simulation to adjust variables (humidity, noise, traffic) and observe real-time model impact"
+            >
+              <Sliders className="h-3.5 w-3.5 text-white" />
+              <span>Scenario Simulation</span>
+            </button>
           </div>
         </div>
 
@@ -3706,6 +3745,36 @@ export default function ManagerDashboard() {
             setTimeout(() => setProtocolActiveNotice(null), 7000);
           }
         }}
+      />
+
+      {/* Spatial Distribution Risk Heatmap: Visual Identification of Hazard Hot Spots Across Zones Alongside Existing Charts */}
+      <SpatialZoneRiskHeatmap
+        className="mb-6"
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(zoneObj, action) => {
+          setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+      />
+
+      {/* Explainable AI (XAI) Log Window: Top Contributing Factors for High-Risk Anomaly Detections by LSTM-Kalman Engine */}
+      <ExplainableAiLogWindow
+        className="mb-6"
+        anomalies={activeAlerts}
+        zones={zones}
+        onOpenScenarioSimulation={() => setIsScenarioSimulationOpen(true)}
+        onDispatchMitigation={handleDispatchAction}
       />
 
       {/* PDF Export In-Flight Notification */}
@@ -4966,10 +5035,45 @@ export default function ManagerDashboard() {
       <DailySummaryReportModal
         isOpen={isDailySummaryReportOpen}
         onClose={() => setIsDailySummaryReportOpen(false)}
+        onOpenConfig={() => setIsDailySummaryConfigOpen(true)}
         zones={zones}
         alerts={activeAlerts}
         incidentAssignments={incidentAssignments}
         telemetryStream={telemetryStream}
+      />
+
+      <DailySummaryConfigModal
+        isOpen={isDailySummaryConfigOpen}
+        onClose={() => setIsDailySummaryConfigOpen(false)}
+        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+      />
+
+      <ScenarioSimulationModal
+        isOpen={isScenarioSimulationOpen}
+        onClose={() => setIsScenarioSimulationOpen(false)}
+        activeZone={activeZoneObj}
+        onInjectSimulatedScenario={handleInjectSimulatedScenario}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+      />
+
+      <ExplainableAiLogWindow
+        isModal
+        isOpen={isExplainableAiModalOpen}
+        onClose={() => setIsExplainableAiModalOpen(false)}
+        anomalies={activeAlerts}
+        zones={zones}
+        onOpenScenarioSimulation={() => {
+          setIsExplainableAiModalOpen(false);
+          setIsScenarioSimulationOpen(true);
+        }}
+        onDispatchMitigation={handleDispatchAction}
       />
 
       <AuditLogModal

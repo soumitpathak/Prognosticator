@@ -16,7 +16,8 @@ import {
   Calendar,
   Send,
   Building,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Settings
 } from 'lucide-react';
 import {
   FacilityZone,
@@ -31,6 +32,7 @@ import { exportDailySummaryReportCsv } from '../services/dailySummaryCsvExport';
 export interface DailySummaryReportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenConfig?: () => void;
   zones: FacilityZone[];
   alerts: ActiveAnomalyAlert[];
   officers?: SafetyOfficer[];
@@ -42,6 +44,7 @@ export interface DailySummaryReportModalProps {
 export default function DailySummaryReportModal({
   isOpen,
   onClose,
+  onOpenConfig,
   zones,
   alerts,
   officers = [],
@@ -278,6 +281,17 @@ Report Verification Hash: SHA256-EHS-DAILY-${Date.now().toString(16).toUpperCase
                 Executive Cards
               </button>
             </div>
+
+            {onOpenConfig && (
+              <button
+                onClick={onOpenConfig}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-cyan-300 text-xs font-semibold transition cursor-pointer mr-2"
+                title="Configure recipients and automated delivery triggers for high-risk anomalies"
+              >
+                <Settings className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Auto-Delivery Config</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}
