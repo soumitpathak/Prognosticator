@@ -73,6 +73,8 @@ const ZONE_COLORS: Record<string, { stroke: string; label: string; shortName: st
   }
 };
 
+export type FacilityTimeRange = '1h' | '6h' | '24h' | '7d';
+
 export default function FacilityZonesRiskTrendChart({
   zones,
   alerts = [],
@@ -80,7 +82,7 @@ export default function FacilityZonesRiskTrendChart({
   onSelectZone,
   className = ''
 }: FacilityZonesRiskTrendChartProps) {
-  const [timeMode, setTimeMode] = useState<'24h' | '7d'>('24h');
+  const [timeMode, setTimeMode] = useState<FacilityTimeRange>('24h');
   const [activeZoneToggles, setActiveZoneToggles] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     zones.forEach((z) => {
@@ -107,12 +109,58 @@ export default function FacilityZonesRiskTrendChart({
     ] as FacilityZone[];
   }, [zones]);
 
-  // Generate 24-hour multi-zone trend data or 7-day multi-zone trend data
+  // Generate multi-zone trend data based on selected time-range zoom (1h, 6h, 24h, 7d)
   const chartData: MultiZoneTimePoint[] = useMemo(() => {
-    if (timeMode === '24h') {
-      const points: MultiZoneTimePoint[] = [];
-      const now = new Date('2026-11-06T12:00:00Z');
+    const now = new Date('2026-11-06T12:00:00Z');
 
+    if (timeMode === '1h') {
+      // Last 1 Hour: 12 data points at 5-minute intervals
+      const points: MultiZoneTimePoint[] = [];
+      for (let m = 11; m >= 0; m--) {
+        const timePoint = new Date(now.getTime() - m * 5 * 60000);
+        const timeStr = timePoint.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        const point: MultiZoneTimePoint = {
+          timeLabel: m === 0 ? 'Now' : timeStr,
+          fullTimestamp: timePoint.toISOString(),
+          hourIndex: 12 - m
+        };
+
+        effectiveZones.forEach((z) => {
+          const baseRisk = getZoneRiskScore(z);
+          // High-frequency instantaneous jitter and micro-fluctuation
+          const microJitter = Math.sin(m * 1.8) * 3.5 + Math.cos(m * 2.4) * 2.2;
+          const score = Math.min(96, Math.max(15, baseRisk + microJitter));
+          point[z.id] = Number(score.toFixed(1));
+        });
+
+        points.push(point);
+      }
+      return points;
+    } else if (timeMode === '6h') {
+      // Last 6 Hours: 12 data points at 30-minute intervals
+      const points: MultiZoneTimePoint[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const timePoint = new Date(now.getTime() - i * 30 * 60000);
+        const timeStr = timePoint.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        const point: MultiZoneTimePoint = {
+          timeLabel: i === 0 ? 'Now' : timeStr,
+          fullTimestamp: timePoint.toISOString(),
+          hourIndex: 12 - i
+        };
+
+        effectiveZones.forEach((z) => {
+          const baseRisk = getZoneRiskScore(z);
+          const shiftProgression = (12 - i) * 1.1; // gradual rise across the 6-hour shift
+          const score = Math.min(95, Math.max(16, baseRisk + shiftProgression + Math.sin(i * 1.2) * 4));
+          point[z.id] = Number(score.toFixed(1));
+        });
+
+        points.push(point);
+      }
+      return points;
+    } else if (timeMode === '24h') {
+      // Last 24 Hours: 24 data points at 1-hour intervals
+      const points: MultiZoneTimePoint[] = [];
       for (let h = 23; h >= 0; h--) {
         const timePoint = new Date(now.getTime() - h * 3600000);
         const hourStr = timePoint.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -134,13 +182,10 @@ export default function FacilityZonesRiskTrendChart({
           if (z.id.includes('Sector-4') || z.id.includes('Construction')) {
             baseRisk = Math.min(94, Math.max(22, 28 + solarPeak * 52 + (Math.sin(h * 1.5) * 6)));
           } else if (z.id.includes('Warehouse') || z.id.includes('Logistics')) {
-            // Logistics peaks during shift change and afternoon fulfillment rush
             baseRisk = Math.min(75, Math.max(15, 18 + shiftRamp * 24 + (hourNum === 14 ? 18 : 0) + (Math.cos(h) * 4)));
           } else if (z.id.includes('Assembly') || z.id.includes('Manufacturing')) {
-            // Manufacturing has steady low-to-moderate robotic work
             baseRisk = Math.min(65, Math.max(12, 16 + shiftRamp * 16 + (Math.sin(h * 0.8) * 3)));
           } else if (z.id.includes('Tunnel') || z.id.includes('Conduit')) {
-            // Subgrade tunnel peaks in afternoon due to heat accumulation
             baseRisk = Math.min(85, Math.max(20, 26 + solarPeak * 36 + (Math.cos(h * 1.2) * 5)));
           } else {
             baseRisk = Math.min(88, Math.max(15, (getZoneRiskScore(z) * 0.7) + (Math.sin(h) * 12)));
@@ -153,7 +198,7 @@ export default function FacilityZonesRiskTrendChart({
       }
       return points;
     } else {
-      // 7-day daily trend points
+      // Last 7 Days: 7 daily trajectory data points
       const points: MultiZoneTimePoint[] = [];
       const days = ['Sat 10/31', 'Sun 11/01', 'Mon 11/02', 'Tue 11/03', 'Wed 11/04', 'Thu 11/05', 'Fri 11/06 (Today)'];
       const rawMultipliers = [0.45, 0.40, 0.70, 0.85, 1.20, 1.05, 0.88]; // surge on Nov 3-5
@@ -268,29 +313,51 @@ export default function FacilityZonesRiskTrendChart({
 
         {/* View Mode & Selection Controls */}
         <div className="flex flex-wrap items-center gap-2 self-start lg:self-center">
-          {/* Time Window Switcher */}
+          {/* Time-Range Zoom Filter (Last 1h, 6h, 24h, 7d) */}
           <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs font-mono">
             <button
+              onClick={() => setTimeMode('1h')}
+              className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md font-semibold transition cursor-pointer ${
+                timeMode === '1h'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Zoom in to 5-minute intervals across the last 1 hour"
+            >
+              <span>Last 1h</span>
+            </button>
+            <button
+              onClick={() => setTimeMode('6h')}
+              className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md font-semibold transition cursor-pointer ${
+                timeMode === '6h'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Zoom in to 30-minute intervals across the last 6-hour shift"
+            >
+              <span>Last 6h</span>
+            </button>
+            <button
               onClick={() => setTimeMode('24h')}
-              className={`flex items-center space-x-1 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer ${
+              className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md font-semibold transition cursor-pointer ${
                 timeMode === '24h'
                   ? 'bg-cyan-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-white'
               }`}
+              title="Full 24-hour hourly progression"
             >
-              <Clock className="h-3.5 w-3.5" />
-              <span>24-Hour Hourly</span>
+              <span>Last 24h</span>
             </button>
             <button
               onClick={() => setTimeMode('7d')}
-              className={`flex items-center space-x-1 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer ${
+              className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md font-semibold transition cursor-pointer ${
                 timeMode === '7d'
                   ? 'bg-cyan-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-white'
               }`}
+              title="Longitudinal 7-day multi-day trajectory"
             >
-              <Calendar className="h-3.5 w-3.5" />
-              <span>7-Day Trajectory</span>
+              <span>Last 7d</span>
             </button>
           </div>
 

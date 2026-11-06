@@ -154,7 +154,10 @@ import ZoneAnomalyConcentrationHeatmap from './ZoneAnomalyConcentrationHeatmap';
 import PrognosticForecastPanel from './PrognosticForecastPanel';
 import PredictiveTrendAlertsPanel from './PredictiveTrendAlertsPanel';
 import { exportCurrentAnomalyLogsAndTrendsCsv } from '../services/complianceCsvExport';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar } from 'lucide-react';
+import QuickSnapshotModal from './QuickSnapshotModal';
+import ProactiveMaintenanceSchedulerCard from './ProactiveMaintenanceSchedulerCard';
+import AnomalyDensityHeatmap from './AnomalyDensityHeatmap';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -267,6 +270,7 @@ export default function ManagerDashboard() {
 
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
   const [isAnomalyAuditModalOpen, setIsAnomalyAuditModalOpen] = useState<boolean>(false);
+  const [isQuickSnapshotModalOpen, setIsQuickSnapshotModalOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
@@ -2886,6 +2890,16 @@ export default function ManagerDashboard() {
             onToggleSound={() => setToastSoundEnabled((prev) => !prev)}
           />
 
+          {/* Quick Snapshot Button: Instantly generates a summary report of current anomaly counts and high-risk zones in a modal */}
+          <button
+            onClick={() => setIsQuickSnapshotModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 cursor-pointer"
+            title="Instantly generate an operational summary report of current anomaly counts and high-risk zones in a modal"
+          >
+            <Camera className="h-3.5 w-3.5 text-white" />
+            <span>Quick Snapshot</span>
+          </button>
+
           {/* Export Compliance CSV Button: Current Anomaly Logs & Trend Data */}
           <button
             onClick={handleExportAnomalyLogsAndTrendDataCsv}
@@ -2924,6 +2938,32 @@ export default function ManagerDashboard() {
           >
             <Lock className="h-3.5 w-3.5 text-rose-400" />
             <span>Security Audit Log</span>
+          </button>
+
+          {/* Quick Trigger: Proactive Maintenance Scheduler (LSTM-Kalman < 72h) */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('proactive-maintenance-scheduler-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-500/50 text-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Proactive Maintenance Scheduler card for LSTM-Kalman sensor failure tasks (< 72h)"
+          >
+            <Wrench className="h-3.5 w-3.5 text-amber-400" />
+            <span>Proactive Maintenance (72h)</span>
+          </button>
+
+          {/* Quick Trigger: Anomaly Density Floor Plan Heatmap */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('anomaly-density-floor-plan-heatmap');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Anomaly Density Heatmap overlaying sensor anomaly counts onto schematic floor plan"
+          >
+            <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+            <span>Anomaly Density Heatmap</span>
           </button>
 
           {/* Quick Trigger: Zone Anomaly Concentration Heatmap */}
@@ -4262,6 +4302,20 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* Proactive Maintenance Scheduler: Triggers when LSTM-Kalman engine predicts sensor component failure within 72h */}
+      <ProactiveMaintenanceSchedulerCard
+        className="mb-6"
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onNavigateToZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const el = document.getElementById('anomaly-density-floor-plan-heatmap');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
       {/* Real-Time Health Metric Safety Alert System Monitor Bar */}
       <div id="real-time-alert-system-panel" className="mb-6 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
@@ -4397,6 +4451,26 @@ export default function ManagerDashboard() {
         onSelectZone={(zoneId) => {
           setSelectedZone(zoneId);
           setAnomalyTrendZoneId(zoneId);
+        }}
+        className="mb-6"
+      />
+
+      {/* Anomaly Density Heatmap: Overlays Multi-Sensor Anomaly Counts Onto Schematic Architectural Floor Plan to Pinpoint High-Traffic Error Areas */}
+      <AnomalyDensityHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(zoneName, action) => {
+          setProtocolActiveNotice(`Hotspot mitigation team dispatched to ${zoneName}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
         }}
         className="mb-6"
       />
@@ -5911,6 +5985,21 @@ export default function ManagerDashboard() {
         isOpen={isAnomalyAuditModalOpen}
         onClose={() => setIsAnomalyAuditModalOpen(false)}
         auditRecords={anomalyAuditRecords}
+      />
+
+      <QuickSnapshotModal
+        isOpen={isQuickSnapshotModalOpen}
+        onClose={() => setIsQuickSnapshotModalOpen(false)}
+        alerts={activeAlerts}
+        zones={zones}
+        anomalyAuditRecords={anomalyAuditRecords}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onJumpToZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setIsQuickSnapshotModalOpen(false);
+          const el = document.getElementById('zone-anomaly-concentration-heatmap');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
       />
 
       <TelemetryInspectorModal
