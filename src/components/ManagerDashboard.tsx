@@ -95,6 +95,7 @@ import AudioNotificationSeverityTogglePanel from './AudioNotificationSeverityTog
 import HistoricalAnomalyCsvExportModal from './HistoricalAnomalyCsvExportModal';
 import HistoricalAnomalyPdfExportModal from './HistoricalAnomalyPdfExportModal';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
+import RecentAnomalyTriggersRunningLogPanel from './RecentAnomalyTriggersRunningLogPanel';
 import PatternRecognitionPanel from './PatternRecognitionPanel';
 import DepartmentSeverityStackedBarChart from './DepartmentSeverityStackedBarChart';
 import PopulationHealthSparkline, { MiniSparkline } from './PopulationHealthSparkline';
@@ -282,8 +283,8 @@ export default function ManagerDashboard() {
     setTimeout(() => setProtocolActiveNotice(null), 7000);
   };
 
-  // 30-Day Trend Chart Engine Selector (D3.js Vector Engine default)
-  const [trendChartEngine, setTrendChartEngine] = useState<'D3' | 'RECHARTS'>('D3');
+  // 30-Day Trend Chart Engine Selector (Recharts Engine active by default)
+  const [trendChartEngine, setTrendChartEngine] = useState<'D3' | 'RECHARTS'>('RECHARTS');
 
   // Client-Side Executive PDF Export State
   const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
@@ -301,6 +302,108 @@ export default function ManagerDashboard() {
   const anomalyTrendSummary = useMemo(() => {
     return computeTrendSummary(anomalyTrend30d);
   }, [anomalyTrend30d]);
+
+  // 48-Hour Forward Incident Surge Predictive Analysis State
+  const [isSimulated48hSurgeActive, setIsSimulated48hSurgeActive] = useState<boolean>(true);
+  const [isPredictiveSurgeBannerDismissed, setIsPredictiveSurgeBannerDismissed] = useState<boolean>(false);
+
+  // Compute 48-hour forward incident likelihood surge by comparing next 48h projections vs 7-day historical moving average
+  const predictive48hAnalysis = useMemo(() => {
+    const historical = anomalyTrend30d.filter((d) => !d.isProjected);
+    const projected = anomalyTrend30d.filter((d) => d.isProjected);
+
+    // Compute baseline from the latest 7-day rolling moving average of historical observations
+    const latestHistorical = historical.length > 0 ? historical[historical.length - 1] : null;
+    const baselineDailyRate =
+      latestHistorical?.movingAvg7d && latestHistorical.movingAvg7d > 0
+        ? latestHistorical.movingAvg7d
+        : 5.2;
+
+    // Next 48 hours is represented by the first two projected days (+24h and +48h)
+    const next48hPoints = projected.slice(0, 2);
+    const computed48hDailyRate =
+      next48hPoints.length > 0
+        ? next48hPoints.reduce((acc, d) => acc + (d.projectedTrend ?? d.movingAvg7d ?? baselineDailyRate), 0) /
+          next48hPoints.length
+        : baselineDailyRate * 1.25;
+
+    // Calculate increase percentage
+    const computedIncreasePct = Number(
+      (((computed48hDailyRate - baselineDailyRate) / baselineDailyRate) * 100).toFixed(1)
+    );
+
+    // When simulated surge is active, provide a calibrated +26.4% incident likelihood surge
+    const effectiveIncreasePct = isSimulated48hSurgeActive
+      ? Math.max(26.4, computedIncreasePct)
+      : computedIncreasePct;
+
+    const effectiveProjectedDailyRate = isSimulated48hSurgeActive
+      ? Number((baselineDailyRate * (1 + effectiveIncreasePct / 100)).toFixed(1))
+      : Number(computed48hDailyRate.toFixed(1));
+
+    const total48hForecastedEvents = Math.round(effectiveProjectedDailyRate * 2);
+
+    return {
+      baselineDailyRate: Number(baselineDailyRate.toFixed(1)),
+      projected48hDailyRate: effectiveProjectedDailyRate,
+      increasePct: effectiveIncreasePct,
+      isTriggered: effectiveIncreasePct >= 20.0,
+      total48hForecastedEvents,
+      primaryDriver: latestHistorical?.primaryDriver || 'Thermal Radiation & Autonomic HRV Fatigue',
+      peakWindow: '13:30 – 16:15 Daily',
+      confidenceScore: next48hPoints[0]?.projectedConfidence ?? 94.2,
+      affectedCohorts: ['Outdoor Construction Sector 4', 'Warehouse Logistics Hub North']
+    };
+  }, [anomalyTrend30d, isSimulated48hSurgeActive]);
+
+  // Handle Staging Pre-emptive Protocols for the 48h Predictive Surge
+  const handleStagePreemptive48hMitigation = useCallback(() => {
+    const newDispatch: MedicalDispatchNotification = {
+      id: `PREDICT-DSP-${Date.now().toString().slice(-4)}`,
+      alertId: 'PREDICTIVE-48H-SURGE',
+      zone: 'Outdoor-Construction-Sector-4',
+      severity: 'HIGH',
+      recipientRole: 'Pre-Emptive Thermal Defense & Rapid Hydration Team',
+      contactMethod: 'DUAL_CHANNEL',
+      recipientPhone: '+1 (555) 911-PRED',
+      messagePayload: `PREDICTIVE 48H SURGE (+${predictive48hAnalysis.increasePct}%): Staged automated hydration stations, continuous misting protocols, and staggered 20-minute shaded rest rotations.`,
+      stagedAt: 'Just now',
+      status: 'STAGED'
+    };
+    setMedicalDispatches((prev) => [newDispatch, ...prev]);
+
+    // Statutory Audit Log entry
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUDIT-PRED-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      userId: 'usr-soc-automaton',
+      userName: 'Predictive Trend Analysis Engine',
+      userRole: 'SAFETY_DIRECTOR',
+      category: 'MAINTENANCE_DISPATCH',
+      targetModule: 'Longitudinal Trend & 48H Incident Surge Predictor',
+      parameter: '48-Hour Incident Likelihood Inflection Surge',
+      previousValue: `${predictive48hAnalysis.baselineDailyRate}/day (7D Moving Avg)`,
+      newValue: `${predictive48hAnalysis.projected48hDailyRate}/day (+${predictive48hAnalysis.increasePct}% Spike)`,
+      justification: `Pre-emptive mitigation protocols staged based on 48h predictive incident likelihood surge (+${predictive48hAnalysis.increasePct}% vs 7D baseline). Forecasted volume: ~${predictive48hAnalysis.total48hForecastedEvents} events across ${predictive48hAnalysis.affectedCohorts.join(', ')}.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Pre-emptive protocols activated! Dispatched automated rapid hydration teams to ${predictive48hAnalysis.affectedCohorts[0]}. Registered statutory audit event.`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 8000);
+  }, [predictive48hAnalysis]);
+
+  // Scroll smoothly to Forecast / Trend Chart
+  const handleScrollToForecastChart = useCallback(() => {
+    const el = document.getElementById('anomaly-trend-30d-card') || document.getElementById('incident-projection-chart-card');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-rose-500', 'transition-all');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-rose-500'), 3000);
+    }
+  }, []);
 
   // Real-Time Notification Toast System State
   const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
@@ -2821,6 +2924,39 @@ export default function ManagerDashboard() {
             )}
           </div>
 
+          {/* 48-Hour Predictive Surge Simulation Controller */}
+          <button
+            onClick={() => {
+              setIsSimulated48hSurgeActive((prev) => !prev);
+              setIsPredictiveSurgeBannerDismissed(false);
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              predictive48hAnalysis.increasePct >= 20.0 && !isPredictiveSurgeBannerDismissed
+                ? 'bg-rose-950/80 hover:bg-rose-900/90 text-rose-300 border-rose-500/60 ring-1 ring-rose-500/30'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
+            }`}
+            title="Toggle or simulate a >=20% 48-hour forward incident likelihood surge to test the predictive early-warning banner"
+          >
+            <TrendingUp className={`h-3.5 w-3.5 ${predictive48hAnalysis.increasePct >= 20.0 ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`} />
+            <span>
+              {isSimulated48hSurgeActive
+                ? `48h Surge Active (+${predictive48hAnalysis.increasePct}%)`
+                : 'Simulate 48h Surge (+26.4%)'}
+            </span>
+          </button>
+
+          {/* Re-open Banner if dismissed but surge threshold >= 20% */}
+          {isPredictiveSurgeBannerDismissed && predictive48hAnalysis.increasePct >= 20.0 && (
+            <button
+              onClick={() => setIsPredictiveSurgeBannerDismissed(false)}
+              className="flex items-center space-x-1.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-500/70 text-rose-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer animate-pulse"
+              title="Show dismissed 48h predictive analysis alert banner"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+              <span>Show 48h Alert (+{predictive48hAnalysis.increasePct}%)</span>
+            </button>
+          )}
+
           {/* Direct Button: Serialize Current Anomaly Data to CSV for Audit Logs */}
           <button
             onClick={handleExportCurrentAnomalyCsvDirect}
@@ -2891,6 +3027,108 @@ export default function ManagerDashboard() {
           >
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* 48-Hour Incident Likelihood Surge Predictive Analysis Banner */}
+      {predictive48hAnalysis.increasePct >= 20.0 && !isPredictiveSurgeBannerDismissed && (
+        <div className="mb-6 p-5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-slate-900/95 to-amber-950/75 border-2 border-rose-500/70 shadow-2xl relative overflow-hidden ring-1 ring-rose-500/30 animate-in fade-in slide-in-from-top-3 duration-300">
+          {/* Subtle Ambient Background Watermark */}
+          <div className="absolute -right-6 -bottom-8 opacity-10 pointer-events-none text-rose-400">
+            <TrendingUp className="h-44 w-44" />
+          </div>
+
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 relative z-10">
+            {/* Left: Surge Beacon & Analytical Breakdown */}
+            <div className="flex items-start sm:items-center space-x-4">
+              <div className="p-3.5 rounded-2xl bg-rose-900/60 border-2 border-rose-500 text-rose-300 shrink-0 shadow-lg relative">
+                <AlertTriangle className="h-7 w-7 text-rose-400 animate-bounce" />
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
+                </span>
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="bg-rose-500/20 text-rose-300 border border-rose-500/50 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
+                    <Sparkles className="h-3 w-3 text-rose-400" />
+                    PREDICTIVE ANALYSIS ALERT &bull; 48-HOUR SURGE WARNING
+                  </span>
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
+                    Inflection Threshold &ge; 20% Breached
+                  </span>
+                  <span className="bg-slate-800 text-slate-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-slate-700">
+                    Model Confidence: {predictive48hAnalysis.confidenceScore}%
+                  </span>
+                </div>
+
+                <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                  <span>+{predictive48hAnalysis.increasePct}% Projected Incident Likelihood Increase Over Next 48 Hours</span>
+                </h3>
+
+                <p className="text-xs text-rose-200/90 mt-1 max-w-3xl leading-relaxed">
+                  Longitudinal 30-day anomaly trend frequency and forward projection models indicate an acute{' '}
+                  <strong className="text-white">+{predictive48hAnalysis.increasePct}% incident likelihood velocity spike</strong> over the upcoming 48 hours (rising from rolling baseline of <span className="font-mono text-cyan-300 font-semibold">{predictive48hAnalysis.baselineDailyRate}/day</span> to <span className="font-mono text-rose-300 font-bold">{predictive48hAnalysis.projected48hDailyRate}/day</span>, forecasted <span className="font-mono text-rose-300 font-bold">~{predictive48hAnalysis.total48hForecastedEvents} events</span>). Primary hazard vector: <span className="text-amber-300 font-semibold">{predictive48hAnalysis.primaryDriver}</span> across {predictive48hAnalysis.affectedCohorts.join(', ')}.
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Key Proactive Metrics & Quick Actions */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
+              <div className="flex bg-slate-950/80 p-2.5 rounded-xl border border-rose-900/60 divide-x divide-slate-800 text-xs">
+                <div className="px-3 text-center">
+                  <div className="text-[10px] text-slate-400">Baseline 7D Rate</div>
+                  <div className="text-sm font-bold text-cyan-400 font-mono">{predictive48hAnalysis.baselineDailyRate}/day</div>
+                </div>
+                <div className="px-3 text-center">
+                  <div className="text-[10px] text-slate-400">48h Forecast Rate</div>
+                  <div className="text-sm font-bold text-rose-400 font-mono">{predictive48hAnalysis.projected48hDailyRate}/day</div>
+                </div>
+                <div className="px-3 text-center">
+                  <div className="text-[10px] text-slate-400">Surge Delta</div>
+                  <div className="text-sm font-bold text-rose-300 font-mono">+{predictive48hAnalysis.increasePct}%</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                <button
+                  onClick={handleStagePreemptive48hMitigation}
+                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-lg cursor-pointer border border-rose-400/40"
+                  title="Stage pre-emptive rapid cooling stations and hydration rotations before acute anomalies materialize"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>Stage Pre-Emptive Protocols</span>
+                </button>
+
+                <button
+                  onClick={handleScrollToForecastChart}
+                  className="flex items-center justify-center space-x-1 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  title="Jump directly to 30-day anomaly trend and 48-hour forward projection chart"
+                >
+                  <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Inspect Trend Chart</span>
+                </button>
+
+                <button
+                  onClick={() => handleExportViewAuditReport('PDF')}
+                  className="flex items-center justify-center space-x-1 bg-indigo-950/80 hover:bg-indigo-900/90 border border-indigo-500/50 text-indigo-200 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  title="Export 48h predictive risk brief as simulated PDF for statutory audit"
+                >
+                  <FileText className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Risk Brief PDF</span>
+                </button>
+
+                <button
+                  onClick={() => setIsPredictiveSurgeBannerDismissed(true)}
+                  className="px-2.5 py-2 text-slate-400 hover:text-slate-200 text-sm font-bold rounded-xl hover:bg-slate-900 transition cursor-pointer"
+                  title="Dismiss 48-hour predictive surge banner"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3347,22 +3585,11 @@ export default function ManagerDashboard() {
         selectedZone={activeZoneObj}
       />
 
-      {/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (D3.js Vector Engine / Recharts) */}
+      {/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (Recharts / D3.js) */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 px-1 gap-2">
         <div className="flex items-center space-x-2">
           <span className="text-xs font-semibold text-slate-300">Longitudinal Trend Visualizer:</span>
           <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs shadow-xs">
-            <button
-              onClick={() => setTrendChartEngine('D3')}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
-                trendChartEngine === 'D3'
-                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sparkles className="h-3 w-3 text-cyan-200" />
-              <span>D3.js Vector Engine (Default)</span>
-            </button>
             <button
               onClick={() => setTrendChartEngine('RECHARTS')}
               className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
@@ -3372,19 +3599,30 @@ export default function ManagerDashboard() {
               }`}
             >
               <BarChart3 className="h-3 w-3" />
-              <span>Recharts Engine</span>
+              <span>Recharts Line Engine (Active)</span>
+            </button>
+            <button
+              onClick={() => setTrendChartEngine('D3')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
+                trendChartEngine === 'D3'
+                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="h-3 w-3 text-cyan-200" />
+              <span>D3.js Vector Engine</span>
             </button>
           </div>
         </div>
 
         <div className="text-[11px] text-slate-400 font-mono hidden md:flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>D3.js SVG Vector Rendering &bull; Multi-Series &bull; 7D SMA Projection</span>
+          <span>Recharts Longitudinal Line Chart &bull; Multi-Series &bull; 7D SMA Projection &bull; 30-Day Frequency</span>
         </div>
       </div>
 
-      {trendChartEngine === 'D3' ? (
-        <D3AnomalyTrend30DaysChart
+      {trendChartEngine === 'RECHARTS' ? (
+        <AnomalyTrend30DaysChart
           data={anomalyTrend30d}
           summary={anomalyTrendSummary}
           currentZone={activeZoneObj}
@@ -3404,7 +3642,7 @@ export default function ManagerDashboard() {
           onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
         />
       ) : (
-        <AnomalyTrend30DaysChart
+        <D3AnomalyTrend30DaysChart
           data={anomalyTrend30d}
           summary={anomalyTrendSummary}
           currentZone={activeZoneObj}
@@ -3421,6 +3659,7 @@ export default function ManagerDashboard() {
             const el = document.getElementById('anomaly-threshold-config-panel');
             el?.scrollIntoView({ behavior: 'smooth' });
           }}
+          onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
         />
       )}
 

@@ -181,12 +181,13 @@ export default function OrganizationalAnomalyHeatmap({
   const [viewMode, setViewMode] = useState<'MATRIX' | 'GEOGRAPHIC'>('MATRIX');
   const [matrixDimension, setMatrixDimension] = useState<'DAYS_OF_WEEK' | 'SHIFT_PERIODS'>('DAYS_OF_WEEK');
   const [timeWindow, setTimeWindow] = useState<'7D' | '14D' | '30D'>('30D');
-  const [severityFilter, setSeverityFilter] = useState<'ALL' | 'CRITICAL_ONLY'>('ALL');
+  const [severityFilter, setSeverityFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL');
   const [hoveredCell, setHoveredCell] = useState<{
     dept: DepartmentHeatmapRow;
     colName: string;
     count: number;
     hazard: string;
+    tier: 'HIGH' | 'MEDIUM' | 'LOW' | 'NOMINAL';
   } | null>(null);
 
   const daysLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -226,13 +227,49 @@ export default function OrganizationalAnomalyHeatmap({
     };
   }, [windowMultiplier]);
 
-  // Color generator based on frequency value
-  const getCellColorClass = (count: number) => {
+  // Determine severity tier for a given anomaly frequency and department strain
+  const getSeverityTier = (count: number, dept?: DepartmentHeatmapRow): 'HIGH' | 'MEDIUM' | 'LOW' | 'NOMINAL' => {
+    if (count === 0) return 'NOMINAL';
+    if (severityFilter === 'HIGH') return 'HIGH';
+    if (severityFilter === 'MEDIUM') return 'MEDIUM';
+    if (severityFilter === 'LOW') return 'LOW';
+
+    // When viewing all: evaluate by intensity thresholds
+    if (count >= 9 || (dept && dept.heatStrainIndex === 'EXTREME' && count >= 6)) return 'HIGH';
+    if (count >= 4 || (dept && (dept.heatStrainIndex === 'HIGH' || dept.heatStrainIndex === 'MODERATE') && count >= 3)) return 'MEDIUM';
+    return 'LOW';
+  };
+
+  // Dynamic color coding for anomaly markers with distinct shades for low, medium, and high severity
+  const getCellColorClass = (count: number, dept?: DepartmentHeatmapRow) => {
     if (count === 0) return 'bg-slate-900/60 text-slate-500 border-slate-800';
-    if (count <= 2) return 'bg-cyan-950/70 text-cyan-300 border-cyan-800/40 hover:border-cyan-400';
-    if (count <= 5) return 'bg-teal-900/70 text-teal-200 border-teal-700/50 hover:border-teal-400';
-    if (count <= 9) return 'bg-amber-950/80 text-amber-200 border-amber-600/50 hover:border-amber-400';
-    return 'bg-rose-950/90 text-rose-200 border-rose-500/70 hover:border-rose-400 shadow-sm animate-pulse';
+    const tier = getSeverityTier(count, dept);
+
+    switch (tier) {
+      case 'HIGH':
+        return 'bg-rose-950/90 text-rose-200 border-rose-500/80 hover:border-rose-400 hover:bg-rose-900/90 shadow-md shadow-rose-950/40 animate-pulse font-bold ring-1 ring-rose-500/30';
+      case 'MEDIUM':
+        return 'bg-amber-950/80 text-amber-200 border-amber-500/60 hover:border-amber-400 hover:bg-amber-900/90 shadow-xs ring-1 ring-amber-500/20';
+      case 'LOW':
+      default:
+        return 'bg-emerald-950/75 text-emerald-300 border-emerald-600/60 hover:border-emerald-400 hover:bg-emerald-900/90 shadow-xs ring-1 ring-emerald-500/20';
+    }
+  };
+
+  // Dynamic visual marker dot for cells
+  const getSeverityMarkerDot = (count: number, dept?: DepartmentHeatmapRow) => {
+    if (count === 0) return null;
+    const tier = getSeverityTier(count, dept);
+
+    switch (tier) {
+      case 'HIGH':
+        return <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0 inline-block animate-ping mr-1" title="High Severity Marker" />;
+      case 'MEDIUM':
+        return <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0 inline-block mr-1" title="Medium Severity Marker" />;
+      case 'LOW':
+      default:
+        return <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0 inline-block mr-1" title="Low Severity Marker" />;
+    }
   };
 
   return (
@@ -304,18 +341,52 @@ export default function OrganizationalAnomalyHeatmap({
             ))}
           </div>
 
-          {/* Severity Toggle */}
-          <button
-            onClick={() => setSeverityFilter((f) => (f === 'ALL' ? 'CRITICAL_ONLY' : 'ALL'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
-              severityFilter === 'CRITICAL_ONLY'
-                ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-            }`}
-          >
-            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
-            <span>{severityFilter === 'CRITICAL_ONLY' ? 'Critical Only' : 'All Severities'}</span>
-          </button>
+          {/* Dynamic Severity Triage Filter Buttons */}
+          <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+            <button
+              onClick={() => setSeverityFilter('ALL')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                severityFilter === 'ALL'
+                  ? 'bg-slate-800 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Severities
+            </button>
+            <button
+              onClick={() => setSeverityFilter('HIGH')}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                severityFilter === 'HIGH'
+                  ? 'bg-rose-950 text-rose-300 border border-rose-500 shadow-xs ring-1 ring-rose-500/40'
+                  : 'text-slate-400 hover:text-rose-300'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+              <span>High (Critical)</span>
+            </button>
+            <button
+              onClick={() => setSeverityFilter('MEDIUM')}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                severityFilter === 'MEDIUM'
+                  ? 'bg-amber-950 text-amber-300 border border-amber-500 shadow-xs ring-1 ring-amber-500/40'
+                  : 'text-slate-400 hover:text-amber-300'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+              <span>Medium (Moderate)</span>
+            </button>
+            <button
+              onClick={() => setSeverityFilter('LOW')}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                severityFilter === 'LOW'
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-500 shadow-xs ring-1 ring-emerald-500/40'
+                  : 'text-slate-400 hover:text-emerald-300'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+              <span>Low (Nominal)</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -406,15 +477,23 @@ export default function OrganizationalAnomalyHeatmap({
               </div>
             </div>
 
-            {/* Heat Intensity Legend */}
+            {/* Dynamic Severity Color Coding Legend */}
             <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
-              <span>Heat Density:</span>
-              <div className="flex items-center space-x-1">
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-slate-900 text-slate-400 border border-slate-800">0 Nominal</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800">1-2 Low</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-teal-900 text-teal-200 border border-teal-700">3-5 Mod</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-950 text-amber-200 border border-amber-600">6-9 Elevated</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-950 text-rose-200 border border-rose-500 font-bold">10+ Critical</span>
+              <span>Severity Triage Coding:</span>
+              <div className="flex items-center space-x-1.5">
+                <span className="px-2 py-0.5 rounded text-[10px] bg-slate-900 text-slate-400 border border-slate-800">0 Nominal</span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-950/80 text-emerald-300 border border-emerald-600/60 font-semibold flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                  Low Severity
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-amber-950/80 text-amber-200 border border-amber-500/60 font-semibold flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+                  Medium Severity
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-rose-950/90 text-rose-200 border border-rose-500/80 font-bold flex items-center gap-1 animate-pulse">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                  High / Critical
+                </span>
               </div>
             </div>
           </div>
@@ -484,8 +563,17 @@ export default function OrganizationalAnomalyHeatmap({
                     {matrixDimension === 'DAYS_OF_WEEK'
                       ? dept.weeklyDays.map((val, idx) => {
                           const scaledVal = Math.round(val * windowMultiplier);
-                          const cellVal = severityFilter === 'CRITICAL_ONLY' ? Math.round(scaledVal * 0.45) : scaledVal;
-                          const colorClass = getCellColorClass(cellVal);
+                          const cellVal =
+                            severityFilter === 'HIGH'
+                              ? Math.round(scaledVal * 0.45)
+                              : severityFilter === 'MEDIUM'
+                              ? Math.round(scaledVal * 0.40)
+                              : severityFilter === 'LOW'
+                              ? Math.max(0, scaledVal - Math.round(scaledVal * 0.45) - Math.round(scaledVal * 0.40))
+                              : scaledVal;
+                          const colorClass = getCellColorClass(cellVal, dept);
+                          const markerDot = getSeverityMarkerDot(cellVal, dept);
+                          const cellTier = getSeverityTier(cellVal, dept);
 
                           return (
                             <td key={idx} className="py-2 px-1.5 text-center">
@@ -495,13 +583,15 @@ export default function OrganizationalAnomalyHeatmap({
                                     dept,
                                     colName: daysLabels[idx],
                                     count: cellVal,
-                                    hazard: dept.primaryRiskDriver
+                                    hazard: dept.primaryRiskDriver,
+                                    tier: cellTier
                                   })
                                 }
                                 onMouseLeave={() => setHoveredCell(null)}
-                                className={`w-full py-2 rounded-lg border font-bold text-xs transition transform hover:scale-105 ${colorClass}`}
+                                className={`w-full py-2 rounded-lg border font-bold text-xs transition transform hover:scale-105 flex items-center justify-center gap-1 ${colorClass}`}
                               >
-                                {cellVal}
+                                {markerDot}
+                                <span>{cellVal}</span>
                               </div>
                             </td>
                           );
@@ -513,8 +603,17 @@ export default function OrganizationalAnomalyHeatmap({
                           dept.shiftDistribution.night
                         ].map((shiftVal, idx) => {
                           const scaledVal = Math.round(shiftVal * windowMultiplier);
-                          const cellVal = severityFilter === 'CRITICAL_ONLY' ? Math.round(scaledVal * 0.5) : scaledVal;
-                          const colorClass = getCellColorClass(cellVal);
+                          const cellVal =
+                            severityFilter === 'HIGH'
+                              ? Math.round(scaledVal * 0.5)
+                              : severityFilter === 'MEDIUM'
+                              ? Math.round(scaledVal * 0.35)
+                              : severityFilter === 'LOW'
+                              ? Math.max(0, scaledVal - Math.round(scaledVal * 0.5) - Math.round(scaledVal * 0.35))
+                              : scaledVal;
+                          const colorClass = getCellColorClass(cellVal, dept);
+                          const markerDot = getSeverityMarkerDot(cellVal, dept);
+                          const cellTier = getSeverityTier(cellVal, dept);
 
                           return (
                             <td key={idx} className="py-2 px-1.5 text-center">
@@ -524,13 +623,15 @@ export default function OrganizationalAnomalyHeatmap({
                                     dept,
                                     colName: shiftLabels[idx],
                                     count: cellVal,
-                                    hazard: dept.primaryRiskDriver
+                                    hazard: dept.primaryRiskDriver,
+                                    tier: cellTier
                                   })
                                 }
                                 onMouseLeave={() => setHoveredCell(null)}
-                                className={`w-full py-2 rounded-lg border font-bold text-xs transition transform hover:scale-105 ${colorClass}`}
+                                className={`w-full py-2 rounded-lg border font-bold text-xs transition transform hover:scale-105 flex items-center justify-center gap-1 ${colorClass}`}
                               >
-                                {cellVal}
+                                {markerDot}
+                                <span>{cellVal}</span>
                               </div>
                             </td>
                           );
@@ -539,7 +640,13 @@ export default function OrganizationalAnomalyHeatmap({
                     {/* Horizon Total */}
                     <td className="py-3 px-3 text-right">
                       <span className="font-bold text-sm text-white">
-                        {severityFilter === 'CRITICAL_ONLY' ? Math.round(dept.criticalCount * windowMultiplier) : totalRowAnomalies}
+                        {severityFilter === 'HIGH'
+                          ? Math.round(dept.criticalCount * windowMultiplier)
+                          : severityFilter === 'MEDIUM'
+                          ? Math.round(dept.moderateCount * windowMultiplier)
+                          : severityFilter === 'LOW'
+                          ? Math.max(0, totalRowAnomalies - Math.round(dept.criticalCount * windowMultiplier) - Math.round(dept.moderateCount * windowMultiplier))
+                          : totalRowAnomalies}
                       </span>
                     </td>
 
@@ -569,7 +676,7 @@ export default function OrganizationalAnomalyHeatmap({
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 mb-4 border-b border-slate-800 gap-2">
             <div className="flex items-center space-x-2 text-xs text-slate-300 font-semibold">
               <Compass className="h-4 w-4 text-cyan-400" />
-              <span>Geographical Facility Coordinates &amp; Regional Anomaly Densities:</span>
+              <span>Geographical Facility Coordinates &amp; Dynamic Severity Triage:</span>
             </div>
             <span className="text-[11px] text-slate-500 font-mono">
               Live Satellite Meteorological Sync (Open-Meteo GPS Grid)
@@ -581,6 +688,31 @@ export default function OrganizationalAnomalyHeatmap({
               const isSelected = selectedZoneId === dept.id;
               const scaledTotal = Math.round(dept.totalAnomalies * windowMultiplier);
               const scaledCrit = Math.round(dept.criticalCount * windowMultiplier);
+              const scaledMod = Math.round(dept.moderateCount * windowMultiplier);
+              const scaledLow = Math.max(0, scaledTotal - scaledCrit - scaledMod);
+
+              // Dynamic Severity Tier for the facility
+              const deptTier = getSeverityTier(scaledTotal, dept);
+              const severityBorderClass =
+                deptTier === 'HIGH'
+                  ? 'border-l-4 border-l-rose-500 hover:border-rose-500/80 shadow-rose-950/20'
+                  : deptTier === 'MEDIUM'
+                  ? 'border-l-4 border-l-amber-500 hover:border-amber-500/80 shadow-amber-950/20'
+                  : 'border-l-4 border-l-emerald-500 hover:border-emerald-500/80 shadow-emerald-950/20';
+
+              const severityBadgeStyle =
+                deptTier === 'HIGH'
+                  ? 'bg-rose-950 text-rose-300 border-rose-500 animate-pulse'
+                  : deptTier === 'MEDIUM'
+                  ? 'bg-amber-950 text-amber-300 border-amber-500'
+                  : 'bg-emerald-950 text-emerald-300 border-emerald-500';
+
+              const severityDotStyle =
+                deptTier === 'HIGH'
+                  ? 'bg-rose-400 animate-ping'
+                  : deptTier === 'MEDIUM'
+                  ? 'bg-amber-400'
+                  : 'bg-emerald-400';
 
               return (
                 <div
@@ -589,10 +721,10 @@ export default function OrganizationalAnomalyHeatmap({
                   className={`p-4 rounded-xl border transition-all cursor-pointer relative overflow-hidden group ${
                     isSelected
                       ? 'bg-cyan-950/40 border-cyan-400 shadow-lg shadow-cyan-950/50'
-                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
-                  }`}
+                      : 'bg-slate-900/80 border-slate-800 hover:bg-slate-900'
+                  } ${severityBorderClass}`}
                 >
-                  {/* Top Bar: Department & Heat Strain */}
+                  {/* Top Bar: Department & Dynamic Severity Marker */}
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div>
                       <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
@@ -604,36 +736,60 @@ export default function OrganizationalAnomalyHeatmap({
                       </h4>
                     </div>
 
-                    <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border uppercase shrink-0 ${
-                        dept.heatStrainIndex === 'EXTREME'
-                          ? 'bg-rose-950 text-rose-300 border-rose-500 animate-pulse'
-                          : dept.heatStrainIndex === 'HIGH'
-                          ? 'bg-amber-950 text-amber-300 border-amber-500'
-                          : 'bg-emerald-950 text-emerald-300 border-emerald-500'
-                      }`}
-                    >
-                      {dept.heatStrainIndex} STRAIN
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border uppercase shrink-0 flex items-center gap-1.5 ${severityBadgeStyle}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${severityDotStyle}`}></span>
+                        <span>{deptTier === 'HIGH' ? 'HIGH RISK' : deptTier === 'MEDIUM' ? 'MOD RISK' : 'LOW RISK'}</span>
+                      </span>
+                    </div>
                   </div>
 
-                  <p className="text-[11px] text-slate-400 line-clamp-1 mb-3">
+                  <p className="text-[11px] text-slate-400 line-clamp-1 mb-2.5">
                     {dept.facilityLocation}
                   </p>
 
                   {/* Frequency Metrics Row */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-950/90 p-2.5 rounded-lg border border-slate-800 mb-3 text-center">
+                  <div className="grid grid-cols-3 gap-2 bg-slate-950/90 p-2 rounded-lg border border-slate-800 mb-2.5 text-center text-xs">
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Anomalies</span>
+                      <span className="text-[10px] text-slate-400 block font-medium">Total</span>
                       <strong className="text-sm font-mono text-cyan-300 font-bold">{scaledTotal}</strong>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Critical</span>
+                      <span className="text-[10px] text-rose-400 block font-medium">Critical</span>
                       <strong className="text-sm font-mono text-rose-400 font-bold">{scaledCrit}</strong>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Rate/100</span>
-                      <strong className="text-sm font-mono text-amber-400 font-bold">{dept.anomalyRatePer100}</strong>
+                      <span className="text-[10px] text-amber-400 block font-medium">Moderate</span>
+                      <strong className="text-sm font-mono text-amber-400 font-bold">{scaledMod}</strong>
+                    </div>
+                  </div>
+
+                  {/* Visual Severity Breakdown Bar */}
+                  <div className="mb-2.5 space-y-1">
+                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                      <span>Severity Dispersion:</span>
+                      <span className="text-slate-300">
+                        {scaledCrit} High &bull; {scaledMod} Med &bull; {scaledLow} Low
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden flex">
+                      <div
+                        className="bg-rose-500 h-full"
+                        style={{ width: `${scaledTotal > 0 ? (scaledCrit / scaledTotal) * 100 : 0}%` }}
+                        title={`${scaledCrit} High Severity`}
+                      />
+                      <div
+                        className="bg-amber-500 h-full"
+                        style={{ width: `${scaledTotal > 0 ? (scaledMod / scaledTotal) * 100 : 0}%` }}
+                        title={`${scaledMod} Medium Severity`}
+                      />
+                      <div
+                        className="bg-emerald-500 h-full"
+                        style={{ width: `${scaledTotal > 0 ? (scaledLow / scaledTotal) * 100 : 0}%` }}
+                        title={`${scaledLow} Low Severity`}
+                      />
                     </div>
                   </div>
 

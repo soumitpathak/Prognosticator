@@ -118,30 +118,30 @@ export default function RecentAnomaliesAuditList({
     switch (sev) {
       case 'CRITICAL':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-300 border border-rose-500/40 shadow-xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/60 shadow-xs animate-pulse">
             <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-ping"></span>
             CRITICAL
           </span>
         );
       case 'HIGH':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/40">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-300 border border-rose-500/50 shadow-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-400"></span>
             HIGH
           </span>
         );
       case 'MODERATE':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-yellow-500/15 text-yellow-300 border border-yellow-500/40">
-            <span className="h-1.5 w-1.5 rounded-full bg-yellow-400"></span>
-            MODERATE
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+            MEDIUM
           </span>
         );
       case 'LOW':
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 shadow-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
             LOW
           </span>
         );
@@ -261,8 +261,16 @@ export default function RecentAnomaliesAuditList({
           filteredAnomalies.map((alert, index) => {
             const isCritical = alert.severity === 'CRITICAL';
             const isHigh = alert.severity === 'HIGH';
+            const isModerate = alert.severity === 'MODERATE';
             const isPM = alert.alert_type === 'PREDICTIVE_MAINTENANCE';
             const isSelected = selectedAnomaly?.id === alert.id || selectedAnomalyId === alert.id;
+
+            const severityBorderClass =
+              isCritical || isHigh
+                ? 'border-l-4 border-l-rose-500 bg-slate-950/90 border-rose-500/40 hover:border-rose-500/80 shadow-xs shadow-rose-950/20'
+                : isModerate
+                ? 'border-l-4 border-l-amber-500 bg-slate-950/90 border-amber-500/30 hover:border-amber-500/70 shadow-xs shadow-amber-950/20'
+                : 'border-l-4 border-l-emerald-500 bg-slate-950/90 border-emerald-500/30 hover:border-emerald-500/70 shadow-xs shadow-emerald-950/20';
 
             return (
               <div
@@ -279,11 +287,7 @@ export default function RecentAnomaliesAuditList({
                 className={`rounded-xl p-3.5 border transition-all duration-200 cursor-pointer relative overflow-hidden group text-left ${
                   isSelected
                     ? 'ring-2 ring-cyan-400 bg-slate-900 border-cyan-400 shadow-xl shadow-cyan-950/40'
-                    : isCritical
-                    ? 'bg-slate-950/90 border-rose-500/40 hover:border-rose-500/80 hover:bg-slate-900/90 shadow-xs shadow-rose-950/20'
-                    : isHigh
-                    ? 'bg-slate-950/90 border-amber-500/30 hover:border-amber-500/70 hover:bg-slate-900/90'
-                    : 'bg-slate-950/90 border-slate-800 hover:border-cyan-500/50 hover:bg-slate-900/90'
+                    : severityBorderClass
                 }`}
               >
                 {/* Index & Top Row: Timestamp, Severity, Anomaly ID & Click Hint */}

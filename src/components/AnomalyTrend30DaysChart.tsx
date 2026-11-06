@@ -54,6 +54,7 @@ interface AnomalyTrend30DaysChartProps {
   proactiveRiskThreshold?: number;
   sensitivityLevel?: 'HIGH' | 'MEDIUM' | 'LOW' | 'CUSTOM';
   onOpenThresholdPanel?: () => void;
+  onOpenCompliancePdfModal?: () => void;
 }
 
 export default function AnomalyTrend30DaysChart({
@@ -69,7 +70,8 @@ export default function AnomalyTrend30DaysChart({
   criticalFrequencyThreshold = 3,
   proactiveRiskThreshold = 5.5,
   sensitivityLevel = 'MEDIUM',
-  onOpenThresholdPanel
+  onOpenThresholdPanel,
+  onOpenCompliancePdfModal
 }: AnomalyTrend30DaysChartProps) {
   // Horizon Filter: 7 Days, 14 Days, 30 Days
   const [horizon, setHorizon] = useState<'7D' | '14D' | '30D'>('30D');
@@ -125,130 +127,356 @@ export default function AnomalyTrend30DaysChart({
     };
   }, [filteredData]);
 
-  // Custom Recharts Dark Tooltip
+  // Custom SVG Animated Active Dot Renderer with glowing pulsing radar halo
+  const renderAnimatedActiveDot = (
+    color: string,
+    pulseColor: string,
+    glowColor: string,
+    baseRadius = 6.5,
+    keyPrefix = 'dot'
+  ) => {
+    return (props: any) => {
+      const { cx, cy, stroke } = props;
+      if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
+
+      return (
+        <g key={`${keyPrefix}-${cx}-${cy}`} className="pointer-events-none">
+          {/* Animated Expanding Pulse Ring */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={baseRadius + 6}
+            fill="none"
+            stroke={pulseColor}
+            strokeWidth={1.8}
+            opacity={0.8}
+          >
+            <animate
+              attributeName="r"
+              values={`${baseRadius + 2};${baseRadius + 14};${baseRadius + 20}`}
+              dur="1.7s"
+              repeatCount="indefinite"
+            />
+            <animate
+              attributeName="opacity"
+              values="0.85;0.3;0"
+              dur="1.7s"
+              repeatCount="indefinite"
+            />
+          </circle>
+
+          {/* Secondary Radial Glow Halo */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={baseRadius + 4.5}
+            fill={glowColor}
+            opacity={0.3}
+          />
+
+          {/* Solid High-Contrast Dot with White Border & Drop Shadow */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={baseRadius}
+            fill={color}
+            stroke="#ffffff"
+            strokeWidth={2}
+            style={{ filter: 'drop-shadow(0px 0px 6px rgba(0,0,0,0.8))' }}
+          />
+
+          {/* Crisp Specular Center Spark */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={2.2}
+            fill="#ffffff"
+          />
+        </g>
+      );
+    };
+  };
+
+  // Custom Recharts Floating Glassmorphic Tooltip with Detailed Anomaly Counts
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const dayData = payload[0].payload as AnomalyTrendDayWithProjection;
 
-      // Forecast point tooltip
+      // Forecast Point Detailed Floating Tooltip
       if (dayData.isProjected) {
         return (
-          <div className="bg-slate-900/95 border-2 border-indigo-500/80 p-3.5 rounded-xl shadow-2xl backdrop-blur-md text-xs min-w-[280px] pointer-events-none z-50">
-            <div className="flex items-center justify-between border-b border-indigo-900/80 pb-2 mb-2.5">
+          <div className="bg-slate-900/95 border-2 border-indigo-500/80 p-4 rounded-2xl shadow-2xl backdrop-blur-xl text-xs min-w-[310px] pointer-events-none z-50 ring-1 ring-indigo-500/30 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-indigo-900/80 pb-2.5 mb-3">
               <div className="flex items-center gap-1.5 font-bold text-white">
-                <Sparkles className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
-                <span>{dayData.fullDate} ({dayData.dayOfWeek})</span>
+                <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" />
+                <span className="text-sm">{dayData.fullDate}</span>
+                <span className="text-slate-400 text-xs font-normal">({dayData.dayOfWeek})</span>
               </div>
-              <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-500/40 px-2 py-0.5 rounded font-mono font-bold">
+              <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-500/50 px-2.5 py-0.5 rounded-full font-mono font-bold tracking-wider">
                 7-DAY SMA FORECAST
               </span>
             </div>
 
-            <div className="space-y-1.5 mb-2.5">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Projected Anomaly Frequency:</span>
-                <span className="font-bold text-indigo-300 font-mono text-base">~{dayData.projectedTrend} / day</span>
+            {/* Projected Anomaly Summary */}
+            <div className="bg-indigo-950/50 rounded-xl p-3 border border-indigo-900/60 mb-3 space-y-2">
+              <div className="flex justify-between items-baseline">
+                <span className="text-indigo-200 font-medium">Projected Daily Anomalies:</span>
+                <span className="text-lg font-bold text-indigo-300 font-mono">
+                  ~{dayData.projectedTrend} <span className="text-xs text-indigo-400 font-normal">events/day</span>
+                </span>
               </div>
-              <div className="flex justify-between items-center text-indigo-200">
-                <span className="text-slate-400">95% Shaded Uncertainty Band:</span>
-                <span className="font-mono font-semibold">{dayData.projectedLower} – {dayData.projectedUpper} events</span>
+              <div className="flex justify-between items-center text-[11px] text-indigo-300">
+                <span className="text-slate-400">95% Uncertainty Band:</span>
+                <span className="font-mono font-bold bg-indigo-900/60 px-2 py-0.5 rounded border border-indigo-700/60">
+                  {dayData.projectedLower} – {dayData.projectedUpper} events
+                </span>
               </div>
-              <div className="flex justify-between items-center text-emerald-300">
-                <span className="text-slate-400">Model Projection Confidence:</span>
-                <span className="font-mono font-semibold">{dayData.projectedConfidence}%</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-300 pt-1 border-t border-slate-800">
-                <span className="text-slate-400">Underlying Algorithm:</span>
-                <span className="font-mono text-cyan-400">7-Day Simple Moving Average</span>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-400">Projection Confidence:</span>
+                <span className="font-mono font-bold text-emerald-400">{dayData.projectedConfidence}%</span>
               </div>
             </div>
 
-            <div className="bg-indigo-950/40 rounded-lg p-2 border border-indigo-900/40 text-[11px] text-indigo-200">
-              <strong className="text-indigo-300 block font-semibold mb-0.5">Projected Workplace Outlook:</strong>
-              Expected ambient temp ~{dayData.avgAmbientTempC}°C, workforce HRV stability ~{dayData.avgHrvMs}ms. Shaded indigo band shows projected moving average trajectory.
+            {/* Severity Distribution Breakdown */}
+            <div className="space-y-2 mb-3">
+              <div className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
+                <span>Estimated Severity Allocation</span>
+                <span className="text-[10px] text-slate-400 font-mono">Based on 30D historical ratio</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-slate-950/80 p-2 rounded-lg border border-rose-900/40">
+                  <div className="flex items-center justify-between text-rose-300 font-semibold mb-0.5">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-rose-500"></span> Critical:
+                    </span>
+                    <span className="font-mono">~{dayData.criticalCount}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">~33% of forecasted load</div>
+                </div>
+                <div className="bg-slate-950/80 p-2 rounded-lg border border-amber-900/40">
+                  <div className="flex items-center justify-between text-amber-300 font-semibold mb-0.5">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-amber-500"></span> Moderate:
+                    </span>
+                    <span className="font-mono">~{dayData.moderateCount}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">~67% of forecasted load</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Environmental Outlook */}
+            <div className="bg-slate-950/90 rounded-xl p-2.5 border border-slate-800 space-y-1 text-[11px]">
+              <div className="text-slate-300 font-semibold mb-0.5 flex items-center gap-1">
+                <Target className="h-3 w-3 text-cyan-400" />
+                <span>Forecasted Environmental Sentinel:</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Expected Ambient Temp:</span>
+                <strong className="text-amber-400 font-mono">~{dayData.avgAmbientTempC}°C</strong>
+              </div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Predicted Workforce HRV:</span>
+                <strong className="text-emerald-400 font-mono">~{dayData.avgHrvMs} ms</strong>
+              </div>
+              <div className="text-slate-400 pt-1 border-t border-slate-800 text-[10px]">
+                <span className="text-indigo-300 font-medium">Directive:</span> Pre-emptive cooling stations staged prior to acute inflection.
+              </div>
             </div>
           </div>
         );
       }
+
+      // Historical Point Detailed Floating Tooltip
+      const total = dayData.totalAnomalies || 0;
+      const crit = dayData.criticalCount || 0;
+      const mod = dayData.moderateCount || 0;
+      const res = dayData.resolvedCount || 0;
+      const unres = Math.max(0, total - res);
+
+      const critPct = total > 0 ? Math.round((crit / total) * 100) : 0;
+      const modPct = total > 0 ? Math.round((mod / total) * 100) : 0;
+      const resPct = total > 0 ? Math.round((res / total) * 100) : 0;
+
+      const movingAvgDelta = dayData.movingAvg7d != null ? Number((total - dayData.movingAvg7d).toFixed(1)) : 0;
+
       return (
-        <div className="bg-slate-900/95 border border-slate-700 p-3.5 rounded-xl shadow-2xl backdrop-blur-md text-xs min-w-[260px] pointer-events-none z-50">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+        <div className="bg-slate-900/95 border-2 border-cyan-500/70 p-4 rounded-2xl shadow-2xl backdrop-blur-xl text-xs min-w-[320px] pointer-events-none z-50 ring-1 ring-cyan-500/25 animate-in fade-in zoom-in-95 duration-150">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
             <div className="flex items-center gap-1.5 font-bold text-white">
-              <Calendar className="h-3.5 w-3.5 text-cyan-400" />
-              <span>{dayData.fullDate} ({dayData.dayOfWeek})</span>
+              <Calendar className="h-4 w-4 text-cyan-400" />
+              <span className="text-sm">{dayData.fullDate}</span>
+              <span className="text-slate-400 text-xs font-normal">({dayData.dayOfWeek})</span>
             </div>
-            {dayData.isHeatwavePeriod && (
-              <span className="text-[10px] bg-rose-950/80 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 rounded font-bold animate-pulse">
+            {dayData.isHeatwavePeriod ? (
+              <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-500/60 px-2.5 py-0.5 rounded-full font-bold animate-pulse flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 text-rose-400" />
                 HEATWAVE PEAK
+              </span>
+            ) : (
+              <span className="text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-mono">
+                TELEMETRY DAY #{dayData.dayIndex + 1}
               </span>
             )}
           </div>
 
-          <div className="space-y-1.5 mb-2.5">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Total Anomaly Events:</span>
-              <span className="font-bold text-cyan-300 font-mono text-sm">{dayData.totalAnomalies}</span>
-            </div>
-            <div className="flex justify-between items-center text-rose-300">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-rose-500"></span> Critical Tier:
+          {/* Primary Metric Banner: Total Anomalies & Delta vs 7D Moving Average */}
+          <div className="bg-slate-950/90 rounded-xl p-3 border border-slate-800 mb-3">
+            <div className="flex items-baseline justify-between mb-1.5">
+              <span className="text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                Total Anomaly Events
               </span>
-              <span className="font-mono font-semibold">{dayData.criticalCount}</span>
-            </div>
-            <div className="flex justify-between items-center text-amber-300">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-amber-500"></span> Moderate Tier:
-              </span>
-              <span className="font-mono font-semibold">{dayData.moderateCount}</span>
-            </div>
-            <div className="flex justify-between items-center text-emerald-300">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Mitigated / Resolved:
-              </span>
-              <span className="font-mono font-semibold">{dayData.resolvedCount}</span>
-            </div>
-            <div className="flex justify-between items-center text-slate-300 pt-1 border-t border-slate-800/80">
-              <span className="text-slate-400">7-Day Moving Avg:</span>
-              <span className="font-mono text-emerald-400 font-semibold">{dayData.movingAvg7d} / day</span>
-            </div>
-            <div className="flex justify-between items-center text-slate-300">
-              <span className="text-slate-400">Rate per 100 Workers:</span>
-              <span className="font-mono text-indigo-300">{dayData.anomalyRatePer100}</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-black text-cyan-300 font-mono tracking-tight">{total}</span>
+                <span className="text-xs text-slate-400 font-medium">events</span>
+              </div>
             </div>
 
-            {showPrevPeriodComparison && dayData.prevPeriodAnomalies !== undefined && (
-              <div className="pt-2 mt-2 border-t border-purple-900/60 bg-purple-950/40 -mx-1 px-2.5 py-1.5 rounded-lg space-y-1">
-                <div className="flex justify-between items-center text-purple-200 font-semibold text-xs">
-                  <span className="flex items-center gap-1">
-                    <History className="h-3 w-3 text-purple-400" />
-                    Prior 30D ({dayData.prevPeriodDate}):
-                  </span>
-                  <span className="font-mono text-purple-300">{dayData.prevPeriodAnomalies} events</span>
-                </div>
-                <div className="flex justify-between items-center text-[11px]">
-                  <span className="text-slate-400">Cycle Variance:</span>
-                  <span
-                    className={`font-mono font-bold ${
-                      (dayData.periodVariancePct || 0) <= 0 ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
-                    {(dayData.periodVariancePct || 0) > 0 ? `+${dayData.periodVariancePct}%` : `${dayData.periodVariancePct}%`} Shift
-                  </span>
-                </div>
+            {/* Moving Average Delta & Worker Incident Velocity */}
+            <div className="flex items-center justify-between pt-1.5 border-t border-slate-800/80 text-[11px]">
+              <span className="text-slate-400">vs 7D Moving Avg ({dayData.movingAvg7d}/day):</span>
+              <span
+                className={`font-mono font-bold flex items-center gap-1 ${
+                  movingAvgDelta > 0
+                    ? 'text-rose-400'
+                    : movingAvgDelta < 0
+                    ? 'text-emerald-400'
+                    : 'text-slate-300'
+                }`}
+              >
+                {movingAvgDelta > 0 ? (
+                  <>
+                    <TrendingUp className="h-3 w-3" /> +{movingAvgDelta} events
+                  </>
+                ) : movingAvgDelta < 0 ? (
+                  <>
+                    <TrendingDown className="h-3 w-3" /> {movingAvgDelta} events
+                  </>
+                ) : (
+                  'At 7D Baseline'
+                )}
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-1 text-[11px]">
+              <span className="text-slate-400">Cohort Incident Rate:</span>
+              <span className="font-mono font-bold text-indigo-300">
+                {dayData.anomalyRatePer100} / 100 workers
+              </span>
+            </div>
+          </div>
+
+          {/* Detailed Severity Breakdown with Progress Bars */}
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+              <span>Detailed Anomaly Counts Breakdown</span>
+              <span className="text-[10px] text-slate-400 font-mono">Count &amp; % Share</span>
+            </div>
+
+            {/* Critical Row */}
+            <div className="bg-slate-950/80 p-2 rounded-lg border border-rose-900/30">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="flex items-center gap-1.5 text-rose-300 font-semibold">
+                  <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
+                  Critical Tier (Immediate Evacuation):
+                </span>
+                <span className="font-mono font-bold text-rose-300">
+                  {crit} <span className="text-[10px] text-rose-400/80 font-normal">({critPct}%)</span>
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-rose-950">
+                <div
+                  className="h-full bg-gradient-to-r from-rose-600 to-rose-400 rounded-full"
+                  style={{ width: `${critPct}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Moderate Row */}
+            <div className="bg-slate-950/80 p-2 rounded-lg border border-amber-900/30">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                  <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+                  Moderate Tier (Biometric Fatigue):
+                </span>
+                <span className="font-mono font-bold text-amber-300">
+                  {mod} <span className="text-[10px] text-amber-400/80 font-normal">({modPct}%)</span>
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-amber-950">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-full"
+                  style={{ width: `${modPct}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Mitigated / Resolved Row */}
+            <div className="bg-slate-950/80 p-2 rounded-lg border border-emerald-900/30">
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                  Mitigated &amp; Stabilized:
+                </span>
+                <span className="font-mono font-bold text-emerald-300">
+                  {res} <span className="text-[10px] text-emerald-400/80 font-normal">({resPct}%)</span>
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-emerald-950">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-600 to-teal-400 rounded-full"
+                  style={{ width: `${resPct}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Unresolved Staged Alerts */}
+            {unres > 0 && (
+              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 pt-0.5">
+                <span>Active Triage Staging:</span>
+                <span className="text-amber-400 font-mono font-semibold">{unres} alerts awaiting closeout</span>
               </div>
             )}
           </div>
 
-          <div className="bg-slate-950/80 rounded-lg p-2 border border-slate-800 space-y-1 text-[11px]">
-            <div className="text-slate-400">
-              <strong className="text-slate-300">Primary Hazard Driver:</strong> {dayData.primaryDriver}
+          {/* Previous Period Comparison Block */}
+          {showPrevPeriodComparison && dayData.prevPeriodAnomalies !== undefined && (
+            <div className="mb-3 pt-2 border-t border-purple-900/60 bg-purple-950/40 -mx-1 px-3 py-2 rounded-xl space-y-1">
+              <div className="flex justify-between items-center text-purple-200 font-semibold text-xs">
+                <span className="flex items-center gap-1">
+                  <History className="h-3.5 w-3.5 text-purple-400" />
+                  Prior 30D ({dayData.prevPeriodDate}):
+                </span>
+                <span className="font-mono font-bold text-purple-300">{dayData.prevPeriodAnomalies} events</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-400">Cycle-over-Cycle Shift:</span>
+                <span
+                  className={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${
+                    (dayData.periodVariancePct || 0) <= 0
+                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                      : 'bg-rose-950 text-rose-300 border border-rose-800'
+                  }`}
+                >
+                  {(dayData.periodVariancePct || 0) > 0 ? `+${dayData.periodVariancePct}%` : `${dayData.periodVariancePct}%`} Shift
+                </span>
+              </div>
             </div>
-            <div className="text-slate-400">
-              <strong className="text-slate-300">Peak Exposure Window:</strong> {dayData.peakHour}
+          )}
+
+          {/* Environmental Attribution & Biological Load */}
+          <div className="bg-slate-950/90 rounded-xl p-2.5 border border-slate-800 space-y-1 text-[11px]">
+            <div className="text-slate-300 font-semibold mb-0.5 flex items-center justify-between">
+              <span>Primary Hazard Driver:</span>
+              <span className="text-cyan-400 font-mono text-[10px]">Peak: {dayData.peakHour}</span>
             </div>
-            <div className="text-slate-400 flex items-center justify-between">
-              <span>Avg Temp: <strong className="text-amber-400">{dayData.avgAmbientTempC}°C</strong></span>
-              <span>Avg Cohort HRV: <strong className="text-emerald-400">{dayData.avgHrvMs} ms</strong></span>
+            <div className="text-slate-400 bg-slate-900/70 px-2 py-1 rounded text-[11px] font-medium text-slate-200">
+              {dayData.primaryDriver}
+            </div>
+            <div className="flex items-center justify-between pt-1 text-slate-400">
+              <span>Ambient Temp: <strong className="text-amber-400 font-mono">{dayData.avgAmbientTempC}°C</strong></span>
+              <span>Cohort HRV: <strong className="text-emerald-400 font-mono">{dayData.avgHrvMs} ms</strong></span>
             </div>
           </div>
         </div>
@@ -389,6 +617,25 @@ export default function AnomalyTrend30DaysChart({
                       </div>
                       <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
                     </button>
+
+                    {onOpenCompliancePdfModal && (
+                      <button
+                        onClick={() => {
+                          setIsExportMenuOpen(false);
+                          onOpenCompliancePdfModal();
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-indigo-950/70 hover:text-indigo-200 text-slate-200 rounded-lg transition group cursor-pointer"
+                      >
+                        <div className="flex items-center space-x-2.5">
+                          <FileText className="h-4 w-4 text-indigo-400 group-hover:scale-110 transition-transform" />
+                          <div>
+                            <div className="font-semibold text-white">Full Formatted Audit PDF</div>
+                            <div className="text-[10px] text-slate-400">Modal builder with OSHA / ISO presets</div>
+                          </div>
+                        </div>
+                        <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-1.5 py-0.5 rounded font-mono font-bold">.pdf</span>
+                      </button>
+                    )}
                   </div>
                   <div className="mt-1 pt-1.5 border-t border-slate-800 px-2 text-[10px] text-slate-400 flex items-center justify-between font-mono">
                     <span>System Audit Trail</span>
@@ -666,7 +913,16 @@ export default function AnomalyTrend30DaysChart({
               allowDecimals={false}
               domain={[0, 'dataMax + 2']}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{
+                stroke: '#06b6d4',
+                strokeWidth: 1.5,
+                strokeDasharray: '4 4'
+              }}
+              isAnimationActive={true}
+              animationDuration={150}
+            />
             <Legend
               wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
               iconType="circle"
@@ -761,7 +1017,7 @@ export default function AnomalyTrend30DaysChart({
                 stroke="#06b6d4"
                 strokeWidth={2.5}
                 dot={{ r: 3, fill: '#06b6d4', stroke: '#0891b2', strokeWidth: 1 }}
-                activeDot={{ r: 6, fill: '#38bdf8', stroke: '#ffffff', strokeWidth: 2 }}
+                activeDot={renderAnimatedActiveDot('#06b6d4', '#38bdf8', '#0891b2', 7, 'total')}
                 animationDuration={600}
               />
             )}
@@ -774,7 +1030,7 @@ export default function AnomalyTrend30DaysChart({
                 stroke="#f43f5e"
                 strokeWidth={2}
                 dot={{ r: 2.5, fill: '#f43f5e' }}
-                activeDot={{ r: 5, fill: '#fb7185', stroke: '#ffffff', strokeWidth: 2 }}
+                activeDot={renderAnimatedActiveDot('#f43f5e', '#fb7185', '#be123c', 6.5, 'crit')}
                 animationDuration={600}
               />
             )}
@@ -787,7 +1043,7 @@ export default function AnomalyTrend30DaysChart({
                 stroke="#f59e0b"
                 strokeWidth={1.8}
                 dot={{ r: 2, fill: '#f59e0b' }}
-                activeDot={{ r: 5, fill: '#fbbf24', stroke: '#ffffff', strokeWidth: 1.5 }}
+                activeDot={renderAnimatedActiveDot('#f59e0b', '#fbbf24', '#d97706', 6, 'mod')}
                 animationDuration={600}
               />
             )}
@@ -801,6 +1057,7 @@ export default function AnomalyTrend30DaysChart({
                 strokeWidth={2}
                 strokeDasharray="4 4"
                 dot={false}
+                activeDot={renderAnimatedActiveDot('#10b981', '#34d399', '#059669', 5.5, 'sma')}
                 animationDuration={600}
               />
             )}
@@ -815,7 +1072,7 @@ export default function AnomalyTrend30DaysChart({
                 strokeWidth={2.5}
                 strokeDasharray="5 5"
                 dot={{ r: 3, fill: '#818cf8', stroke: '#4f46e5', strokeWidth: 1.5 }}
-                activeDot={{ r: 6, fill: '#c7d2fe', stroke: '#ffffff', strokeWidth: 2 }}
+                activeDot={renderAnimatedActiveDot('#818cf8', '#a5b4fc', '#4f46e5', 7, 'proj')}
                 animationDuration={600}
                 connectNulls
               />
@@ -830,6 +1087,7 @@ export default function AnomalyTrend30DaysChart({
                 strokeWidth={1.5}
                 strokeDasharray="2 2"
                 dot={false}
+                activeDot={renderAnimatedActiveDot('#2dd4bf', '#5eead4', '#0d9488', 5.5, 'res')}
                 animationDuration={600}
               />
             )}
@@ -844,7 +1102,7 @@ export default function AnomalyTrend30DaysChart({
                 strokeWidth={2}
                 strokeDasharray="4 4"
                 dot={{ r: 2.5, fill: '#c084fc', stroke: '#9333ea', strokeWidth: 1 }}
-                activeDot={{ r: 5, fill: '#e9d5ff', stroke: '#ffffff', strokeWidth: 2 }}
+                activeDot={renderAnimatedActiveDot('#c084fc', '#e9d5ff', '#9333ea', 6, 'prev')}
                 animationDuration={600}
                 connectNulls
               />
