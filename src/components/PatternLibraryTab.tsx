@@ -720,10 +720,21 @@ export default function PatternLibraryTab({
             />
           </div>
 
-          <div className="flex items-center space-x-3 text-xs font-mono text-slate-400">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-400">
+            <button
+              onClick={() => setShowPreviousYearOverlay((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                showPreviousYearOverlay
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-xs ring-1 ring-amber-500/30'
+                  : 'bg-slate-950 text-slate-400 hover:text-white border-slate-800'
+              }`}
+              title="Toggle historical anomaly signature overlay from the previous year against current trends to identify seasonal or cyclical risk patterns"
+            >
+              <GitCompare className="h-3.5 w-3.5 text-amber-400" />
+              <span>Previous Year Overlay: {showPreviousYearOverlay ? 'ON (FY2025 Baseline)' : 'OFF'}</span>
+            </button>
+            <span className="hidden sm:inline text-slate-700">|</span>
             <span>Showing <strong className="text-white">{filteredSignatures.length}</strong> of {CANONICAL_PATTERN_SIGNATURES.length} Signatures</span>
-            <span className="text-slate-700">|</span>
-            <span className="text-purple-300">Mean Precursor Window: ~42m</span>
           </div>
         </div>
       </div>

@@ -217,7 +217,9 @@ export default function ResourceAllocationModule({
   zones,
   alerts,
   onLogAudit,
-  onNotice
+  onNotice,
+  incidentAssignments: propIncidentAssignments,
+  onUpdateIncidentAssignment
 }: ResourceAllocationModuleProps) {
   const [officers, setOfficers] = useState<SafetyOfficer[]>(INITIAL_SAFETY_OFFICERS);
   const [orders, setOrders] = useState<DeploymentOrder[]>(INITIAL_DEPLOYMENT_ORDERS);
@@ -226,6 +228,63 @@ export default function ResourceAllocationModule({
   const [transferReason, setTransferReason] = useState<string>('');
   const [isReallocating, setIsReallocating] = useState<boolean>(false);
   const [isHandoverModalOpen, setIsHandoverModalOpen] = useState<boolean>(false);
+
+  // Synchronized Incident Response Status Trackers
+  const [incidentAssignments, setIncidentAssignments] = useState<Record<string, IncidentAssignment>>(
+    propIncidentAssignments || INITIAL_INCIDENT_ASSIGNMENTS
+  );
+
+  useEffect(() => {
+    if (propIncidentAssignments) {
+      setIncidentAssignments(propIncidentAssignments);
+    }
+  }, [propIncidentAssignments]);
+
+  const handleAdvanceIncidentStatus = (alertId: string) => {
+    const current = incidentAssignments[alertId] || {
+      eventId: alertId,
+      status: 'Pending',
+      priority: 'CRITICAL',
+      updatedAt: 'Just now',
+      activityLog: []
+    };
+
+    const nextStatus: IncidentWorkflowStatus =
+      current.status === 'Pending'
+        ? 'Investigating'
+        : current.status === 'Investigating'
+        ? 'Resolved'
+        : 'Pending';
+
+    const updated: IncidentAssignment = {
+      ...current,
+      status: nextStatus,
+      updatedAt: 'Just now',
+      activityLog: [
+        {
+          timestamp: 'Just now',
+          action: `Status advanced to ${nextStatus} via Resource Allocation Module`,
+          actor: 'Alex Mercer (Lead Supervisor)',
+          previousStatus: current.status,
+          newStatus: nextStatus
+        },
+        ...(current.activityLog || [])
+      ]
+    };
+
+    setIncidentAssignments((prev) => ({
+      ...prev,
+      [alertId]: updated
+    }));
+
+    if (onUpdateIncidentAssignment) {
+      onUpdateIncidentAssignment(updated);
+    }
+
+    if (onNotice) {
+      onNotice(`Incident ${alertId} status tracker updated to ${nextStatus}.`);
+    }
+  };
 
   // Group officers by zone
   const officersByZone = useMemo(() => {
@@ -797,6 +856,79 @@ export default function ResourceAllocationModule({
                       ))
                     )}
                   </div>
+
+                  {/* Active Incident Response Status Trackers in this Zone */}
+                  {(() => {
+                    const zoneIncidents = alerts
+                      .filter((a) => a.location_zone === zone.id || a.location_zone === zone.name)
+                      .map((a) => ({
+                        alert: a,
+                        assignment: incidentAssignments[a.id] || {
+                          eventId: a.id,
+                          status: (a.acknowledged ? 'Resolved' : 'Pending') as IncidentWorkflowStatus,
+                          priority: (a.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM',
+                          updatedAt: 'Just now',
+                          activityLog: []
+                        }
+                      }));
+
+                    return (
+                      <div className="mt-2.5 pt-2 border-t border-slate-800/80">
+                        <div className="flex items-center justify-between text-[10px] uppercase font-semibold text-slate-400 mb-1.5">
+                          <span>Incident Response Trackers</span>
+                          <span className="text-cyan-400 font-mono font-bold">
+                            {zoneIncidents.length} Active
+                          </span>
+                        </div>
+
+                        {zoneIncidents.length === 0 ? (
+                          <div className="text-[10px] text-slate-500 italic py-1">
+                            No active incident response trackers in this zone
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {zoneIncidents.map(({ alert, assignment }) => {
+                              const isResolved = assignment.status === 'Resolved';
+                              const isInvestigating = assignment.status === 'Investigating';
+                              return (
+                                <div
+                                  key={alert.id}
+                                  className="bg-slate-900 border border-slate-800 rounded-md p-1.5 text-[11px] font-mono flex items-center justify-between gap-1.5"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-bold text-slate-300 truncate">{alert.id}</span>
+                                      <span
+                                        className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                                          isResolved
+                                            ? 'bg-emerald-500/20 text-emerald-300'
+                                            : isInvestigating
+                                            ? 'bg-amber-500/20 text-amber-300'
+                                            : 'bg-rose-500/20 text-rose-300'
+                                        }`}
+                                      >
+                                        {assignment.status}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 block truncate">
+                                      Lead: {assignment.assigneeName || 'Unassigned'}
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleAdvanceIncidentStatus(alert.id)}
+                                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white px-2 py-0.5 rounded transition shrink-0 cursor-pointer"
+                                    title="Advance Incident Tracker Status (Pending -> Investigating -> Resolved)"
+                                  >
+                                    Next &rarr;
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Quick Redeploy Quick Action */}
@@ -910,6 +1042,182 @@ export default function ResourceAllocationModule({
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Cross-Zone Personnel Deployment Relative to Active Incident Response Trackers */}
+      <div className="mt-4 bg-slate-950/80 border border-slate-800 rounded-xl p-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 mb-3 border-b border-slate-800">
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-cyan-400" />
+              Personnel Deployment Relative to Active Incident Response Status Trackers
+            </h4>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Live correlation matrix evaluating safety officer stationing against ongoing incident investigation workflows
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] font-mono">
+            <span className="flex items-center gap-1 text-rose-300">
+              <span className="h-2 w-2 rounded-full bg-rose-500" />
+              <span>Pending</span>
+            </span>
+            <span className="flex items-center gap-1 text-amber-300">
+              <span className="h-2 w-2 rounded-full bg-amber-500" />
+              <span>Investigating</span>
+            </span>
+            <span className="flex items-center gap-1 text-emerald-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <span>Resolved</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono">
+            <thead>
+              <tr className="border-b border-slate-800 text-[10px] text-slate-400 uppercase tracking-wider">
+                <th className="pb-2 font-semibold">Facility Zone</th>
+                <th className="pb-2 font-semibold">Risk &amp; Cohort</th>
+                <th className="pb-2 font-semibold">Active Incident Trackers</th>
+                <th className="pb-2 font-semibold">Stationed Personnel</th>
+                <th className="pb-2 font-semibold">Coverage Adequacy</th>
+                <th className="pb-2 font-semibold text-right">Tracker Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              {zones.map((zone) => {
+                const assignedOfficers = officers.filter((o) => o.currentZoneId === zone.id);
+                const zoneAlerts = alerts.filter(
+                  (a) => a.location_zone === zone.id || a.location_zone === zone.name
+                );
+                const zoneIncidents = zoneAlerts.map((a) => ({
+                  alert: a,
+                  assignment: incidentAssignments[a.id] || {
+                    eventId: a.id,
+                    status: (a.acknowledged ? 'Resolved' : 'Pending') as IncidentWorkflowStatus,
+                    priority: (a.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM',
+                    updatedAt: 'Just now',
+                    activityLog: []
+                  }
+                }));
+
+                const activePending = zoneIncidents.filter((i) => i.assignment.status === 'Pending').length;
+                const activeInvestigating = zoneIncidents.filter((i) => i.assignment.status === 'Investigating').length;
+                const activeResolved = zoneIncidents.filter((i) => i.assignment.status === 'Resolved').length;
+
+                let adequacyLabel = 'OPTIMAL';
+                let adequacyColor = 'text-emerald-400';
+                if (zone.status === 'CRITICAL' && assignedOfficers.length < (activePending + activeInvestigating)) {
+                  adequacyLabel = 'CRITICAL DEFICIT';
+                  adequacyColor = 'text-rose-400 font-bold';
+                } else if (activePending > 0 && assignedOfficers.length === 0) {
+                  adequacyLabel = 'UNSTAFFED INCIDENTS';
+                  adequacyColor = 'text-rose-400 font-bold';
+                } else if (activeInvestigating > 0) {
+                  adequacyLabel = 'INVESTIGATION IN PROGRESS';
+                  adequacyColor = 'text-amber-400';
+                } else if (zoneIncidents.length === 0) {
+                  adequacyLabel = 'NO ACTIVE INCIDENTS';
+                  adequacyColor = 'text-slate-400';
+                }
+
+                return (
+                  <tr key={zone.id} className="hover:bg-slate-900/50 transition">
+                    <td className="py-2.5 font-bold text-white">
+                      <div>{zone.name}</div>
+                      <span className="text-[10px] text-slate-500 font-normal">ID: {zone.id}</span>
+                    </td>
+                    <td className="py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                            zone.status === 'CRITICAL'
+                              ? 'bg-rose-500/20 text-rose-300'
+                              : zone.status === 'MODERATE'
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : 'bg-emerald-500/20 text-emerald-300'
+                          }`}
+                        >
+                          {zone.status}
+                        </span>
+                        <span className="text-slate-400 text-[11px]">N={zone.count} ({zone.temp})</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5">
+                      {zoneIncidents.length === 0 ? (
+                        <span className="text-slate-500 text-[11px] italic">0 Active Trackers</span>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1 text-[10px]">
+                            {activePending > 0 && (
+                              <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold">
+                                {activePending} Pending
+                              </span>
+                            )}
+                            {activeInvestigating > 0 && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                                {activeInvestigating} Investigating
+                              </span>
+                            )}
+                            {activeResolved > 0 && (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                                {activeResolved} Resolved
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate max-w-xs">
+                            {zoneIncidents[0]?.alert.anomaly_metric}
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2.5">
+                      {assignedOfficers.length === 0 ? (
+                        <span className="text-rose-400 text-[11px] italic font-semibold">0 Officers Assigned</span>
+                      ) : (
+                        <div className="text-[11px]">
+                          <span className="text-white font-semibold">
+                            {assignedOfficers.length} Deployed
+                          </span>
+                          <span className="text-slate-400 block text-[10px] truncate max-w-xs">
+                            {assignedOfficers.map((o) => o.name).join(', ')}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2.5">
+                      <span className={`text-[10px] uppercase ${adequacyColor}`}>
+                        {adequacyLabel}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      {zoneIncidents.length > 0 ? (
+                        <button
+                          onClick={() => handleAdvanceIncidentStatus(zoneIncidents[0].alert.id)}
+                          className="text-[10px] bg-cyan-950 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 hover:text-white px-2.5 py-1 rounded transition cursor-pointer"
+                          title="Advance first active incident tracker in this zone"
+                        >
+                          Advance Tracker &rarr;
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setTargetZoneId(zone.id);
+                            const standby = officers.find((o) => o.currentZoneId === 'CENTRAL_STANDBY');
+                            if (standby) setSelectedOfficerId(standby.id);
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-slate-200 transition"
+                        >
+                          Station Staff
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 

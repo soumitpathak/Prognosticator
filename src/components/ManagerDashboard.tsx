@@ -72,7 +72,7 @@ import ZoneWeatherCard from './ZoneWeatherCard';
 import IncidentProjectionChart from './IncidentProjectionChart';
 import FloorPlan2DView from './FloorPlan2DView';
 import SystemAuditLog from './SystemAuditLog';
-import ResourceAllocationModule from './ResourceAllocationModule';
+import ResourceAllocationModule, { INITIAL_SAFETY_OFFICERS, INITIAL_DEPLOYMENT_ORDERS } from './ResourceAllocationModule';
 import VoiceAlertsModal from './VoiceAlertsModal';
 import IncidentHotspotsWidget from './IncidentHotspotsWidget';
 import GlobalSearchBar from './GlobalSearchBar';
@@ -100,9 +100,12 @@ import HistoricalAnomalyCsvExportModal from './HistoricalAnomalyCsvExportModal';
 import HistoricalAnomalyPdfExportModal from './HistoricalAnomalyPdfExportModal';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
 import GeographicalZoneRiskHeatmap from './GeographicalZoneRiskHeatmap';
-import NotificationCenter from './NotificationCenter';
+import NotificationCenter, { INITIAL_INCIDENT_ASSIGNMENTS } from './NotificationCenter';
 import DepartmentRiskThresholdConfigPanel, { DEFAULT_DEPARTMENT_RISK_THRESHOLDS } from './DepartmentRiskThresholdConfigPanel';
 import AggregateRiskScoreTrend24hChart from './AggregateRiskScoreTrend24hChart';
+import WorkforceRiskTrend7DaysChart from './WorkforceRiskTrend7DaysChart';
+import DailySummaryReportModal from './DailySummaryReportModal';
+import ProximityAlertBanner from './ProximityAlertBanner';
 import LstmRiskForecastingPanel12h from './LstmRiskForecastingPanel12h';
 import AnomalyTelemetryDetailModal from './AnomalyTelemetryDetailModal';
 import RecentAnomalyTriggersRunningLogPanel from './RecentAnomalyTriggersRunningLogPanel';
@@ -123,7 +126,8 @@ import PatternLibraryTab from './PatternLibraryTab';
 import WorkerDensityCorrelationTab from './WorkerDensityCorrelationTab';
 import TeamAlertMobileModal from './TeamAlertMobileModal';
 import { teamAlertService } from '../services/teamAlertService';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers } from 'lucide-react';
+import { exportDailySummaryReportCsv } from '../services/dailySummaryCsvExport';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -229,6 +233,53 @@ export default function ManagerDashboard() {
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState<boolean>(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceAlertSettings>(DEFAULT_VOICE_SETTINGS);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+
+  // Daily Summary Report Modal State
+  const [isDailySummaryReportOpen, setIsDailySummaryReportOpen] = useState<boolean>(false);
+
+  // Synchronized Incident Workflow Assignments
+  const [incidentAssignments, setIncidentAssignments] = useState<Record<string, IncidentAssignment>>(
+    INITIAL_INCIDENT_ASSIGNMENTS
+  );
+
+  const handleUpdateIncidentAssignment = (assignment: IncidentAssignment) => {
+    setIncidentAssignments((prev) => ({
+      ...prev,
+      [assignment.eventId]: assignment
+    }));
+  };
+
+  const handleExportDailySummaryCsv = () => {
+    const { filename, recordCount } = exportDailySummaryReportCsv(
+      zones,
+      activeAlerts,
+      INITIAL_SAFETY_OFFICERS,
+      INITIAL_DEPLOYMENT_ORDERS,
+      incidentAssignments,
+      telemetryStream
+    );
+
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-CSV-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Operations Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Daily Summary Report',
+      parameter: '24-Hour Operational Dataset CSV Export',
+      previousValue: 'N/A',
+      newValue: `Exported ${recordCount} summary records to ${filename}`,
+      justification: 'Exported complete 24-hour daily summary dataset as RFC 4180 CSV for external statistical analysis.',
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(
+      `Daily Summary Report exported to CSV: ${filename} (${recordCount} records). Registered statutory audit event.`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 7000);
+  };
 
   // Anomaly Telemetry Detail Modal State
   const [selectedAnomalyForDetail, setSelectedAnomalyForDetail] = useState<ActiveAnomalyAlert | null>(null);
@@ -2584,6 +2635,16 @@ export default function ManagerDashboard() {
             <span>{managerTab === 'patterns' ? '← Live Dashboard' : 'Pattern Library (D3.js)'}</span>
           </button>
 
+          {/* Daily Summary Report Button */}
+          <button
+            onClick={() => setIsDailySummaryReportOpen(true)}
+            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Open 24-Hour Daily Summary Report in email-ready format"
+          >
+            <Mail className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Daily Summary Report (24h)</span>
+          </button>
+
           {/* Test Anomaly Injection Button */}
           <button
             onClick={handleInjectTestAnomaly}
@@ -3486,6 +3547,167 @@ export default function ManagerDashboard() {
       ) : (
         <>
 
+      {/* Top-Level Summary Section: Real-Time Critical KPIs & Status Cards */}
+      <div id="top-level-summary-kpis" className="mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+          <div>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <Activity className="h-4 w-4 text-cyan-400" />
+              Real-Time Workforce Intelligence &bull; Core Operational KPIs
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Live multi-signal aggregate risk health, anomaly telemetry velocity, and edge IoT connectivity
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExportDailySummaryCsv}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs transition shadow-xs cursor-pointer"
+              title="Export current 24-hour summary dataset as CSV for external analysis (Excel, Tableau, Python)"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Export CSV (24h)</span>
+            </button>
+
+            <button
+              onClick={() => setIsDailySummaryReportOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-md shadow-cyan-900/40 cursor-pointer"
+              title="Generate and view email-ready 24-hour daily summary report for shift handover and executive briefs"
+            >
+              <Mail className="h-3.5 w-3.5 text-white" />
+              <span>Daily Summary Report (24h)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Primary Critical KPI Status Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* Card 1: Average Workforce Risk Score */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Average Workforce Risk Score
+              </span>
+              <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Activity className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-cyan-400 tabular-nums">
+                28.4%
+              </span>
+              <span className="text-xs text-emerald-400 font-mono font-medium">
+                -1.2% vs 1h
+              </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>Status: <strong className="text-emerald-400">Normal Baseline</strong></span>
+              <span className="text-slate-500">Peak: 78.2%</span>
+            </div>
+          </div>
+
+          {/* Card 2: Anomalies Detected (24h) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Anomalies Detected (24h)
+              </span>
+              <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-rose-400 tabular-nums">
+                14 Events
+              </span>
+              <span className="text-xs text-amber-300 font-mono font-medium">
+                {activeAlerts.length} Active
+              </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span className="text-rose-300">4 Critical &bull; 7 High</span>
+              <span className="text-emerald-400">11 Mitigated</span>
+            </div>
+          </div>
+
+          {/* Card 3: Connected IoT Endpoints */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Connected IoT Endpoints
+              </span>
+              <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                <Radio className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
+                184 / 184
+              </span>
+              <span className="text-xs text-emerald-400 font-mono font-medium">
+                100% Online
+              </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>Telemetry Ping: 15s</span>
+              <span className="text-slate-500">0 Dropouts</span>
+            </div>
+          </div>
+
+          {/* Card 4: Safety Personnel & Standby Allocation */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
+            <div className="flex justify-between items-start mb-2">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Safety Personnel Allocation
+              </span>
+              <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+                <Users className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold font-mono text-white tabular-nums">
+                12 Officers
+              </span>
+              <span className="text-xs text-cyan-300 font-mono font-medium">
+                Ratio 1:12
+              </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>9 Deployed Across Zones</span>
+              <span className="text-amber-300 font-bold">3 Standby</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Proximity Alert Warning System: Triggers if High-Risk Anomaly Overlaps High-Density Worker Cluster */}
+      <ProximityAlertBanner
+        zones={zones}
+        alerts={activeAlerts}
+        onAcknowledgeZone={(zoneId) => {
+          setProtocolActiveNotice(`Proximity warning acknowledged for ${zoneId}. Field safety steward notified.`);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onDeploySupport={(zoneId, actionType) => {
+          setProtocolActiveNotice(`Rapid mitigation protocol activated: ${actionType} in ${zoneId}.`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+      />
+
+      {/* Recharts 7-Day Aggregate Workforce Risk Level Line Chart */}
+      <WorkforceRiskTrend7DaysChart
+        className="mb-6"
+        onSelectDay={(day) => {
+          if (day.isSpike) {
+            setProtocolActiveNotice(
+              `Inspecting 7-day risk spike on ${day.fullDate}: Peak risk ${day.peakRiskScore}% driven by ${day.spikeReason}.`
+            );
+            setTimeout(() => setProtocolActiveNotice(null), 7000);
+          }
+        }}
+      />
+
       {/* PDF Export In-Flight Notification */}
       {isDirectPdfExporting && (
         <div className="mb-6 p-4 rounded-xl bg-cyan-950/70 border border-cyan-500/60 text-cyan-200 text-xs flex items-center justify-between shadow-xl animate-pulse">
@@ -3936,6 +4158,8 @@ export default function ManagerDashboard() {
           onGeneratePdfReport={handleDirectPdfExport}
           onInjectTestAnomaly={handleInjectTestAnomaly}
           isGeneratingPdf={isDirectPdfExporting}
+          incidentAssignments={incidentAssignments}
+          onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
           className="mb-6"
         />
       </div>
@@ -4724,6 +4948,8 @@ export default function ManagerDashboard() {
           setProtocolActiveNotice(msg);
           setTimeout(() => setProtocolActiveNotice(null), 6000);
         }}
+        incidentAssignments={incidentAssignments}
+        onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
       />
 
       {/* System Audit Log Component: Manual Changes to Sensitivity Thresholds & Zone Configurations */}
@@ -4737,6 +4963,15 @@ export default function ManagerDashboard() {
       )}
 
       {/* Modals & Drawers */}
+      <DailySummaryReportModal
+        isOpen={isDailySummaryReportOpen}
+        onClose={() => setIsDailySummaryReportOpen(false)}
+        zones={zones}
+        alerts={activeAlerts}
+        incidentAssignments={incidentAssignments}
+        telemetryStream={telemetryStream}
+      />
+
       <AuditLogModal
         isOpen={isAuditModalOpen}
         onClose={() => setIsAuditModalOpen(false)}
