@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Flame,
   ShieldAlert,
@@ -18,9 +18,13 @@ import {
   Filter,
   Eye,
   Zap,
-  Info
+  Info,
+  Cpu,
+  Wrench,
+  Clock
 } from 'lucide-react';
-import { FacilityZone, ActiveAnomalyAlert, TelemetryDataPoint } from '../types';
+import { FacilityZone, ActiveAnomalyAlert, TelemetryDataPoint, IoTEndpointFailureForecast } from '../types';
+import { predictiveMaintenanceService } from '../services/predictiveMaintenanceService';
 
 export interface SpatialZoneRiskHeatmapProps {
   zones: FacilityZone[];
@@ -29,10 +33,11 @@ export interface SpatialZoneRiskHeatmapProps {
   selectedZoneId: string;
   onSelectZone: (zoneId: string) => void;
   onDispatchMitigation?: (zone: FacilityZone, action: string) => void;
+  onNavigateToMaintenance?: (endpointId: string) => void;
   className?: string;
 }
 
-export type HeatmapMetricMode = 'COMPOSITE_RISK' | 'THERMAL' | 'ACOUSTIC' | 'WORKER_DENSITY';
+export type HeatmapMetricMode = 'COMPOSITE_RISK' | 'THERMAL' | 'ACOUSTIC' | 'WORKER_DENSITY' | 'IOT_PREDICTIVE_FAILURES';
 
 interface ZoneSpatialMetrics {
   zone: FacilityZone;
@@ -49,6 +54,10 @@ interface ZoneSpatialMetrics {
   aqi: number;
   primaryHazard: string;
   gridCoordinates: { x: number; y: number; width: number; height: number; sector: string };
+  iotEndpoints: IoTEndpointFailureForecast[];
+  maxEndpointFailureProb: number;
+  criticalEndpointCount: number;
+  iotSensorsCoordinates: { endpoint: IoTEndpointFailureForecast; pinX: number; pinY: number }[];
 }
 
 export default function SpatialZoneRiskHeatmap({
@@ -58,11 +67,23 @@ export default function SpatialZoneRiskHeatmap({
   selectedZoneId,
   onSelectZone,
   onDispatchMitigation,
+  onNavigateToMaintenance,
   className = ''
 }: SpatialZoneRiskHeatmapProps) {
   const [metricMode, setMetricMode] = useState<HeatmapMetricMode>('COMPOSITE_RISK');
   const [filterHotspotsOnly, setFilterHotspotsOnly] = useState<boolean>(false);
   const [inspectedZoneId, setInspectedZoneId] = useState<string | null>(null);
+  const [iotEndpoints, setIotEndpoints] = useState<IoTEndpointFailureForecast[]>([]);
+  const [selectedSensorPin, setSelectedSensorPin] = useState<IoTEndpointFailureForecast | null>(null);
+
+  // Sync with predictive maintenance service
+  useEffect(() => {
+    const unsub = predictiveMaintenanceService.subscribe(() => {
+      setIotEndpoints(predictiveMaintenanceService.getEndpoints());
+    });
+    setIotEndpoints(predictiveMaintenanceService.getEndpoints());
+    return () => unsub();
+  }, []);
 
   const latestTelemetry = telemetryStream[telemetryStream.length - 1] || null;
 
@@ -125,6 +146,30 @@ export default function SpatialZoneRiskHeatmap({
 
       const coords = layoutCoords[zone.id] || { x: 50, y: 50, width: 200, height: 140, sector: 'GENERAL' };
 
+      // Correlate IoT Endpoints for this facility zone
+      const zoneIotEndpoints = iotEndpoints.filter((ep) => {
+        return (
+          ep.zoneId === zone.id ||
+          ep.zoneName.toLowerCase() === zone.name.toLowerCase() ||
+          zone.name.toLowerCase().includes(ep.zoneName.toLowerCase()) ||
+          ep.zoneName.toLowerCase().includes(zone.name.toLowerCase())
+        );
+      });
+
+      const maxFailProb =
+        zoneIotEndpoints.length > 0 ? Math.max(...zoneIotEndpoints.map((e) => e.failureProbabilityPct)) : 0;
+      const criticalEpCount = zoneIotEndpoints.filter(
+        (e) => e.forecastHorizon === 'CRITICAL_FAIL_24H' || e.healthScore <= 30
+      ).length;
+
+      // Assign spatial pin coordinates inside this zone
+      const iotSensorsCoordinates = zoneIotEndpoints.map((ep, idx) => {
+        const pinOffset = 42 + idx * 80;
+        const pinX = coords.x + Math.min(coords.width - 45, pinOffset);
+        const pinY = coords.y + coords.height - 24;
+        return { endpoint: ep, pinX, pinY };
+      });
+
       return {
         zone,
         riskScore: Number(baseRisk.toFixed(1)),
@@ -139,10 +184,14 @@ export default function SpatialZoneRiskHeatmap({
         twlIndex: zone.twl || 140,
         aqi: zone.aqi || 42,
         primaryHazard: zone.activeHazards[0] || 'Elevated Thermal Gradient',
-        gridCoordinates: coords
+        gridCoordinates: coords,
+        iotEndpoints: zoneIotEndpoints,
+        maxEndpointFailureProb: maxFailProb,
+        criticalEndpointCount: criticalEpCount,
+        iotSensorsCoordinates
       };
     });
-  }, [zones, alerts, latestTelemetry]);
+  }, [zones, alerts, latestTelemetry, iotEndpoints]);
 
   // Filtered zones
   const displayedZones = useMemo(() => {
@@ -162,6 +211,12 @@ export default function SpatialZoneRiskHeatmap({
         if (z.riskScore >= 80) return { bg: 'bg-rose-950/80', border: 'border-rose-500', text: 'text-rose-400', fill: '#e11d48', glow: 'shadow-rose-600/30' };
         if (z.riskScore >= 65) return { bg: 'bg-amber-950/80', border: 'border-amber-500', text: 'text-amber-400', fill: '#f59e0b', glow: 'shadow-amber-600/30' };
         if (z.riskScore >= 40) return { bg: 'bg-amber-950/40', border: 'border-amber-700/50', text: 'text-amber-300', fill: '#d97706', glow: 'shadow-transparent' };
+        return { bg: 'bg-emerald-950/40', border: 'border-emerald-600/40', text: 'text-emerald-400', fill: '#10b981', glow: 'shadow-transparent' };
+      }
+      case 'IOT_PREDICTIVE_FAILURES': {
+        if (z.maxEndpointFailureProb >= 80) return { bg: 'bg-rose-950/80', border: 'border-rose-500', text: 'text-rose-400', fill: '#e11d48', glow: 'shadow-rose-600/30' };
+        if (z.maxEndpointFailureProb >= 60) return { bg: 'bg-amber-950/80', border: 'border-amber-500', text: 'text-amber-400', fill: '#f59e0b', glow: 'shadow-amber-600/30' };
+        if (z.maxEndpointFailureProb >= 30) return { bg: 'bg-yellow-950/50', border: 'border-yellow-600/50', text: 'text-yellow-300', fill: '#eab308', glow: 'shadow-transparent' };
         return { bg: 'bg-emerald-950/40', border: 'border-emerald-600/40', text: 'text-emerald-400', fill: '#10b981', glow: 'shadow-transparent' };
       }
       case 'THERMAL': {
@@ -187,6 +242,12 @@ export default function SpatialZoneRiskHeatmap({
     switch (metricMode) {
       case 'COMPOSITE_RISK':
         return `${z.riskScore}% Risk`;
+      case 'IOT_PREDICTIVE_FAILURES':
+        return z.criticalEndpointCount > 0
+          ? `${z.criticalEndpointCount} Critical Sensor${z.criticalEndpointCount > 1 ? 's' : ''}`
+          : z.maxEndpointFailureProb > 0
+          ? `${z.maxEndpointFailureProb}% Fail Risk`
+          : 'Nominal Hardware';
       case 'THERMAL':
         return `${z.tempC}°C Ambient`;
       case 'ACOUSTIC':
@@ -269,6 +330,18 @@ export default function SpatialZoneRiskHeatmap({
               }`}
             >
               Density
+            </button>
+            <button
+              onClick={() => setMetricMode('IOT_PREDICTIVE_FAILURES')}
+              className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer flex items-center space-x-1 ${
+                metricMode === 'IOT_PREDICTIVE_FAILURES'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Correlate IoT endpoint failure predictions with facility floor plan locations"
+            >
+              <Cpu className="w-3 h-3 text-cyan-300" />
+              <span>IoT Failures</span>
             </button>
           </div>
 
@@ -473,6 +546,90 @@ export default function SpatialZoneRiskHeatmap({
                       fill={colors.fill}
                     />
 
+                    {/* Interactive Spatial IoT Sensor Pins & Failure Status */}
+                    {z.iotSensorsCoordinates.map(({ endpoint, pinX, pinY }) => {
+                      const isEpCritical =
+                        endpoint.forecastHorizon === 'CRITICAL_FAIL_24H' || endpoint.healthScore <= 30;
+                      const isEpWarning =
+                        endpoint.forecastHorizon === 'HIGH_FAIL_72H' || endpoint.forecastHorizon === 'ELEVATED_FAIL_7D';
+                      const pinColor = isEpCritical ? '#f43f5e' : isEpWarning ? '#f59e0b' : '#06b6d4';
+                      const isPinSelected = selectedSensorPin?.endpointId === endpoint.endpointId;
+
+                      return (
+                        <g
+                          key={endpoint.endpointId}
+                          className="cursor-pointer group/pin"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSensorPin(endpoint);
+                            setInspectedZoneId(z.zone.id);
+                          }}
+                        >
+                          {/* Pulsing ring for critical endpoint failure */}
+                          {isEpCritical && (
+                            <circle
+                              cx={pinX}
+                              cy={pinY}
+                              r="11"
+                              fill="none"
+                              stroke="#f43f5e"
+                              strokeWidth="1.5"
+                              opacity="0.8"
+                              className="animate-ping"
+                            />
+                          )}
+
+                          {/* Sensor Pin Node Background */}
+                          <rect
+                            x={pinX - 18}
+                            y={pinY - 9}
+                            width="58"
+                            height="18"
+                            rx="4"
+                            fill="#020617"
+                            stroke={isPinSelected ? '#38bdf8' : pinColor}
+                            strokeWidth={isPinSelected ? 2 : 1.2}
+                            fillOpacity="0.95"
+                          />
+
+                          {/* Status Dot */}
+                          <circle cx={pinX - 10} cy={pinY} r="3.5" fill={pinColor} />
+
+                          {/* Endpoint Short Label */}
+                          <text
+                            x={pinX - 4}
+                            y={pinY + 3.5}
+                            fill={isPinSelected ? '#38bdf8' : '#f8fafc'}
+                            fontSize="8"
+                            fontWeight="bold"
+                            fontFamily="monospace"
+                          >
+                            {endpoint.endpointId
+                              .replace('SENS-', '')
+                              .replace('GATEWAY-', 'GW-')
+                              .replace('TEMP-PROBE-', 'TMP-')
+                              .slice(0, 7)}
+                          </text>
+
+                          {/* Failure Probability Tag */}
+                          <g transform={`translate(${pinX + 17}, ${pinY - 8})`}>
+                            <rect width="19" height="9" rx="2" fill={pinColor} fillOpacity="0.9" />
+                            <text
+                              x="9.5"
+                              y="7"
+                              textAnchor="middle"
+                              fill="#ffffff"
+                              fontSize="6.5"
+                              fontWeight="bold"
+                              fontFamily="monospace"
+                            >
+                              {endpoint.failureProbabilityPct}%
+                            </text>
+                          </g>
+                        </g>
+                      );
+                    })}
+
                     {/* Selection Indicator Beacon */}
                     {isSelected && (
                       <circle
@@ -491,20 +648,45 @@ export default function SpatialZoneRiskHeatmap({
 
           {/* Heatmap Legend Bar */}
           <div className="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono text-slate-400">
-            <span className="font-semibold text-slate-300">Spatial Hazard Spectrum:</span>
+            <span className="font-semibold text-slate-300">
+              {metricMode === 'IOT_PREDICTIVE_FAILURES' ? 'IoT Hardware Failure Spectrum:' : 'Spatial Hazard Spectrum:'}
+            </span>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <span>Stable (&lt;40%)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                <span>Moderate (40-64%)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
-                <span className="text-rose-400 font-bold">Hot Spot (&ge;65%)</span>
-              </div>
+              {metricMode === 'IOT_PREDICTIVE_FAILURES' ? (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <span>Nominal (&lt;30%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
+                    <span>Elevated (30-59%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    <span>High Risk (60-79%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="text-rose-400 font-bold">Imminent Fail (&ge;80%)</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <span>Stable (&lt;40%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    <span>Moderate (40-64%)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="text-rose-400 font-bold">Hot Spot (&ge;65%)</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -612,6 +794,124 @@ export default function SpatialZoneRiskHeatmap({
                 {inspectedZone.activeAlertCount > 0 && (
                   <div className="mt-2 text-[11px] text-rose-300 font-mono">
                     &bull; {inspectedZone.activeAlertCount} Active Anomaly Signals ({inspectedZone.criticalAlertCount} Critical)
+                  </div>
+                )}
+              </div>
+
+              {/* IoT Endpoint Failure Predictions & Degradation Status in this Zone */}
+              <div className="mt-3.5 p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] uppercase font-bold text-cyan-400 font-mono flex items-center gap-1.5">
+                    <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+                    IoT Endpoints in Sector ({inspectedZone.iotEndpoints.length})
+                  </span>
+                  {inspectedZone.criticalEndpointCount > 0 ? (
+                    <span className="text-[10px] font-mono text-rose-400 font-bold bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-500/40 animate-pulse">
+                      {inspectedZone.criticalEndpointCount} Imminent Failures
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/40">
+                      Telemetry Nominal
+                    </span>
+                  )}
+                </div>
+
+                {inspectedZone.iotEndpoints.length === 0 ? (
+                  <div className="text-slate-500 text-[11px] italic py-2">
+                    No active telemetry endpoints deployed in this specific sector.
+                  </div>
+                ) : (
+                  <div className="space-y-2 mt-2">
+                    {inspectedZone.iotEndpoints.map((ep) => {
+                      const isCritical = ep.forecastHorizon === 'CRITICAL_FAIL_24H' || ep.healthScore <= 30;
+                      const isWarning =
+                        ep.forecastHorizon === 'HIGH_FAIL_72H' || ep.forecastHorizon === 'ELEVATED_FAIL_7D';
+                      const isPinSelected = selectedSensorPin?.endpointId === ep.endpointId;
+
+                      return (
+                        <div
+                          key={ep.endpointId}
+                          onClick={() => setSelectedSensorPin(ep)}
+                          className={`p-2.5 rounded-lg border transition cursor-pointer ${
+                            isPinSelected
+                              ? 'bg-slate-800 border-cyan-500/80 shadow-md shadow-cyan-950/30 ring-1 ring-cyan-500/50'
+                              : isCritical
+                              ? 'bg-rose-950/30 border-rose-800/60 hover:bg-rose-950/50'
+                              : 'bg-slate-950/80 border-slate-800 hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center space-x-1.5">
+                                <span className="font-bold text-white text-[11px]">{ep.endpointName}</span>
+                                {ep.isStagedForMaintenance && (
+                                  <span className="px-1 py-0.2 rounded text-[8px] bg-indigo-950 text-indigo-300 border border-indigo-500/40 font-mono">
+                                    Staged
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400 block">{ep.endpointId}</span>
+                            </div>
+
+                            <span
+                              className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                                isCritical
+                                  ? 'bg-rose-950 text-rose-300 border-rose-500/50 animate-pulse'
+                                  : isWarning
+                                  ? 'bg-amber-950 text-amber-300 border-amber-500/50'
+                                  : 'bg-emerald-950 text-emerald-300 border-emerald-500/50'
+                              }`}
+                            >
+                              {ep.failureProbabilityPct}% Fail Prob
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1.5 mt-2 pt-1.5 border-t border-slate-800/60 text-[10px] font-mono">
+                            <div>
+                              <span className="text-slate-500 block text-[9px]">HEALTH</span>
+                              <span
+                                className={`font-bold ${
+                                  ep.healthScore <= 30
+                                    ? 'text-rose-400'
+                                    : ep.healthScore <= 50
+                                    ? 'text-amber-400'
+                                    : 'text-emerald-400'
+                                }`}
+                              >
+                                {ep.healthScore}/100
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px]">MTTF</span>
+                              <span className="font-bold text-cyan-400">{ep.mttfHours}h</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[9px]">RUL</span>
+                              <span className="font-bold text-slate-200">{ep.remainingUsefulLifeDays}d</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 text-[10px] text-slate-300 bg-slate-900 p-1.5 rounded border border-slate-800/80">
+                            <span className="text-amber-400 font-semibold">Root Vulnerability: </span>
+                            {ep.rootCauseVulnerability}
+                          </div>
+
+                          {onNavigateToMaintenance && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToMaintenance(ep.endpointId);
+                              }}
+                              className="mt-2 w-full flex items-center justify-center space-x-1 py-1 rounded bg-slate-900 hover:bg-cyan-950 text-cyan-300 border border-cyan-800/50 text-[10px] font-semibold transition cursor-pointer"
+                            >
+                              <Cpu className="w-3 h-3 text-cyan-400" />
+                              <span>Open 30-Day Predictive Degradation Curve</span>
+                              <ChevronRight className="w-3 h-3 text-cyan-400" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

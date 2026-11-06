@@ -42,6 +42,11 @@ export default function SystemComplianceAuditModule({ onSelectReport }: SystemCo
   const [filterAction, setFilterAction] = useState<string>('ALL');
   const [filterType, setFilterType] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [selectedSeverities, setSelectedSeverities] = useState<('Critical' | 'Warning' | 'Info')[]>([
+    'Critical',
+    'Warning',
+    'Info'
+  ]);
   const [selectedEvent, setSelectedEvent] = useState<ComplianceAuditEvent | null>(null);
   const [isVerifyingHash, setIsVerifyingHash] = useState<boolean>(false);
   const [hashVerificationResult, setHashVerificationResult] = useState<string | null>(null);
@@ -62,9 +67,40 @@ export default function SystemComplianceAuditModule({ onSelectReport }: SystemCo
     return () => unsub();
   }, []);
 
+  const getComplianceEventSeverity = (e: ComplianceAuditEvent): 'Critical' | 'Warning' | 'Info' => {
+    if (e.privacyShieldMetric.status === 'BLOCKED_UNAUTHORIZED') return 'Critical';
+    if (e.privacyShieldMetric.status === 'FLAGGED_ANOMALOUS_ACCESS') return 'Warning';
+    return 'Info';
+  };
+
+  const toggleSeverity = (sev: 'Critical' | 'Warning' | 'Info') => {
+    setSelectedSeverities((prev) => {
+      if (prev.includes(sev)) {
+        return prev.filter((s) => s !== sev);
+      } else {
+        return [...prev, sev];
+      }
+    });
+  };
+
+  const severityCounts = useMemo(() => {
+    const counts = { Critical: 0, Warning: 0, Info: 0 };
+    events.forEach((e) => {
+      const s = getComplianceEventSeverity(e);
+      counts[s]++;
+    });
+    return counts;
+  }, [events]);
+
   // Filtered log entries
   const filteredEvents = useMemo(() => {
     return events.filter((e) => {
+      // Multi-select severity filtering
+      const eventSev = getComplianceEventSeverity(e);
+      if (!selectedSeverities.includes(eventSev)) {
+        return false;
+      }
+
       // Free text search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -97,7 +133,7 @@ export default function SystemComplianceAuditModule({ onSelectReport }: SystemCo
 
       return true;
     });
-  }, [events, searchQuery, filterAction, filterType, filterStatus]);
+  }, [events, selectedSeverities, searchQuery, filterAction, filterType, filterStatus]);
 
   const handleVerifyHash = (event: ComplianceAuditEvent) => {
     setIsVerifyingHash(true);
@@ -422,31 +458,112 @@ export default function SystemComplianceAuditModule({ onSelectReport }: SystemCo
       )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-slate-950/70 border border-slate-800/80 p-3 rounded-lg mb-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by accessor name, user ID, department, specific report, or justification..."
-            className="w-full bg-slate-900 border border-slate-700/80 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-          />
-          {searchQuery && (
+      <div className="bg-slate-950/70 border border-slate-800/80 p-3 rounded-lg mb-4 space-y-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Search input */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by accessor name, user ID, department, specific report, or justification..."
+              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-2 text-xs text-slate-400 hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Multi-Select Severity Toggle Chips */}
+          <div className="flex items-center gap-1.5 flex-wrap bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+            <span className="text-[10px] uppercase font-mono text-slate-400 px-2 font-bold flex items-center gap-1">
+              <Filter className="w-3 h-3 text-cyan-400" />
+              Severity:
+            </span>
+
+            {/* Critical */}
             <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-2 text-xs text-slate-400 hover:text-white"
+              onClick={() => toggleSeverity('Critical')}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition border cursor-pointer ${
+                selectedSeverities.includes('Critical')
+                  ? 'bg-rose-950 text-rose-200 border-rose-500/60 shadow-sm shadow-rose-950/40 ring-1 ring-rose-500/40'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+              title="Toggle Critical severity (Blocked unauthorized accesses)"
             >
-              Clear
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  selectedSeverities.includes('Critical') ? 'bg-rose-400 animate-pulse' : 'bg-slate-600'
+                }`}
+              />
+              <span>Critical</span>
+              <span className="px-1 py-0.2 rounded text-[10px] bg-rose-900/60 font-mono text-rose-300">
+                {severityCounts.Critical}
+              </span>
             </button>
-          )}
+
+            {/* Warning */}
+            <button
+              onClick={() => toggleSeverity('Warning')}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition border cursor-pointer ${
+                selectedSeverities.includes('Warning')
+                  ? 'bg-amber-950 text-amber-200 border-amber-500/60 shadow-sm shadow-amber-950/40 ring-1 ring-amber-500/40'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+              title="Toggle Warning severity (Flagged anomalous queries)"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  selectedSeverities.includes('Warning') ? 'bg-amber-400' : 'bg-slate-600'
+                }`}
+              />
+              <span>Warning</span>
+              <span className="px-1 py-0.2 rounded text-[10px] bg-amber-900/60 font-mono text-amber-300">
+                {severityCounts.Warning}
+              </span>
+            </button>
+
+            {/* Info */}
+            <button
+              onClick={() => toggleSeverity('Info')}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition border cursor-pointer ${
+                selectedSeverities.includes('Info')
+                  ? 'bg-emerald-950 text-emerald-200 border-emerald-500/60 shadow-sm shadow-emerald-950/40 ring-1 ring-emerald-500/40'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+              title="Toggle Info severity (Compliant & authorized events)"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  selectedSeverities.includes('Info') ? 'bg-emerald-400' : 'bg-slate-600'
+                }`}
+              />
+              <span>Info</span>
+              <span className="px-1 py-0.2 rounded text-[10px] bg-emerald-900/60 font-mono text-emerald-300">
+                {severityCounts.Info}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setSelectedSeverities(['Critical', 'Warning', 'Info'])}
+              className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 px-1 py-0.5 ml-1"
+            >
+              All
+            </button>
+          </div>
         </div>
 
         {/* Filter Dropdowns */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Action Filter */}
-          <select
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Action Filter */}
+            <select
             value={filterAction}
             onChange={(e) => setFilterAction(e.target.value)}
             aria-label="Filter by action"
@@ -491,6 +608,7 @@ export default function SystemComplianceAuditModule({ onSelectReport }: SystemCo
           </select>
         </div>
       </div>
+    </div>
 
       {/* Main Table */}
       <div className="overflow-x-auto border border-slate-800 rounded-lg">

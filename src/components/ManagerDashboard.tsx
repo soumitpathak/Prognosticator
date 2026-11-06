@@ -3948,6 +3948,9 @@ export default function ManagerDashboard() {
           setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
           setTimeout(() => setProtocolActiveNotice(null), 7000);
         }}
+        onNavigateToMaintenance={(endpointId) => {
+          setManagerTab('predictiveMaintenance');
+        }}
       />
 
       {/* Explainable AI (XAI) Log Window: Top Contributing Factors for High-Risk Anomaly Detections by LSTM-Kalman Engine */}

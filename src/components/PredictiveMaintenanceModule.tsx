@@ -54,6 +54,11 @@ export default function PredictiveMaintenanceModule({
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>('SENS-VIB-402');
   const [filterHorizon, setFilterHorizon] = useState<string>('ALL');
   const [filterType, setFilterType] = useState<string>('ALL');
+  const [selectedSeverities, setSelectedSeverities] = useState<('Critical' | 'Warning' | 'Info')[]>([
+    'Critical',
+    'Warning',
+    'Info'
+  ]);
   const [stressMultiplier, setStressMultiplier] = useState<number>(1.0);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -68,17 +73,46 @@ export default function PredictiveMaintenanceModule({
     return () => unsub();
   }, []);
 
+  const getEndpointSeverity = (ep: IoTEndpointFailureForecast): 'Critical' | 'Warning' | 'Info' => {
+    if (ep.forecastHorizon === 'CRITICAL_FAIL_24H' || ep.healthScore <= 30) return 'Critical';
+    if (ep.forecastHorizon === 'HIGH_FAIL_72H' || ep.forecastHorizon === 'ELEVATED_FAIL_7D') return 'Warning';
+    return 'Info';
+  };
+
+  const toggleSeverity = (sev: 'Critical' | 'Warning' | 'Info') => {
+    setSelectedSeverities((prev) => {
+      if (prev.includes(sev)) {
+        return prev.filter((s) => s !== sev);
+      } else {
+        return [...prev, sev];
+      }
+    });
+  };
+
+  const severityCounts = useMemo(() => {
+    const counts = { Critical: 0, Warning: 0, Info: 0 };
+    endpoints.forEach((ep) => {
+      const s = getEndpointSeverity(ep);
+      counts[s]++;
+    });
+    return counts;
+  }, [endpoints]);
+
   const selectedEndpoint = useMemo(() => {
     return endpoints.find((ep) => ep.endpointId === selectedEndpointId) || endpoints[0];
   }, [endpoints, selectedEndpointId]);
 
   const filteredEndpoints = useMemo(() => {
     return endpoints.filter((ep) => {
+      // Multi-select severity filtering
+      const epSeverity = getEndpointSeverity(ep);
+      if (!selectedSeverities.includes(epSeverity)) return false;
+
       if (filterHorizon !== 'ALL' && ep.forecastHorizon !== filterHorizon) return false;
       if (filterType !== 'ALL' && ep.endpointType !== filterType) return false;
       return true;
     });
-  }, [endpoints, filterHorizon, filterType]);
+  }, [endpoints, selectedSeverities, filterHorizon, filterType]);
 
   const handleStressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
@@ -305,6 +339,93 @@ export default function PredictiveMaintenanceModule({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mt-5">
         {/* Left Column: Endpoints List & Filters */}
         <div className="lg:col-span-5 space-y-3">
+          {/* Multi-Select Severity Level Filter Bar */}
+          <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2.5 space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                <Sliders className="w-3 h-3 text-cyan-400" />
+                Alert Severity Filter
+              </span>
+              <div className="flex items-center space-x-1.5 text-[10px]">
+                <button
+                  onClick={() => setSelectedSeverities(['Critical', 'Warning', 'Info'])}
+                  className="text-cyan-400 hover:text-cyan-300 transition cursor-pointer font-medium"
+                >
+                  All
+                </button>
+                <span className="text-slate-600">|</span>
+                <button
+                  onClick={() => setSelectedSeverities([])}
+                  className="text-slate-400 hover:text-slate-200 transition cursor-pointer font-medium"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Critical Chip */}
+              <button
+                onClick={() => toggleSeverity('Critical')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition border cursor-pointer ${
+                  selectedSeverities.includes('Critical')
+                    ? 'bg-rose-950 text-rose-200 border-rose-500/60 shadow-sm shadow-rose-950/40 ring-1 ring-rose-500/40'
+                    : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    selectedSeverities.includes('Critical') ? 'bg-rose-400 animate-pulse' : 'bg-slate-600'
+                  }`}
+                />
+                <span>Critical</span>
+                <span className="px-1 py-0.2 rounded text-[10px] bg-rose-900/60 font-mono text-rose-300">
+                  {severityCounts.Critical}
+                </span>
+              </button>
+
+              {/* Warning Chip */}
+              <button
+                onClick={() => toggleSeverity('Warning')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition border cursor-pointer ${
+                  selectedSeverities.includes('Warning')
+                    ? 'bg-amber-950 text-amber-200 border-amber-500/60 shadow-sm shadow-amber-950/40 ring-1 ring-amber-500/40'
+                    : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    selectedSeverities.includes('Warning') ? 'bg-amber-400' : 'bg-slate-600'
+                  }`}
+                />
+                <span>Warning</span>
+                <span className="px-1 py-0.2 rounded text-[10px] bg-amber-900/60 font-mono text-amber-300">
+                  {severityCounts.Warning}
+                </span>
+              </button>
+
+              {/* Info Chip */}
+              <button
+                onClick={() => toggleSeverity('Info')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition border cursor-pointer ${
+                  selectedSeverities.includes('Info')
+                    ? 'bg-emerald-950 text-emerald-200 border-emerald-500/60 shadow-sm shadow-emerald-950/40 ring-1 ring-emerald-500/40'
+                    : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    selectedSeverities.includes('Info') ? 'bg-emerald-400' : 'bg-slate-600'
+                  }`}
+                />
+                <span>Info</span>
+                <span className="px-1 py-0.2 rounded text-[10px] bg-emerald-900/60 font-mono text-emerald-300">
+                  {severityCounts.Info}
+                </span>
+              </button>
+            </div>
+          </div>
+
           {/* Filters */}
           <div className="flex items-center space-x-2">
             <select
