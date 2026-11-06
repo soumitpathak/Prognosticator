@@ -146,6 +146,14 @@ import { causalCorrelationEngineService } from '../services/causalCorrelationEng
 import SystemComplianceAuditModule from './SystemComplianceAuditModule';
 import PredictiveMaintenanceModule from './PredictiveMaintenanceModule';
 import CorrelationEngineModule from './CorrelationEngineModule';
+import TopRightNotificationCenter from './TopRightNotificationCenter';
+import FacilityZonesRiskTrendChart from './FacilityZonesRiskTrendChart';
+import SecurityAuditLogPanel from './SecurityAuditLogPanel';
+import AnomalyTrendSparklineWidget from './AnomalyTrendSparklineWidget';
+import ZoneAnomalyConcentrationHeatmap from './ZoneAnomalyConcentrationHeatmap';
+import PrognosticForecastPanel from './PrognosticForecastPanel';
+import PredictiveTrendAlertsPanel from './PredictiveTrendAlertsPanel';
+import { exportCurrentAnomalyLogsAndTrendsCsv } from '../services/complianceCsvExport';
 import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
@@ -2061,6 +2069,46 @@ export default function ManagerDashboard() {
     }
   }, [activeAlerts, activeZoneObj]);
 
+  // Exports current anomaly detection logs and trend data as RFC 4180 CSV for statutory compliance reporting
+  const handleExportAnomalyLogsAndTrendDataCsv = useCallback(() => {
+    try {
+      const res = exportCurrentAnomalyLogsAndTrendsCsv({
+        activeAlerts,
+        anomalyAuditRecords,
+        trendData: anomalyTrend30d,
+        zones,
+        telemetryStream,
+        supervisorName: 'Alex Mercer (EHS Safety Supervisor)',
+        auditStandard: 'ISO 45001:2018 / OSHA 29 CFR 1910.120',
+        currentZoneName: activeZoneObj.name
+      });
+
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-COMP-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor',
+        category: 'REPORT_EXPORT',
+        targetModule: 'Compliance Reporting Engine',
+        parameter: 'Current Anomaly Logs & Trend Data CSV Export',
+        previousValue: 'N/A',
+        newValue: `Exported ${res.recordCount} records (active alerts, audit trail, 30-day trends): ${res.filename}`,
+        justification: 'Exported complete statutory compliance CSV report containing current anomaly logs and trend data under ISO 45001 / OSHA 1910 standards.',
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `Compliance Anomaly Logs & Trend Data CSV exported (${res.recordCount} records): ${res.filename}`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 7000);
+    } catch (err: any) {
+      console.error('Failed to export compliance CSV:', err);
+      setProtocolActiveNotice('Failed to export CSV: ' + (err?.message || 'Unknown error'));
+    }
+  }, [activeAlerts, anomalyAuditRecords, anomalyTrend30d, zones, telemetryStream, activeZoneObj]);
+
   // Initial demonstration high-risk population health anomaly toast alert on mount
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -2804,6 +2852,119 @@ export default function ManagerDashboard() {
 
         {/* Global Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Top-Right Notification Center anchored in top right */}
+          <TopRightNotificationCenter
+            alerts={activeAlerts}
+            onViewDetails={handleOpenAnomalyDetails}
+            onAcknowledgeAlert={handleAcknowledgeAlert}
+            onAcknowledgeAll={(ids) => {
+              setActiveAlerts((prev) =>
+                prev.map((a) => (ids.includes(a.id) ? { ...a, acknowledged: true } : a))
+              );
+              setProtocolActiveNotice('All high-risk anomaly event notifications acknowledged.');
+              setTimeout(() => setProtocolActiveNotice(null), 5000);
+            }}
+            onSimulateHighRiskAlert={() => {
+              triggerCriticalAnomalyNotification({
+                department: 'Civil & Structural Construction',
+                confidenceLevel: 0.952,
+                riskProbability: 0.912,
+                riskTier: 'CRITICAL_RISK',
+                locationZone: activeZoneObj.name,
+                zoneId: activeZoneObj.id,
+                cohortCount: activeZoneObj.count,
+                workerPseudonym: 'W-9921',
+                anomalyMetric: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
+                measuredValue: 'Heart Rate 142 BPM, Skin Temp 38.8°C',
+                thresholdLimit: 'HR Max 115 BPM, Skin 37.8°C',
+                reconstructionMse: 0.428,
+                recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
+                force: true
+              });
+            }}
+            soundEnabled={toastSoundEnabled}
+            onToggleSound={() => setToastSoundEnabled((prev) => !prev)}
+          />
+
+          {/* Export Compliance CSV Button: Current Anomaly Logs & Trend Data */}
+          <button
+            onClick={handleExportAnomalyLogsAndTrendDataCsv}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 cursor-pointer"
+            title="Export current anomaly detection logs and trend data as a CSV file for compliance reporting (ISO 45001 / OSHA 1910)"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
+            <span>Export Compliance CSV</span>
+          </button>
+
+          {/* Quick Trigger: Anomaly Algorithm Sensitivity Settings */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('algorithm-sensitivity-config-panel');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
+              }
+            }}
+            className="flex items-center space-x-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Dynamically adjust sensitivity thresholds for anomaly detection algorithms"
+          >
+            <Settings className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Sensitivity Settings</span>
+          </button>
+
+          {/* Quick Trigger: Security Audit Log */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('security-audit-log-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Security Audit Log panel listing recent anomaly detection events"
+          >
+            <Lock className="h-3.5 w-3.5 text-rose-400" />
+            <span>Security Audit Log</span>
+          </button>
+
+          {/* Quick Trigger: Zone Anomaly Concentration Heatmap */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('zone-anomaly-concentration-heatmap');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Visual Heatmap representing geographic or zone-based health anomaly concentration levels"
+          >
+            <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+            <span>Concentration Heatmap</span>
+          </button>
+
+          {/* Quick Trigger: 24-48h Prognostic Forecast */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('prognostic-forecast-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Prognostic Forecast panel projecting potential workforce health risks 24-48 hours ahead"
+          >
+            <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
+            <span>24-48h Prognostic Forecast</span>
+          </button>
+
+          {/* Quick Trigger: Predictive Trend Alerts (Kalman Drift) */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('predictive-trend-alerts-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center space-x-1.5 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-500/50 text-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Predictive Trend Alerts panel using Kalman-filtered data to surface long-term negative health trends"
+          >
+            <TrendingDown className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+            <span>Predictive Trend Alerts</span>
+          </button>
+
           {/* Longitudinal Timeframe / Date Range Filter in Top Navigation */}
           <DateRangePicker
             value={healthDateRange}
@@ -3991,8 +4152,8 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* 4 Primary Critical KPI Status Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {/* 5 Primary Critical KPI Status Cards (Including Real-Time Health Anomaly Trend Sparkline) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
           {/* Card 1: Average Workforce Risk Score */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
             <div className="flex justify-between items-start mb-2">
@@ -4017,7 +4178,17 @@ export default function ManagerDashboard() {
             </div>
           </div>
 
-          {/* Card 2: Anomalies Detected (24h) */}
+          {/* Card 2: Real-Time Anomaly Trend Sparkline Component */}
+          <AnomalyTrendSparklineWidget
+            alerts={activeAlerts}
+            telemetryStream={telemetryStream}
+            onClickInspect={() => {
+              const el = document.getElementById('anomaly-trend-30d-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+          />
+
+          {/* Card 3: Anomalies Detected (24h) */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
             <div className="flex justify-between items-start mb-2">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -4216,6 +4387,39 @@ export default function ManagerDashboard() {
             setTimeout(() => setProtocolActiveNotice(null), 7000);
           }
         }}
+      />
+
+      {/* Recharts Multi-Zone Facility Health Risk Trends Over Time Line Chart */}
+      <FacilityZonesRiskTrendChart
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        className="mb-6"
+      />
+
+      {/* Zone Anomaly Concentration Heatmap: Visual Heatmap Representing Geographic or Zone-Based Health Anomaly Concentration Levels */}
+      <ZoneAnomalyConcentrationHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(zoneObj, action) => {
+          setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        className="mb-6"
       />
 
       {/* Spatial Distribution Risk Heatmap: Visual Identification of Hazard Hot Spots Across Zones Alongside Existing Charts */}
@@ -4635,6 +4839,36 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* Predictive Trend Alerts (Kalman Drift Early Warning): Identifies and Surfaces Long-Term Negative Health Trends Before High-Risk Alerts Trigger */}
+      <PredictiveTrendAlertsPanel
+        telemetryStream={telemetryStream}
+        zones={zones}
+        onDeployPrecursorAction={(trendAlert, directive) => {
+          const newAudit: AuditEvent = {
+            id: `AUD-TRD-${Date.now().toString().slice(-4)}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            eventType: 'ALERT_DISPATCH',
+            zone: trendAlert.zoneName,
+            cohortCount: trendAlert.cohortSize,
+            riskTier: 'MODERATE_RISK',
+            privacyEnforced: 'Differential Privacy Enforced (k=12)',
+            actionTaken: `Precursor Early Countermeasure Deployed: ${directive}`
+          };
+          setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
+          setProtocolActiveNotice(`Predictive Trend Precursor Action Staged: ${directive}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onInspectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
       {/* High-Priority Active Anomalies Widget (Using Real-Time Telemetry to Highlight Urgent Health & Safety Deviations) */}
       <ActiveAnomaliesWidget
         alerts={activeAlerts}
@@ -4740,6 +4974,37 @@ export default function ManagerDashboard() {
           setIsolatedHealthSignal('riskScore');
           const el = document.getElementById('historical-health-chart-card');
           el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        className="mb-6"
+      />
+
+      {/* 24-48 Hour Prognostic Forecast Panel: Projecting Potential Workforce Health Risks 24-48 Hours Ahead Using Simulated Trend Data */}
+      <PrognosticForecastPanel
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZone={activeZoneObj}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onApplyPreemptiveProtocol={(scenarioType, details) => {
+          const newAudit: AuditEvent = {
+            id: `AUD-PROG-${Date.now().toString().slice(-4)}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            eventType: 'ALERT_DISPATCH',
+            zone: activeZoneObj.name,
+            cohortCount: activeZoneObj.count,
+            riskTier: 'CRITICAL_RISK',
+            privacyEnforced: 'Differential Privacy Enforced (k=12)',
+            actionTaken: details
+          };
+          setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
+          setProtocolActiveNotice(`Prognostic 24-48h Pre-emptive Countermeasure staged: ${details}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
         }}
         className="mb-6"
       />
@@ -5567,6 +5832,18 @@ export default function ManagerDashboard() {
         }}
         incidentAssignments={incidentAssignments}
         onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
+      />
+
+      {/* Security Audit Log Panel: Listing Recent Anomaly Detection Events with Severity Indicators & Timestamps */}
+      <SecurityAuditLogPanel
+        alerts={activeAlerts}
+        anomalyAuditRecords={anomalyAuditRecords}
+        zones={zones}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onAcknowledgeAll={handleAcknowledgeAllAlerts}
+        onViewDetails={handleOpenAnomalyDetails}
+        onExportCsv={handleExportAnomalyLogsAndTrendDataCsv}
+        className="mb-6"
       />
 
       {/* System Audit Log Component: Manual Changes to Sensitivity Thresholds & Zone Configurations */}
