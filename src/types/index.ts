@@ -845,5 +845,206 @@ export interface WorkerDensityCorrelationSummary {
   }>;
 }
 
+// -------------------------------------------------------------
+// BROWSER-BASED DESKTOP NOTIFICATION SERVICE TYPES
+// -------------------------------------------------------------
+export interface DesktopNotificationConfig {
+  enabled: boolean;
+  permission: 'granted' | 'denied' | 'default' | 'unsupported';
+  notifyOnlyWhenTabbedOut: boolean;
+  minimumSeverity: 'CRITICAL' | 'HIGH';
+  soundChimeEnabled: boolean;
+  cooldownSeconds: number;
+  lastAlertSentAt?: number;
+}
 
+export interface DesktopAlertPayload {
+  id: string;
+  title: string;
+  body: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MODERATE';
+  zone: string;
+  metric: string;
+  timestamp: string;
+  actionRequired: string;
+}
 
+// -------------------------------------------------------------
+// SYSTEM COMPLIANCE & HIPAA AUDIT TYPES
+// -------------------------------------------------------------
+export type ComplianceAccessAction =
+  | 'VIEWED_STREAM'
+  | 'EXPORTED_PDF'
+  | 'EXPORTED_CSV'
+  | 'OVERRODE_ALGORITHM_THRESHOLD'
+  | 'DECRYPTED_PHI'
+  | 'CONSENT_AUDITED'
+  | 'EMERGENCY_OVERRIDE';
+
+export type ComplianceReportType =
+  | 'BIOMETRIC_TELEMETRY'
+  | 'EXECUTIVE_SAFETY_REPORT'
+  | 'WORKER_HEALTH_PHI'
+  | 'ANOMALY_FORECAST_EXPORT'
+  | 'ZONE_INCIDENT_DOSSIER'
+  | 'POPULATION_HEALTH_EPIDEMIOLOGY';
+
+export type ComplianceStatus =
+  | 'COMPLIANT_AUTHORIZED'
+  | 'ELEVATED_PRIVILEGE'
+  | 'FLAGGED_ANOMALOUS_ACCESS'
+  | 'BLOCKED_UNAUTHORIZED';
+
+export interface ComplianceAuditEvent {
+  id: string;
+  timestamp: string;
+  accessorId: string;
+  accessorName: string;
+  accessorRole: string;
+  department: string;
+  reportName: string;
+  reportType: ComplianceReportType;
+  accessAction: ComplianceAccessAction;
+  hipaaClassification: string;
+  privacyShieldMetric: {
+    epsilonConsumed: number;
+    kAnonymityCount: number;
+    laplaceNoiseBudgetRemaining: number;
+    status: ComplianceStatus;
+  };
+  dataSubjectCount: number;
+  justification: string;
+  ipAddress: string;
+  terminalId: string;
+  cryptographicHash: string;
+  flaggedReason?: string;
+}
+
+export interface ComplianceSummaryMetrics {
+  totalEvents24h: number;
+  complianceRatePct: number;
+  activeAccessorsCount: number;
+  totalEpsilonExpended: number;
+  flaggedCount: number;
+  blockedCount: number;
+  averageKAnonymity: number;
+}
+
+// -------------------------------------------------------------
+// PREDICTIVE IOT ENDPOINT MAINTENANCE TYPES
+// -------------------------------------------------------------
+export type IoTEndpointType =
+  | 'ACCELEROMETER'
+  | 'PPG_BIOMETRIC'
+  | 'SKIN_TEMP_PROBE'
+  | 'GAS_PID'
+  | 'ENVIRONMENTAL_COMBO'
+  | 'EDGE_GATEWAY';
+
+export type EndpointFailureHorizon =
+  | 'CRITICAL_FAIL_24H'
+  | 'HIGH_FAIL_72H'
+  | 'ELEVATED_FAIL_7D'
+  | 'NOMINAL';
+
+export interface DegradationDataPoint {
+  day: string;
+  observedHealth: number;
+  predictedDegradation: number;
+  failureThreshold: number;
+}
+
+export interface ThirtyDayDegradationProjectionPoint {
+  day: number; // 1 to 30
+  dayLabel: string; // "Day +1", "Day +2", ...
+  dateLabel: string; // "Nov 07", "Nov 08", ...
+  healthIndex: number; // 0 to 100
+  upperConfidenceBound: number;
+  lowerConfidenceBound: number;
+  dailyDegradationRate: number; // %/day
+  cumulativeDegradationPct: number; // cumulative % loss from baseline
+  failureProbabilityPct: number; // 0 to 100%
+  criticalThreshold: number; // 30
+  warningFloor: number; // 50
+  status: 'NOMINAL' | 'ELEVATED' | 'CRITICAL_FAILURE';
+}
+
+export interface IoTEndpointFailureForecast {
+  endpointId: string;
+  endpointName: string;
+  endpointType: IoTEndpointType;
+  zoneId: string;
+  zoneName: string;
+  firmwareVersion: string;
+  installDate: string;
+  lastCalibrationDate: string;
+  healthScore: number; // 0 to 100
+  failureProbabilityPct: number; // 0 to 100
+  degradationRatePctPerDay: number;
+  mttfHours: number; // Mean Time to Failure
+  remainingUsefulLifeDays: number;
+  forecastHorizon: EndpointFailureHorizon;
+  driftDeltaPercent: number;
+  signalToNoiseRatioDb: number;
+  batteryVoltage: number;
+  packetLossRatePct: number;
+  currentAnomalyAttribution: string;
+  historicalDegradationSeries: DegradationDataPoint[];
+  thirtyDayProjection?: ThirtyDayDegradationProjectionPoint[];
+  rootCauseVulnerability: string;
+  prescribedPreventiveAction: string;
+  costAvoidanceUsd: number;
+  isStagedForMaintenance?: boolean;
+}
+
+// -------------------------------------------------------------
+// CAUSAL INTER-ZONE CORRELATION ENGINE TYPES
+// -------------------------------------------------------------
+export type TransmissionVector =
+  | 'THERMAL_PLUME'
+  | 'HVAC_CONDUIT'
+  | 'WORKER_FLOW'
+  | 'ACOUSTIC_RESONANCE'
+  | 'ELECTRICAL_BUS';
+
+export interface CausalZoneNode {
+  zoneId: string;
+  zoneName: string;
+  riskScore: number;
+  activeAnomaliesCount: number;
+  status: 'CRITICAL' | 'MODERATE' | 'STABLE';
+  adjacentZoneIds: string[];
+  x: number; // % layout
+  y: number; // % layout
+  headcount: number;
+  ambientTempC: number;
+}
+
+export interface CausalPropagationLink {
+  id: string;
+  sourceZoneId: string;
+  sourceZoneName: string;
+  targetZoneId: string;
+  targetZoneName: string;
+  pearsonR: number; // -1.0 to +1.0
+  causalConfidencePct: number; // 0 to 100
+  timeLagMinutes: number; // minutes before target shows anomalies
+  transmissionVector: TransmissionVector;
+  transmissionDescription: string;
+  isCascadingActive: boolean;
+  recentPropagationCount: number;
+  decouplingRecommendation: string;
+  historicalPValue: number;
+}
+
+export interface CausalIncidentChainEvent {
+  step: number;
+  timeOffset: string;
+  zoneId: string;
+  zoneName: string;
+  incidentType: string;
+  metricValue: string;
+  causalRole: 'ORIGIN' | 'INTERMEDIATE_PROPAGATION' | 'TERMINAL_CASCADE';
+  delayFromOriginMins: number;
+  confidencePct: number;
+}

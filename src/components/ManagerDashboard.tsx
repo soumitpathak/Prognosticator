@@ -132,7 +132,14 @@ import WorkerDensityCorrelationTab from './WorkerDensityCorrelationTab';
 import TeamAlertMobileModal from './TeamAlertMobileModal';
 import { teamAlertService } from '../services/teamAlertService';
 import { exportDailySummaryReportCsv } from '../services/dailySummaryCsvExport';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail } from 'lucide-react';
+import { desktopNotificationService } from '../services/desktopNotificationService';
+import { systemComplianceService } from '../services/systemComplianceService';
+import { predictiveMaintenanceService } from '../services/predictiveMaintenanceService';
+import { causalCorrelationEngineService } from '../services/causalCorrelationEngineService';
+import SystemComplianceAuditModule from './SystemComplianceAuditModule';
+import PredictiveMaintenanceModule from './PredictiveMaintenanceModule';
+import CorrelationEngineModule from './CorrelationEngineModule';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -212,8 +219,21 @@ export default function ManagerDashboard() {
   );
   const lastKalmanNotificationRef = useRef<number>(0);
 
-  // Modals & Drawers
-  const [managerTab, setManagerTab] = useState<'live' | 'density' | 'patterns'>('live');
+  // Subscribe to centralized browser desktop notification service
+  useEffect(() => {
+    const unsub = desktopNotificationService.subscribe((cfg) => {
+      setDesktopNotificationsEnabled(cfg.enabled);
+      setDesktopNotificationPermission(
+        cfg.permission === 'unsupported' ? 'denied' : (cfg.permission as NotificationPermission)
+      );
+    });
+    return () => unsub();
+  }, []);
+
+  // Modals & Primary View Tabs
+  const [managerTab, setManagerTab] = useState<
+    'live' | 'compliance' | 'predictiveMaintenance' | 'correlationEngine' | 'density' | 'patterns'
+  >('live');
   const [isTeamAlertModalOpen, setIsTeamAlertModalOpen] = useState<boolean>(false);
   const [unreadTeamAlertCount, setUnreadTeamAlertCount] = useState<number>(() =>
     teamAlertService.getUnreadCount()
@@ -661,6 +681,42 @@ export default function ManagerDashboard() {
       };
 
       setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 4));
+
+      // Trigger Browser-Based Desktop Alert when tabbed out (or forced)
+      if (effectiveRiskTier === 'CRITICAL_RISK') {
+        desktopNotificationService.notifyAnomaly({
+          id: newToast.id,
+          title: `🚨 CRITICAL ANOMALY: ${newToast.department}`,
+          body: `Zone: ${newToast.zoneName}\nMetric: ${newToast.anomalyMetric} (${newToast.measuredValue})\nAction: ${newToast.recommendedAction}`,
+          severity: 'CRITICAL',
+          zone: newToast.zoneName,
+          metric: `${newToast.anomalyMetric} (${newToast.measuredValue})`,
+          timestamp: newToast.timestamp,
+          actionRequired: newToast.recommendedAction
+        });
+
+        // Record HIPAA-compliant access & alert review event
+        systemComplianceService.logEvent({
+          accessorId: 'SYS-AUTOPILOT-01',
+          accessorName: 'Prognosticator AI Core & Safety Sentinel',
+          accessorRole: 'Autonomous Health Surveillance Core',
+          department: newToast.department,
+          reportName: `Critical Anomaly Telemetry Dossier (${newToast.zoneName})`,
+          reportType: 'BIOMETRIC_TELEMETRY',
+          accessAction: 'VIEWED_STREAM',
+          hipaaClassification: 'HIPAA §164.312(b) Audit Controls & Real-Time Alert Review',
+          privacyShieldMetric: {
+            epsilonConsumed: 0.05,
+            kAnonymityCount: newToast.cohortCount || 18,
+            laplaceNoiseBudgetRemaining: 2.85,
+            status: 'COMPLIANT_AUTHORIZED'
+          },
+          dataSubjectCount: newToast.cohortCount || 18,
+          justification: `Urgent early-warning detection for ${newToast.anomalyMetric} in ${newToast.zoneName}.`,
+          ipAddress: '10.240.8.14',
+          terminalId: 'OPS-MGR-TERMINAL-1'
+        });
+      }
 
       if (toastSoundEnabled) {
         const chimeSev = effectiveRiskTier === 'HIGH_RISK' ? 'HIGH' : 'CRITICAL';
@@ -1689,25 +1745,15 @@ export default function ManagerDashboard() {
 
   // Desktop Notifications & Kalman Filter Confidence Alert Handlers
   const requestDesktopNotificationPermission = useCallback(async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      setProtocolActiveNotice('Desktop Notifications API is not supported by your browser environment.');
+    const perm = await desktopNotificationService.requestPermission();
+    setDesktopNotificationPermission(perm === 'unsupported' ? 'denied' : (perm as NotificationPermission));
+    if (perm === 'granted') {
+      setProtocolActiveNotice('Desktop Notifications active: You will receive OS alerts for critical anomalies when tabbed out.');
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+      return true;
+    } else {
+      setProtocolActiveNotice('Desktop Notification permission dismissed or denied. Tab title flashing & audio chime remain active.');
       setTimeout(() => setProtocolActiveNotice(null), 5000);
-      return false;
-    }
-    try {
-      const permission = await Notification.requestPermission();
-      setDesktopNotificationPermission(permission);
-      if (permission === 'granted') {
-        setProtocolActiveNotice('Desktop Notifications enabled: Alerts will trigger when Kalman confidence drops below threshold.');
-        setTimeout(() => setProtocolActiveNotice(null), 6000);
-        return true;
-      } else {
-        setProtocolActiveNotice('Desktop Notification permission was dismissed or denied.');
-        setTimeout(() => setProtocolActiveNotice(null), 5000);
-        return false;
-      }
-    } catch (err) {
-      console.warn('Notification permission error:', err);
       return false;
     }
   }, []);
@@ -1805,27 +1851,22 @@ export default function ManagerDashboard() {
   }, [kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification]);
 
   const handleTestDesktopNotification = useCallback(async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      setProtocolActiveNotice('Desktop Notifications API is not supported by your browser environment.');
-      setTimeout(() => setProtocolActiveNotice(null), 5000);
-      return;
-    }
-    if (Notification.permission !== 'granted') {
-      const granted = await requestDesktopNotificationPermission();
-      if (!granted) return;
-    }
-    try {
-      new Notification('Prognosticator Sentinel Test', {
-        body: `Desktop notifications are operational! Current Kalman Filter confidence: ${kalmanConfidence.toFixed(1)}% (Threshold: ${kalmanConfidenceThreshold}%).`,
-        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%2306b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
-        tag: 'test-notification'
-      });
-      setProtocolActiveNotice('Test desktop notification dispatched to your operating system desktop.');
-      setTimeout(() => setProtocolActiveNotice(null), 5000);
-    } catch (e) {
-      console.warn('Test notification failed:', e);
-    }
-  }, [kalmanConfidence, kalmanConfidenceThreshold, requestDesktopNotificationPermission]);
+    desktopNotificationService.notifyAnomaly(
+      {
+        id: `TEST-DESKTOP-${Date.now()}`,
+        title: '🚨 CRITICAL TEST ALERT: Autonomous Heat Surge',
+        body: 'Sector 4: Extreme apparent heat 41.2°C, Worker W-9921 HRV dropped to 28ms. Immediate cooling evacuation staged.',
+        severity: 'CRITICAL',
+        zone: 'Outdoor-Construction-Sector-4',
+        metric: 'Thermal Strain & Tachycardia Spike',
+        timestamp: new Date().toISOString(),
+        actionRequired: 'Evacuate to shaded cooling tent with oral hydration.'
+      },
+      { forceTrigger: true }
+    );
+    setProtocolActiveNotice('Test Desktop Alert dispatched! (Audio chime synthesized and OS notification dispatched)');
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  }, []);
 
   // Serializes the current active anomaly state into RFC 4180 CSV and triggers browser download for audit logs
   const handleExportCurrentAnomalyCsvDirect = useCallback(() => {
@@ -2626,6 +2667,49 @@ export default function ManagerDashboard() {
                 Synced
               </span>
             )}
+          </button>
+
+          {/* Worker Density Trends & D3 Heatmap Toggle Button */}
+          {/* Compliance Audit (HIPAA) Quick Toggle Button */}
+          <button
+            onClick={() => setManagerTab((prev) => (prev === 'compliance' ? 'live' : 'compliance'))}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              managerTab === 'compliance'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-300 shadow-md shadow-emerald-500/30'
+                : 'bg-emerald-950/70 hover:bg-emerald-900/80 border-emerald-500/50 text-emerald-200'
+            }`}
+            title="Switch to HIPAA System Compliance Audit and Searchable Access History"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+            <span>{managerTab === 'compliance' ? '← Live Operations' : 'Compliance Audit (HIPAA)'}</span>
+          </button>
+
+          {/* Predictive Maintenance (IoT Forecast) Quick Toggle Button */}
+          <button
+            onClick={() => setManagerTab((prev) => (prev === 'predictiveMaintenance' ? 'live' : 'predictiveMaintenance'))}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              managerTab === 'predictiveMaintenance'
+                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white border-cyan-300 shadow-md shadow-cyan-500/30'
+                : 'bg-cyan-950/70 hover:bg-cyan-900/80 border-cyan-500/50 text-cyan-200'
+            }`}
+            title="Switch to IoT Endpoint Predictive Failure Forecasting and Degradation Rate Analysis"
+          >
+            <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+            <span>{managerTab === 'predictiveMaintenance' ? '← Live Operations' : 'Predictive IoT'}</span>
+          </button>
+
+          {/* Inter-Zone Causal Correlation Engine Quick Toggle Button */}
+          <button
+            onClick={() => setManagerTab((prev) => (prev === 'correlationEngine' ? 'live' : 'correlationEngine'))}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              managerTab === 'correlationEngine'
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white border-indigo-300 shadow-md shadow-indigo-500/30'
+                : 'bg-indigo-950/70 hover:bg-indigo-900/80 border-indigo-500/50 text-indigo-200'
+            }`}
+            title="Switch to Inter-Zone Spatio-Temporal Causal Correlation Engine & Link Map"
+          >
+            <GitMerge className="h-3.5 w-3.5 text-indigo-400" />
+            <span>{managerTab === 'correlationEngine' ? '← Live Operations' : 'Causal Links'}</span>
           </button>
 
           {/* Worker Density Trends & D3 Heatmap Toggle Button */}
@@ -3473,76 +3557,174 @@ export default function ManagerDashboard() {
         </div>
       </header>
 
-      {/* Primary Dashboard View Mode Tabs: Live Operations vs Pattern Library */}
+      {/* Primary Dashboard View Mode Tabs: Live Operations, Compliance Audit, Predictive IoT, Causal Links, Density, Pattern Library */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-6 bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-lg">
-        <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-slate-800">
+        <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-slate-800 flex-wrap gap-1">
           <button
             onClick={() => setManagerTab('live')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
               managerTab === 'live'
                 ? 'bg-cyan-600 text-white shadow-md shadow-cyan-900/40'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
             <Activity className="h-4 w-4" />
-            <span>Live Operations Dashboard</span>
+            <span>Live Operations</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-900 text-cyan-300 font-mono">
               Real-Time
             </span>
           </button>
 
           <button
+            onClick={() => setManagerTab('compliance')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'compliance'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4 text-emerald-300" />
+            <span>System Compliance Audit</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
+              HIPAA
+            </span>
+          </button>
+
+          <button
+            onClick={() => setManagerTab('predictiveMaintenance')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'predictiveMaintenance'
+                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md shadow-cyan-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Cpu className="h-4 w-4 text-cyan-300" />
+            <span>Predictive Maintenance</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 font-mono font-bold border border-cyan-500/40">
+              IoT Forecast
+            </span>
+          </button>
+
+          <button
+            onClick={() => setManagerTab('correlationEngine')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'correlationEngine'
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <GitMerge className="h-4 w-4 text-indigo-300" />
+            <span>Correlation Engine</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 font-mono font-bold border border-indigo-500/40">
+              Causal Links
+            </span>
+          </button>
+
+          <button
             onClick={() => setManagerTab('density')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
               managerTab === 'density'
                 ? 'bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white shadow-md shadow-rose-900/40'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
             <Users className="h-4 w-4 text-amber-300" />
-            <span>Worker Density &amp; Risk (D3)</span>
-            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-950 border border-amber-500/40 text-amber-300 font-mono font-bold">
-              7-Day Heatmap
-            </span>
+            <span>Worker Density (D3)</span>
           </button>
 
           <button
             onClick={() => setManagerTab('patterns')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
               managerTab === 'patterns'
-                ? 'bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-900/40'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <Layers className="h-4 w-4 text-cyan-300" />
-            <span>Pattern Library (D3.js)</span>
-            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono font-bold">
-              6 Signatures
-            </span>
+            <Layers className="h-4 w-4 text-purple-300" />
+            <span>Pattern Library</span>
           </button>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap gap-2">
+          {/* Desktop Notification Armed Status Button */}
+          <button
+            onClick={requestDesktopNotificationPermission}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+              desktopNotificationPermission === 'granted'
+                ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/60'
+                : 'bg-amber-950/70 border-amber-500/50 text-amber-300 hover:bg-amber-900/60'
+            }`}
+            title="Desktop alerts trigger OS notifications for critical anomalies when tabbed out"
+          >
+            {desktopNotificationPermission === 'granted' ? (
+              <>
+                <Bell className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Desktop Alerts: Active (Tabbed-Out OS Detection)</span>
+              </>
+            ) : (
+              <>
+                <BellRing className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+                <span>Enable Desktop Alerts</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={handleTestDesktopNotification}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition cursor-pointer"
+            title="Dispatch test notification with audio chime to verify operating system alerts"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Test OS Alert</span>
+          </button>
+
           <button
             onClick={() => setIsTeamAlertModalOpen(true)}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-xs font-semibold transition cursor-pointer"
+            className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-xs font-semibold transition cursor-pointer"
           >
-            <Smartphone className="h-4 w-4 text-cyan-400" />
-            <span>Engineer Mobile Alerts &amp; Read Receipts</span>
+            <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Team Mobile</span>
             {unreadTeamAlertCount > 0 ? (
-              <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px] animate-pulse">
-                {unreadTeamAlertCount} Unread
+              <span className="px-1.5 py-0.2 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px] animate-pulse">
+                {unreadTeamAlertCount}
               </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">
-                Up to date
-              </span>
-            )}
+            ) : null}
           </button>
         </div>
       </div>
 
-      {managerTab === 'patterns' ? (
+      {managerTab === 'compliance' ? (
+        <div className="mb-6 animate-fadeIn">
+          <SystemComplianceAuditModule />
+        </div>
+      ) : managerTab === 'predictiveMaintenance' ? (
+        <div className="mb-6 animate-fadeIn">
+          <PredictiveMaintenanceModule
+            onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+            onNotice={(msg) => {
+              setProtocolActiveNotice(msg);
+              setTimeout(() => setProtocolActiveNotice(null), 8000);
+            }}
+            onNavigateToZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              setManagerTab('live');
+            }}
+          />
+        </div>
+      ) : managerTab === 'correlationEngine' ? (
+        <div className="mb-6 animate-fadeIn">
+          <CorrelationEngineModule
+            onNavigateToZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              setManagerTab('live');
+            }}
+            onNotice={(msg) => {
+              setProtocolActiveNotice(msg);
+              setTimeout(() => setProtocolActiveNotice(null), 8000);
+            }}
+          />
+        </div>
+      ) : managerTab === 'patterns' ? (
         <div className="mb-6 animate-fadeIn">
           <PatternLibraryTab
             onApplyMitigationToActiveZone={(sig) => {
