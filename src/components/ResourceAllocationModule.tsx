@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   ShieldAlert,
@@ -18,7 +18,16 @@ import {
   Zap,
   MapPin,
   ChevronDown,
-  FileText
+  ChevronUp,
+  FileText,
+  Activity,
+  ShieldCheck,
+  Check,
+  Eye,
+  Radio,
+  Layers,
+  TrendingUp,
+  AlertOctagon
 } from 'lucide-react';
 import {
   FacilityZone,
@@ -26,16 +35,22 @@ import {
   SafetyOfficer,
   SafetyPersonnelRole,
   DeploymentOrder,
-  SystemAuditLogEntry
+  SystemAuditLogEntry,
+  IncidentAssignment,
+  IncidentWorkflowStatus,
+  IncidentActivityLogEntry
 } from '../types';
 import ShiftHandoverModal from './ShiftHandoverModal';
 import { maintenanceSchedulingService } from '../services/maintenanceSchedulingService';
+import { INITIAL_INCIDENT_ASSIGNMENTS } from './NotificationCenter';
 
 export interface ResourceAllocationModuleProps {
   zones: FacilityZone[];
   alerts: ActiveAnomalyAlert[];
   onLogAudit?: (entry: SystemAuditLogEntry) => void;
   onNotice?: (msg: string) => void;
+  incidentAssignments?: Record<string, IncidentAssignment>;
+  onUpdateIncidentAssignment?: (assignment: IncidentAssignment) => void;
 }
 
 export const INITIAL_SAFETY_OFFICERS: SafetyOfficer[] = [

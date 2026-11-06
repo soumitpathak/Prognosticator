@@ -41,7 +41,9 @@ import {
   Phone,
   Shield,
   MessageSquare,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  Loader2
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -49,8 +51,10 @@ import {
   IncidentWorkflowStatus,
   IncidentAssignee,
   IncidentAssignment,
-  IncidentActivityLogEntry
+  IncidentActivityLogEntry,
+  TeamAlertNotification
 } from '../types';
+import { teamAlertService } from '../services/teamAlertService';
 
 export interface DepartmentBreachInfo {
   departmentId: string;
@@ -212,6 +216,9 @@ export interface NotificationCenterProps {
   departmentThresholdBreaches?: DepartmentBreachInfo[];
   onOpenDepartmentThresholds?: () => void;
   onExportComplianceCsv?: () => void;
+  onGeneratePdfReport?: () => void;
+  onInjectTestAnomaly?: () => void;
+  isGeneratingPdf?: boolean;
   incidentAssignments?: Record<string, IncidentAssignment>;
   onUpdateIncidentAssignment?: (assignment: IncidentAssignment) => void;
   className?: string;
@@ -449,6 +456,9 @@ export default function NotificationCenter({
   departmentThresholdBreaches = [],
   onOpenDepartmentThresholds,
   onExportComplianceCsv,
+  onGeneratePdfReport,
+  onInjectTestAnomaly,
+  isGeneratingPdf = false,
   incidentAssignments: propAssignments,
   onUpdateIncidentAssignment,
   className = ''
@@ -476,6 +486,18 @@ export default function NotificationCenter({
       setAssignments(propAssignments);
     }
   }, [propAssignments]);
+
+  // Real-Time Team Alerts & Read Receipts Store
+  const [teamAlerts, setTeamAlerts] = useState<TeamAlertNotification[]>(() =>
+    teamAlertService.getAlerts()
+  );
+
+  React.useEffect(() => {
+    const unsub = teamAlertService.subscribe((alerts) => {
+      setTeamAlerts(alerts);
+    });
+    return () => unsub();
+  }, []);
 
   // High-Risk events
   const highRiskEvents = useMemo(() => {
@@ -634,6 +656,11 @@ export default function NotificationCenter({
       [alert.id]: updatedAssignment
     }));
 
+    // Generate/sync mobile team alert notification for the assigned field engineer
+    if (assignee && alert) {
+      teamAlertService.createAlertFromAssignment(updatedAssignment, alert);
+    }
+
     if (onUpdateIncidentAssignment) {
       onUpdateIncidentAssignment(updatedAssignment);
     }
@@ -670,6 +697,16 @@ export default function NotificationCenter({
       ...prev,
       [alertId]: updatedAssignment
     }));
+
+    // Sync status change to teamAlertService for mobile receipts
+    const matchedAlert = teamAlerts.find((ta) => ta.incidentId === alertId);
+    if (matchedAlert) {
+      if (targetStatus === 'Investigating') {
+        teamAlertService.markAsEnRoute(matchedAlert.id, 'Engineer transitioning to investigating.');
+      } else if (targetStatus === 'Resolved') {
+        teamAlertService.markAsResolved(matchedAlert.id, 'Incident verified as resolved.');
+      }
+    }
 
     if (onUpdateIncidentAssignment) {
       onUpdateIncidentAssignment(updatedAssignment);
@@ -775,16 +812,52 @@ export default function NotificationCenter({
             </button>
           )}
 
-          {/* Export Compliance CSV Button */}
-          {onExportComplianceCsv && (
+          {/* Test Anomaly Injection Button */}
+          {onInjectTestAnomaly && (
             <button
-              onClick={onExportComplianceCsv}
-              className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/90 text-cyan-300 hover:text-white px-3 py-1.5 rounded-lg border border-cyan-500/40 text-xs font-semibold transition cursor-pointer shadow-xs"
-              title="Download RFC 4180 CSV export of current anomaly telemetry formatted for statutory enterprise compliance"
+              onClick={onInjectTestAnomaly}
+              className="flex items-center space-x-1.5 bg-gradient-to-r from-rose-950 via-amber-950 to-rose-900 hover:from-rose-900 hover:to-amber-900 text-rose-200 hover:text-white px-3 py-1.5 rounded-lg border border-rose-500/50 text-xs font-bold transition cursor-pointer shadow-xs animate-pulse"
+              title="Randomly inject a simulated high-risk event into this notification center for testing response workflows"
             >
-              <Download className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Export Compliance CSV</span>
+              <Zap className="h-3.5 w-3.5 text-amber-400" />
+              <span>Test Anomaly</span>
             </button>
+          )}
+
+          {/* Extended Export Controls: Compliance CSV & Enterprise PDF Report */}
+          {(onExportComplianceCsv || onGeneratePdfReport) && (
+            <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+              {onExportComplianceCsv && (
+                <button
+                  onClick={onExportComplianceCsv}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-900 text-xs font-semibold transition cursor-pointer"
+                  title="Download RFC 4180 CSV export of current anomaly telemetry formatted for statutory enterprise compliance"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Export CSV</span>
+                </button>
+              )}
+
+              {onGeneratePdfReport && (
+                <button
+                  onClick={onGeneratePdfReport}
+                  disabled={isGeneratingPdf}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
+                    isGeneratingPdf
+                      ? 'bg-cyan-950/80 border border-cyan-400 text-cyan-200 animate-pulse'
+                      : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-xs'
+                  }`}
+                  title="Compile current dashboard state, active incident logs, and predictive forecast chart into a downloadable enterprise-grade PDF report"
+                >
+                  {isGeneratingPdf ? (
+                    <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
+                  ) : (
+                    <FileText className="h-3.5 w-3.5 text-white" />
+                  )}
+                  <span>{isGeneratingPdf ? 'Compiling PDF...' : 'Generate PDF Report'}</span>
+                </button>
+              )}
+            </div>
           )}
 
           {/* Acknowledge All */}
@@ -1111,10 +1184,49 @@ export default function NotificationCenter({
                       {/* Incident Assignee & Directive snippet */}
                       <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[11px]">
                         {assignment.assigneeName ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700/80 text-slate-300 font-mono text-[10px]">
-                            <UserCheck className="h-3 w-3 text-cyan-400" />
-                            <span>Assigned: <strong className="text-white">{assignment.assigneeName}</strong> ({assignment.assigneeRole})</span>
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700/80 text-slate-300 font-mono text-[10px]">
+                              <UserCheck className="h-3 w-3 text-cyan-400" />
+                              <span>Assigned: <strong className="text-white">{assignment.assigneeName}</strong> ({assignment.assigneeRole})</span>
+                            </span>
+                            {(() => {
+                              const ta = teamAlerts.find((a) => a.incidentId === item.id);
+                              if (!ta) return null;
+                              if (ta.status === 'RESOLVED') {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-mono text-[10px]">
+                                    <CheckCheck className="h-2.5 w-2.5 text-emerald-400" />
+                                    <span>Resolved</span>
+                                  </span>
+                                );
+                              }
+                              if (ta.status === 'EN_ROUTE') {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/50 text-amber-300 font-mono text-[10px] animate-pulse">
+                                    <Radio className="h-2.5 w-2.5 text-amber-400" />
+                                    <span>En Route (Acknowledged)</span>
+                                  </span>
+                                );
+                              }
+                              if (ta.status === 'READ') {
+                                const timeStr = ta.readAt
+                                  ? new Date(ta.readAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                  : 'Verified';
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 font-mono text-[10px]" title={`Read receipt timestamp: ${ta.readAt}`}>
+                                    <CheckCheck className="h-2.5 w-2.5 text-cyan-400" />
+                                    <span>Read receipt ✓✓ {timeStr}</span>
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400 font-mono text-[10px]" title={`Delivered at ${ta.deliveredAt}, waiting for mobile read receipt`}>
+                                  <Check className="h-2.5 w-2.5 text-slate-500" />
+                                  <span>Delivered (Unread)</span>
+                                </span>
+                              );
+                            })()}
+                          </div>
                         ) : (
                           <button
                             onClick={() => handleOpenWorkflowModal(item)}

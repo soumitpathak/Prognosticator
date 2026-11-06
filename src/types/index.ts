@@ -688,3 +688,162 @@ export interface Lstm12hForecastResult {
   keyDriversSummary: string;
 }
 
+// ==========================================
+// Real-Time Team Alert & Read Receipts Types
+// ==========================================
+
+export type TeamAlertStatus = 'UNREAD' | 'READ' | 'EN_ROUTE' | 'RESOLVED';
+
+export interface TeamAlertNotification {
+  id: string;
+  incidentId: string;
+  assigneeId: string;
+  assigneeName: string;
+  assigneeRole: string;
+  title: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MODERATE';
+  zone: string;
+  anomalyMetric: string;
+  directive: string;
+  timestamp: string;
+  deliveredAt: string;
+  readAt?: string;
+  acknowledgedAt?: string;
+  status: TeamAlertStatus;
+  fieldNotes?: string;
+}
+
+// ==========================================
+// Anomaly Pattern Library & Signature Types
+// ==========================================
+
+export type AnomalyPatternCategory = 'ENVIRONMENTAL' | 'MECHANICAL' | 'PHYSIOLOGICAL' | 'COMBINED';
+
+export interface AnomalySignaturePoint {
+  tMinutes: number; // e.g. -60 to +60
+  primaryValue: number;
+  correlatedValue: number;
+  baselineEnvelopeUpper: number;
+  baselineEnvelopeLower: number;
+  previousYearPrimaryValue?: number; // Previous year cyclical/seasonal signature value
+  previousYearCorrelatedValue?: number;
+  previousYearEnvelopeUpper?: number;
+  previousYearEnvelopeLower?: number;
+}
+
+export interface SeasonalCyclicalMetrics {
+  seasonalCycleName: string; // e.g. "Annual Summer Diurnal Heat Solstice Cycle (Q3)"
+  priorYearBaselineLabel: string; // e.g. "FY2025 Historical Seasonal Baseline"
+  yoyPeakAmplitudeDeltaPct: number; // e.g. +14.2% (higher peak this year)
+  seasonalPhaseShiftMins: number; // e.g. -15 mins (peaking 15 mins earlier this year)
+  cyclicalRecurrenceConfidence: number; // e.g. 94.6%
+  recurrenceClassification: string; // e.g. "Cyclical Diurnal Thermal Escalation"
+  seasonalAnalysisTakeaway: string; // e.g. "Earlier thermal inflection compared to FY2025 indicates accelerated heat storage; triggers earlier hydration rotations."
+}
+
+export interface AnomalyPatternSignature {
+  id: string;
+  code: string; // e.g. "SIG-ENV-HEAT-01"
+  name: string;
+  category: AnomalyPatternCategory;
+  description: string;
+  recurrenceCount90d: number;
+  typicalSeverity: 'CRITICAL' | 'HIGH' | 'MODERATE';
+  precursorWindowMins: number;
+  riseVelocityPctPerMin: number;
+  recoveryTimeHours: number;
+  primarySignalName: string;
+  primarySignalUnit: string;
+  correlatedSignalName: string;
+  correlatedSignalUnit: string;
+  waveformData: AnomalySignaturePoint[];
+  regulatoryClassification: string;
+  mitigationProcedure: string;
+  affectedFacilities: string[];
+  lstmAttributionConfidence: number;
+  seasonalMetrics?: SeasonalCyclicalMetrics;
+}
+
+export type WorkerDensityClassification = 'OPTIMAL' | 'MODERATE' | 'ELEVATED' | 'CRITICAL_OVERCROWDING';
+
+export interface WorkerDensityIncidentRef {
+  alertId: string;
+  severity: 'CRITICAL' | 'HIGH';
+  metric: string;
+  locationZone: string;
+  workerId: string;
+  timeOffset: string;
+  leadTime?: string;
+  recommendedAction: string;
+  densityAtIncident: number; // workers/100m²
+}
+
+export interface WorkerDensityHeatmapCell {
+  id: string; // e.g. "cell-2026-11-04-14"
+  dayIndex: number; // 0 to 6 (0 = 6 days ago, 6 = today)
+  dateStr: string; // ISO date e.g. "2026-11-04"
+  dayName: string; // "Wed"
+  dayOfWeekFull: string; // "Wednesday"
+  hour: number; // 0 to 23
+  hourLabel: string; // "14:00"
+  shiftLabel: string; // "Swing / Afternoon"
+  workerCount: number; // total active headcount
+  densityPer100Sqm: number; // workers / 100m²
+  capacityUtilizationPct: number; // % of zone safe threshold
+  classification: WorkerDensityClassification;
+  highRiskEventCount: number;
+  criticalIncidentCount: number;
+  highIncidentCount: number;
+  incidents: WorkerDensityIncidentRef[];
+  ambientTempC: number;
+  noiseDb: number;
+  zoneId?: string;
+  zoneName?: string;
+  primaryRiskFactor: string;
+  airQualityAqi: number;
+}
+
+export interface WorkerDensityCorrelationSummary {
+  pearsonR: number; // Pearson correlation coefficient
+  rSquared: number;
+  pValue: number;
+  correlationStrength: 'STRONG_POSITIVE' | 'MODERATE_POSITIVE' | 'NEGLIGIBLE';
+  totalWeeklyObservations: number; // 168 (7x24)
+  totalWeeklyWorkerHours: number;
+  totalHighRiskEvents: number;
+  eventsInElevatedOrOvercrowded: number;
+  overcrowdedIncidentPercentage: number;
+  riskMultiplierOver80Capacity: number;
+  peakDensityCell: WorkerDensityHeatmapCell;
+  lowestDensityCell: WorkerDensityHeatmapCell;
+  dailyStats: Array<{
+    dateStr: string;
+    dayName: string;
+    avgDensity: number;
+    peakHeadcount: number;
+    incidentCount: number;
+    criticalCount: number;
+  }>;
+  hourlyProfile: Array<{
+    hour: number;
+    hourLabel: string;
+    shift: string;
+    avgWorkers: number;
+    avgDensity: number;
+    incidentFrequency: number;
+    riskRatio: number;
+  }>;
+  zoneRiskBreakdown: Array<{
+    zoneId: string;
+    zoneName: string;
+    safeCapacityCap: number;
+    observedPeakHeadcount: number;
+    peakDensity: number;
+    totalIncidents: number;
+    correlationScore: number;
+    suggestedMitigation: string;
+  }>;
+}
+
+
+

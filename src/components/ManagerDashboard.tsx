@@ -119,7 +119,11 @@ import {
   exportSimulatedAnomalyReportPdf,
   exportSimulatedAnomalyReportCsv
 } from '../services/anomalyTrend30DayService';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass } from 'lucide-react';
+import PatternLibraryTab from './PatternLibraryTab';
+import WorkerDensityCorrelationTab from './WorkerDensityCorrelationTab';
+import TeamAlertMobileModal from './TeamAlertMobileModal';
+import { teamAlertService } from '../services/teamAlertService';
+import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers } from 'lucide-react';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -200,6 +204,19 @@ export default function ManagerDashboard() {
   const lastKalmanNotificationRef = useRef<number>(0);
 
   // Modals & Drawers
+  const [managerTab, setManagerTab] = useState<'live' | 'density' | 'patterns'>('live');
+  const [isTeamAlertModalOpen, setIsTeamAlertModalOpen] = useState<boolean>(false);
+  const [unreadTeamAlertCount, setUnreadTeamAlertCount] = useState<number>(() =>
+    teamAlertService.getUnreadCount()
+  );
+
+  useEffect(() => {
+    const unsub = teamAlertService.subscribe((alerts) => {
+      setUnreadTeamAlertCount(alerts.filter((a) => a.status === 'UNREAD').length);
+    });
+    return () => unsub();
+  }, []);
+
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
   const [isAnomalyAuditModalOpen, setIsAnomalyAuditModalOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
@@ -1391,6 +1408,141 @@ export default function ManagerDashboard() {
     setTimeout(() => setProtocolActiveNotice(null), 7000);
   }, [activeAlerts, activeZoneObj]);
 
+  // Test Anomaly Random Injection Handler for Testing Response Workflows
+  const handleInjectTestAnomaly = useCallback(() => {
+    const testTemplates: Array<{
+      metric: string;
+      raw: string;
+      smoothed: string;
+      severity: 'CRITICAL' | 'HIGH';
+      leadTime: string;
+      action: string;
+      alertType: 'HEALTH_ANOMALY' | 'PREDICTIVE_MAINTENANCE';
+      preferredZone?: string;
+    }> = [
+      {
+        metric: 'Acute Autonomic & Core Thermal Strain',
+        raw: 'HRV: 26.4 ms (±7ms), Skin: 38.6°C, TWL: 84 W/m²',
+        smoothed: 'HRV: 29.8 ms, Skin: 38.3°C',
+        severity: 'CRITICAL',
+        leadTime: '2.5h Prior to Syncope',
+        action: 'Immediate extraction: Escort cohort member to air-conditioned shelter, administer 500ml oral electrolyte rehydration.',
+        alertType: 'HEALTH_ANOMALY',
+        preferredZone: 'Outdoor-Construction-Sector-4'
+      },
+      {
+        metric: 'Predictive Maintenance: High-Frequency Bearing Cavitation',
+        raw: 'Vibration: 8.6 mm/s RMS, Casing Heat: 92.4°C',
+        smoothed: 'Vibration: 8.1 mm/s, Casing Heat: 89.8°C',
+        severity: 'CRITICAL',
+        leadTime: '3.8h Prior to Motor Seizure',
+        action: 'Throttle line speed by 35%; stage predictive vibration inspection & auxiliary lubrication flush.',
+        alertType: 'PREDICTIVE_MAINTENANCE',
+        preferredZone: 'Outdoor-Construction-Sector-4'
+      },
+      {
+        metric: 'Acoustic Machinery Overpressure Spike',
+        raw: 'Peak: 106.8 dBA raw / Leq: 98.4 dBA',
+        smoothed: 'Leq: 96.2 dBA smoothed',
+        severity: 'HIGH',
+        leadTime: 'Immediate Noise Dose Limit Breach',
+        action: 'Deploy secondary Class 5 ear defenders to zone cohort; rotate workers out of compressor perimeter.',
+        alertType: 'HEALTH_ANOMALY',
+        preferredZone: 'Outdoor-Construction-Sector-4'
+      },
+      {
+        metric: 'Cardiovascular Autonomic Collapse Under Heavy Exertion',
+        raw: 'Heart Rate: 154 BPM, HRV: 22.8 ms, Exertion Load: 94%',
+        smoothed: 'Heart Rate: 148 BPM, HRV: 25.4 ms',
+        severity: 'CRITICAL',
+        leadTime: '1.5h Prior to Heat Stroke',
+        action: 'Direct worker to shaded cooling shelter; stage on-site medical dispatch triage assessment.',
+        alertType: 'HEALTH_ANOMALY',
+        preferredZone: 'Manufacturing-Assembly-Line-B'
+      },
+      {
+        metric: 'Confined Space Atmospheric Inversion & Oxygen Depletion',
+        raw: 'O2 Level: 18.6%, VOC: 48 ppm, Heat Index: 39.8°C',
+        smoothed: 'O2: 18.9%, VOC: 44 ppm',
+        severity: 'CRITICAL',
+        leadTime: 'Immediate Evacuation Threshold',
+        action: 'Evacuate utility trench cohort; initiate forced explosion-proof fresh air ventilation.',
+        alertType: 'HEALTH_ANOMALY',
+        preferredZone: 'Subgrade-Tunnel-Conduit-7'
+      },
+      {
+        metric: 'Conveyor Drive Harmonic Distortion & Gearbox Chatter',
+        raw: 'THD: 15.2%, Current Imbalance: 8.4%, Vib: 6.8 mm/s',
+        smoothed: 'THD: 13.8%, Vib: 6.4 mm/s',
+        severity: 'HIGH',
+        leadTime: '4.5h Prior to Inverter Trip',
+        action: 'Engage active harmonic filtering; inspect drive belt tension and motor shaft alignment.',
+        alertType: 'PREDICTIVE_MAINTENANCE',
+        preferredZone: 'Warehouse-Logistics-Hub-North'
+      }
+    ];
+
+    const pick = testTemplates[Math.floor(Math.random() * testTemplates.length)];
+    const randomWorkerNum = Math.floor(Math.random() * 8999 + 1000);
+    const workerId = pick.alertType === 'PREDICTIVE_MAINTENANCE' ? `EQUIP-DRIVE-${Math.floor(Math.random() * 8 + 1)}` : `W-${randomWorkerNum}`;
+    const targetZone = pick.preferredZone || activeZoneObj.name;
+    const testId = `ALR-TEST-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 89 + 10)}`;
+
+    const newAlert: ActiveAnomalyAlert = {
+      id: testId,
+      worker_id: workerId,
+      location_zone: targetZone,
+      detected_at: 'Just now',
+      anomaly_metric: pick.metric,
+      raw_value: pick.raw,
+      kalman_smoothed_value: pick.smoothed,
+      severity: pick.severity,
+      kalman_status: 'Jitter Filtered & Validated',
+      lead_time: pick.leadTime,
+      recommended_action: pick.action,
+      acknowledged: false,
+      privacy_status: 'k-Anonymity Cleared (N>=12)',
+      alert_type: pick.alertType,
+      equipment_name: pick.alertType === 'PREDICTIVE_MAINTENANCE' ? workerId : undefined
+    };
+
+    // Inject into active alerts list
+    setActiveAlerts((prev) => [newAlert, ...prev]);
+
+    // Register in system audit logs
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-TEST-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Lead Supervisor',
+      category: 'THRESHOLD_CHANGE',
+      targetModule: 'Notification Center (Test Injection)',
+      parameter: 'Simulated High-Risk Anomaly',
+      previousValue: 'N/A',
+      newValue: `Injected ${newAlert.severity}: ${newAlert.anomaly_metric} (${workerId})`,
+      justification: 'Simulated test anomaly injected to verify real-time notification triage and field dispatch routing.',
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    // Play chime if audio is enabled
+    if (toastSoundEnabled) {
+      voiceAlertService.playAlertChime(newAlert.severity, voiceSettings.severityAudioToggles);
+    }
+
+    setProtocolActiveNotice(
+      `TEST ANOMALY INJECTED: [${newAlert.severity}] ${newAlert.anomaly_metric} for ${workerId} in ${targetZone}. Notification Center updated.`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 8000);
+
+    // Scroll smoothly to Notification Center
+    const el = document.getElementById('notification-center-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [activeZoneObj, toastSoundEnabled, voiceSettings.severityAudioToggles]);
+
   // Stage Pre-Emptive Protocols from 12-Hour LSTM Predictive Risk Forecast
   const handleStageLstmPreemptiveMitigation = useCallback(
     (forecast: Lstm12hForecastResult, targetHour: Lstm12hForecastHour) => {
@@ -2381,6 +2533,67 @@ export default function ManagerDashboard() {
 
         {/* Global Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Team Mobile Alerts & Read Receipts Button */}
+          <button
+            onClick={() => setIsTeamAlertModalOpen(true)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              unreadTeamAlertCount > 0
+                ? 'bg-gradient-to-r from-cyan-900 to-indigo-900 border-cyan-400 text-white animate-pulse shadow-cyan-900/40 ring-1 ring-cyan-400/50'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+            }`}
+            title="Real-Time Team Mobile Alerts & Engineer Read Receipts (Tracks Delivered, Read, En Route, Resolved)"
+          >
+            <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Team Mobile Alerts</span>
+            {unreadTeamAlertCount > 0 ? (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px]">
+                {unreadTeamAlertCount} NEW
+              </span>
+            ) : (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">
+                Synced
+              </span>
+            )}
+          </button>
+
+          {/* Worker Density Trends & D3 Heatmap Toggle Button */}
+          <button
+            onClick={() => setManagerTab((prev) => (prev === 'density' ? 'live' : 'density'))}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              managerTab === 'density'
+                ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 border-amber-300 shadow-md shadow-amber-500/30'
+                : 'bg-amber-950/70 hover:bg-amber-900/80 border-amber-500/50 text-amber-200'
+            }`}
+            title="Switch to 7-Day Worker Density Trends & D3 Heatmap Correlation Tab"
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>{managerTab === 'density' ? '← Live Dashboard' : 'Worker Density (D3)'}</span>
+          </button>
+
+          {/* Pattern Library Tab Direct Toggle Button */}
+          <button
+            onClick={() => setManagerTab((prev) => (prev === 'patterns' ? 'live' : 'patterns'))}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              managerTab === 'patterns'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/30'
+                : 'bg-indigo-950/70 hover:bg-indigo-900/80 border-indigo-500/50 text-indigo-200'
+            }`}
+            title="Switch between Live Operations Dashboard and Historical Anomaly Pattern Library (D3.js)"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            <span>{managerTab === 'patterns' ? '← Live Dashboard' : 'Pattern Library (D3.js)'}</span>
+          </button>
+
+          {/* Test Anomaly Injection Button */}
+          <button
+            onClick={handleInjectTestAnomaly}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-md shadow-rose-950/60 border border-rose-400/50 cursor-pointer animate-pulse"
+            title="Randomly inject a simulated high-risk event into the notification center for testing response workflows"
+          >
+            <Zap className="h-3.5 w-3.5 text-white" />
+            <span>Test Anomaly</span>
+          </button>
+
           {/* High-Priority Active Anomalies Jump Button */}
           <button
             onClick={() => {
@@ -2930,15 +3143,34 @@ export default function ManagerDashboard() {
             <span>Simulate Pre-Emptive Alert</span>
           </button>
 
-          {/* Dedicated Simulated Compliance CSV Export Button */}
-          <button
-            onClick={handleSimulatedComplianceCsvExport}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-600 hover:from-emerald-600 hover:to-teal-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-emerald-400/40 cursor-pointer"
-            title="Trigger a simulated CSV export of current anomaly telemetry data formatted for enterprise reporting compliance (ISO 45001 / OSHA 1910)"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-300" />
-            <span>Export Compliance CSV</span>
-          </button>
+          {/* Dedicated Simulated Compliance CSV & Enterprise PDF Report Export Controls */}
+          <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 shadow-sm">
+            <button
+              onClick={handleSimulatedComplianceCsvExport}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-emerald-300 hover:text-white hover:bg-slate-800 text-xs font-bold transition cursor-pointer"
+              title="Trigger a simulated CSV export of current anomaly telemetry data formatted for enterprise reporting compliance (ISO 45001 / OSHA 1910)"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Export Compliance CSV</span>
+            </button>
+            <button
+              onClick={handleDirectPdfExport}
+              disabled={isDirectPdfExporting}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
+                isDirectPdfExporting
+                  ? 'bg-cyan-950/80 text-cyan-200 animate-pulse'
+                  : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-xs'
+              }`}
+              title="Compile current dashboard state, active incident logs, and predictive forecast chart into a downloadable enterprise-grade PDF report"
+            >
+              {isDirectPdfExporting ? (
+                <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
+              ) : (
+                <FileText className="h-3.5 w-3.5 text-white" />
+              )}
+              <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Generate PDF Report'}</span>
+            </button>
+          </div>
 
           {/* Download Report Button (Converts current 24h anomaly trends & threshold settings to JSON or CSV) */}
           <div className="relative">
@@ -3158,6 +3390,101 @@ export default function ManagerDashboard() {
           </button>
         </div>
       </header>
+
+      {/* Primary Dashboard View Mode Tabs: Live Operations vs Pattern Library */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6 bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-lg">
+        <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-slate-800">
+          <button
+            onClick={() => setManagerTab('live')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'live'
+                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Activity className="h-4 w-4" />
+            <span>Live Operations Dashboard</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-900 text-cyan-300 font-mono">
+              Real-Time
+            </span>
+          </button>
+
+          <button
+            onClick={() => setManagerTab('density')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'density'
+                ? 'bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white shadow-md shadow-rose-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Users className="h-4 w-4 text-amber-300" />
+            <span>Worker Density &amp; Risk (D3)</span>
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-950 border border-amber-500/40 text-amber-300 font-mono font-bold">
+              7-Day Heatmap
+            </span>
+          </button>
+
+          <button
+            onClick={() => setManagerTab('patterns')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'patterns'
+                ? 'bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Layers className="h-4 w-4 text-cyan-300" />
+            <span>Pattern Library (D3.js)</span>
+            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-cyan-950 border border-cyan-500/40 text-cyan-300 font-mono font-bold">
+              6 Signatures
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setIsTeamAlertModalOpen(true)}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-xs font-semibold transition cursor-pointer"
+          >
+            <Smartphone className="h-4 w-4 text-cyan-400" />
+            <span>Engineer Mobile Alerts &amp; Read Receipts</span>
+            {unreadTeamAlertCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px] animate-pulse">
+                {unreadTeamAlertCount} Unread
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">
+                Up to date
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {managerTab === 'patterns' ? (
+        <div className="mb-6 animate-fadeIn">
+          <PatternLibraryTab
+            onApplyMitigationToActiveZone={(sig) => {
+              setProtocolActiveNotice(
+                `Standard Operating Procedure deployed: "${sig.mitigationProcedure}" for ${sig.name} (${sig.regulatoryClassification}).`
+              );
+              setTimeout(() => setProtocolActiveNotice(null), 8000);
+            }}
+          />
+        </div>
+      ) : managerTab === 'density' ? (
+        <div className="mb-6 animate-fadeIn">
+          <WorkerDensityCorrelationTab
+            zones={zones}
+            alerts={activeAlerts}
+            onNavigateToZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              setManagerTab('live');
+            }}
+            onInspectAnomaly={handleOpenAnomalyDetails}
+          />
+        </div>
+      ) : (
+        <>
 
       {/* PDF Export In-Flight Notification */}
       {isDirectPdfExporting && (
@@ -3580,33 +3907,38 @@ export default function ManagerDashboard() {
       />
 
       {/* High-Risk Event Notification Center (Scrollable Queue of Recent High-Risk Events with Timestamp, Anomaly Type, and View Details) */}
-      <NotificationCenter
-        alerts={activeAlerts}
-        zones={zones}
-        onViewDetails={handleOpenAnomalyDetails}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onAcknowledgeAll={handleAcknowledgeAllAlerts}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        departmentThresholdBreaches={departmentThresholdBreaches}
-        onOpenDepartmentThresholds={() => {
-          const el = document.getElementById('department-risk-threshold-config-panel');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
-            setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
-          }
-        }}
-        onExportComplianceCsv={handleSimulatedComplianceCsvExport}
-        className="mb-6"
-      />
+      <div id="notification-center-section">
+        <NotificationCenter
+          alerts={activeAlerts}
+          zones={zones}
+          onViewDetails={handleOpenAnomalyDetails}
+          onAcknowledgeAlert={handleAcknowledgeAlert}
+          onAcknowledgeAll={handleAcknowledgeAllAlerts}
+          onDispatchAction={handleDispatchAction}
+          onSelectZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setAnomalyTrendZoneId(zoneId);
+            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+            setTelemetryAlert(res);
+          }}
+          departmentThresholdBreaches={departmentThresholdBreaches}
+          onOpenDepartmentThresholds={() => {
+            const el = document.getElementById('department-risk-threshold-config-panel');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
+              setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
+            }
+          }}
+          onExportComplianceCsv={handleSimulatedComplianceCsvExport}
+          onGeneratePdfReport={handleDirectPdfExport}
+          onInjectTestAnomaly={handleInjectTestAnomaly}
+          isGeneratingPdf={isDirectPdfExporting}
+          className="mb-6"
+        />
+      </div>
 
       {/* Configuration Panel for Custom Department Risk Score Threshold Values */}
       <DepartmentRiskThresholdConfigPanel
@@ -4401,6 +4733,8 @@ export default function ManagerDashboard() {
           onAddManualLog={handleAddManualAuditLog}
         />
       </div>
+      </>
+      )}
 
       {/* Modals & Drawers */}
       <AuditLogModal
@@ -4552,6 +4886,18 @@ export default function ManagerDashboard() {
         onDispatchActionForToast={handleDispatchActionForToast}
         soundEnabled={toastSoundEnabled}
         onToggleSound={() => setToastSoundEnabled((s) => !s)}
+      />
+
+      {/* Real-Time Team Mobile Alerts & Engineer Read Receipts Modal Simulator */}
+      <TeamAlertMobileModal
+        isOpen={isTeamAlertModalOpen}
+        onClose={() => setIsTeamAlertModalOpen(false)}
+        onAlertAcknowledged={(alert) => {
+          setProtocolActiveNotice(
+            `Field engineer acknowledged incident ${alert.incidentId || alert.id}: ${alert.fieldNotes || 'Status updated to En Route.'}`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
       />
     </div>
   );
