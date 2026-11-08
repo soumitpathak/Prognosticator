@@ -87,6 +87,8 @@ interface SignalCategoryFilterSidebarProps {
   onToggleMovingAverages: () => void;
   maWindowHours?: number;
   onChangeMaWindow?: (hours: number) => void;
+  isAccessibilityMode?: boolean;
+  onToggleAccessibilityMode?: () => void;
   className?: string;
 }
 
@@ -103,6 +105,8 @@ export default function SignalCategoryFilterSidebar({
   onToggleMovingAverages,
   maWindowHours = 4,
   onChangeMaWindow,
+  isAccessibilityMode = false,
+  onToggleAccessibilityMode,
   className = ''
 }: SignalCategoryFilterSidebarProps) {
   // Collapsible category accordions
@@ -220,6 +224,42 @@ export default function SignalCategoryFilterSidebar({
           </div>
         )}
       </div>
+
+      {/* Global Accessibility Mode Card */}
+      {onToggleAccessibilityMode && (
+        <div className="mx-3.5 mb-2 p-3 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="p-1 rounded-md bg-amber-900/60 border border-amber-500/50 text-amber-300">
+                <Eye className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-white block">Accessibility Mode</span>
+                <span className="text-[10px] text-amber-300/80 font-mono">High-Contrast Light</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isAccessibilityMode}
+              onClick={onToggleAccessibilityMode}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                isAccessibilityMode ? 'bg-amber-500' : 'bg-slate-800'
+              }`}
+              title="Toggle global Accessibility Mode (.manager-high-contrast-light on root element)"
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  isAccessibilityMode ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-400 leading-snug">
+            Applies <code className="text-amber-300 font-mono">.manager-high-contrast-light</code> to the root element for visually impaired users.
+          </p>
+        </div>
+      )}
 
       {/* Main Filter Accordion Content */}
       <div className="flex-1 overflow-y-auto p-3.5 space-y-3">

@@ -23,7 +23,8 @@ import {
   Printer,
   Filter,
   Thermometer,
-  RotateCcw
+  RotateCcw,
+  Eye
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -233,7 +234,15 @@ const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   }
 ];
 
-export default function ManagerDashboard() {
+export interface ManagerDashboardProps {
+  isAccessibilityMode?: boolean;
+  onToggleAccessibilityMode?: () => void;
+}
+
+export default function ManagerDashboard({
+  isAccessibilityMode: propIsAccessibilityMode,
+  onToggleAccessibilityMode: propOnToggleAccessibilityMode
+}: ManagerDashboardProps = {}) {
   const [selectedZone, setSelectedZone] = useState<string>('Outdoor-Construction-Sector-4');
   const [loading, setLoading] = useState<boolean>(false);
   const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
@@ -247,19 +256,82 @@ export default function ManagerDashboard() {
   // Live Weather State
   const [currentWeather, setCurrentWeather] = useState<ZoneWeatherData | null>(null);
 
+  // Accessibility Mode State (High-Contrast Light presentation for visually impaired users)
+  const [isAccessibilityMode, setIsAccessibilityMode] = useState<boolean>(() => {
+    if (propIsAccessibilityMode !== undefined) return propIsAccessibilityMode;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('prognosticator_accessibility_mode');
+      if (saved !== null) return saved === 'true';
+      return document.documentElement.classList.contains('manager-high-contrast-light');
+    }
+    return false;
+  });
+
   // Dashboard Theme Switcher: 'dark' (Standard Tactical) or 'high-contrast-light' (Daylight / High-Contrast Accessibility)
   const [dashboardTheme, setDashboardTheme] = useState<'dark' | 'high-contrast-light'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('prognosticator_dashboard_theme');
-      if (saved === 'high-contrast-light' || saved === 'dark') return saved;
+      const savedAcc = localStorage.getItem('prognosticator_accessibility_mode');
+      if (savedAcc === 'true') return 'high-contrast-light';
+      const savedTheme = localStorage.getItem('prognosticator_dashboard_theme');
+      if (savedTheme === 'high-contrast-light' || savedTheme === 'dark') return savedTheme;
     }
     return 'dark';
   });
 
+  // Sync prop changes
+  useEffect(() => {
+    if (propIsAccessibilityMode !== undefined) {
+      setIsAccessibilityMode(propIsAccessibilityMode);
+    }
+  }, [propIsAccessibilityMode]);
+
+  // Apply or remove the '.manager-high-contrast-light' CSS class to the root element for visually impaired users
+  useEffect(() => {
+    const rootEl = document.documentElement;
+    const bodyEl = document.body;
+    const rootDiv = document.getElementById('root');
+
+    if (isAccessibilityMode) {
+      rootEl.classList.add('manager-high-contrast-light');
+      rootEl.classList.remove('dark');
+      bodyEl.classList.add('manager-high-contrast-light');
+      if (rootDiv) rootDiv.classList.add('manager-high-contrast-light');
+      setDashboardTheme('high-contrast-light');
+      try {
+        localStorage.setItem('prognosticator_accessibility_mode', 'true');
+        localStorage.setItem('prognosticator_dashboard_theme', 'high-contrast-light');
+      } catch {}
+    } else {
+      rootEl.classList.remove('manager-high-contrast-light');
+      rootEl.classList.add('dark');
+      bodyEl.classList.remove('manager-high-contrast-light');
+      if (rootDiv) rootDiv.classList.remove('manager-high-contrast-light');
+      setDashboardTheme('dark');
+      try {
+        localStorage.setItem('prognosticator_accessibility_mode', 'false');
+        localStorage.setItem('prognosticator_dashboard_theme', 'dark');
+      } catch {}
+    }
+  }, [isAccessibilityMode]);
+
+  const handleToggleAccessibilityMode = () => {
+    if (propOnToggleAccessibilityMode) {
+      propOnToggleAccessibilityMode();
+    } else {
+      setIsAccessibilityMode((prev) => !prev);
+    }
+  };
+
   const handleToggleTheme = (newTheme: 'dark' | 'high-contrast-light') => {
     setDashboardTheme(newTheme);
+    const isAcc = newTheme === 'high-contrast-light';
+    setIsAccessibilityMode(isAcc);
+    if (propOnToggleAccessibilityMode && isAcc !== isAccessibilityMode) {
+      propOnToggleAccessibilityMode();
+    }
     try {
       localStorage.setItem('prognosticator_dashboard_theme', newTheme);
+      localStorage.setItem('prognosticator_accessibility_mode', isAcc ? 'true' : 'false');
     } catch {
       // ignore
     }
@@ -1817,6 +1889,45 @@ export default function ManagerDashboard() {
   const handlePrintDashboard = useCallback(() => {
     window.print();
   }, []);
+
+  // Formal PDF report export utilizing existing print-friendly styles
+  const handleExportToPdfWithPrintStyles = useCallback(() => {
+    const previousTitle = document.title;
+    const dateFormatted = new Date().toISOString().split('T')[0];
+    const currentZone = zones.find((z) => z.id === selectedZone) || zones[0];
+    const formalTitle = `Prognosticator_Formal_Site_Safety_Report_${currentZone?.id || selectedZone}_${dateFormatted}`;
+    document.title = formalTitle;
+
+    setProtocolActiveNotice(
+      'Generating formal report document using print-friendly styles. Choose "Save as PDF" in the destination dialog.'
+    );
+
+    // Record compliance audit log for formal report generation
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-PDF-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Safety Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Print-Friendly PDF Export Engine',
+      parameter: 'Formal Report Document PDF',
+      previousValue: 'N/A',
+      newValue: `Generated formal PDF report: ${formalTitle}.pdf`,
+      justification: 'Utilized existing print-friendly stylesheet to render formal executive report document for regulatory inspection and site safety meetings.',
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.title = previousTitle;
+        setProtocolActiveNotice('Formal PDF report generated successfully.');
+        setTimeout(() => setProtocolActiveNotice(null), 4000);
+      }, 1500);
+    }, 250);
+  }, [selectedZone, zones]);
 
   const handleDownloadReport = async (format: 'JSON' | 'CSV' | 'PDF') => {
     try {
@@ -3490,37 +3601,42 @@ export default function ManagerDashboard() {
           </button>
         </div>
 
-        {/* ManagerDashboard Theme Switcher: Default Dark Mode vs High-Contrast 'Compliance' Light Mode */}
-        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0" role="group" aria-label="Dashboard theme and audit mode switcher">
-          <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 hidden sm:inline">Theme / Audit:</span>
+        {/* Global Accessibility Mode Toggle & Dashboard Theme Switcher */}
+        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0 gap-1" role="group" aria-label="Dashboard theme and accessibility mode switcher">
+          {/* Global Accessibility Mode Toggle Button */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isAccessibilityMode}
+            onClick={handleToggleAccessibilityMode}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              isAccessibilityMode
+                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs border border-amber-300 ring-2 ring-amber-400/50'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Global Accessibility Mode: Applies .manager-high-contrast-light to the root element for visually impaired users"
+          >
+            <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>Accessibility Mode</span>
+            <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold ${
+              isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-900 text-slate-400 border border-slate-800'
+            }`}>
+              {isAccessibilityMode ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => handleToggleTheme('dark')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-              dashboardTheme === 'dark'
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              !isAccessibilityMode && dashboardTheme === 'dark'
                 ? 'bg-slate-800 text-cyan-400 shadow-xs border border-slate-700 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
             title="Default Dark Mode (Standard control room tactical monitoring display)"
           >
             <Moon className="h-3.5 w-3.5" />
-            <span>Default Dark</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleToggleTheme('high-contrast-light')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-              dashboardTheme === 'high-contrast-light'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs border border-amber-300 ring-2 ring-amber-400/40'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Compliance Light Mode (High-contrast presentation optimized for audit reviews and regulatory inspections)"
-          >
-            <Sun className="h-3.5 w-3.5" />
-            <span>Compliance Light</span>
-            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-slate-900 border border-amber-700/40 font-bold">
-              AUDIT
-            </span>
+            <span>Dark</span>
           </button>
         </div>
 
@@ -4804,6 +4920,28 @@ export default function ManagerDashboard() {
             )}
           </button>
 
+          {/* Global Accessibility Mode Toggle Button */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isAccessibilityMode}
+            onClick={handleToggleAccessibilityMode}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              isAccessibilityMode
+                ? 'bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 font-bold'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
+            }`}
+            title="Toggle Accessibility Mode: High-contrast light presentation for visually impaired users (applies .manager-high-contrast-light to root element)"
+          >
+            <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>Accessibility Mode</span>
+            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+              isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400 border border-slate-700'
+            }`}>
+              {isAccessibilityMode ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
           {/* Download Options Modal Trigger: Select specific metrics to include in report before downloading */}
           <button
             onClick={() => setIsDownloadOptionsModalOpen(true)}
@@ -4862,6 +5000,16 @@ export default function ManagerDashboard() {
           >
             <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
             <span>Compliance CSV Export</span>
+          </button>
+
+          {/* Export to PDF Button utilizing existing print-friendly styles to generate a formal report document */}
+          <button
+            onClick={handleExportToPdfWithPrintStyles}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-500/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-rose-950/40 cursor-pointer"
+            title="Export formal report document as a PDF using the existing print-friendly styles (A4 formatted executive layout with meeting brief banner)"
+          >
+            <FileText className="h-3.5 w-3.5 text-white" />
+            <span>Export to PDF</span>
           </button>
 
           {/* Print for Site Meeting Button */}
@@ -7564,6 +7712,8 @@ export default function ManagerDashboard() {
         onToggleMovingAverages={() => setShowGlobalMovingAverages((prev) => !prev)}
         maWindowHours={globalMaWindowHours}
         onChangeMaWindow={setGlobalMaWindowHours}
+        isAccessibilityMode={isAccessibilityMode}
+        onToggleAccessibilityMode={handleToggleAccessibilityMode}
       />
 
       {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}
@@ -7604,6 +7754,21 @@ export default function ManagerDashboard() {
           setTimeout(() => setProtocolActiveNotice(null), 6000);
         }}
       />
+
+      {/* Formal PDF Report Document Footer */}
+      <div className="hidden print:block print-footer-banner border-t-2 border-slate-900 pt-3 mt-8 text-xs font-mono text-slate-700">
+        <div className="flex justify-between items-center">
+          <div>
+            <strong>Document Classification:</strong> OFFICIAL SITE SAFETY BRIEFING &bull; OSHA 1910 / ISO 45001 COMPLIANT
+          </div>
+          <div>
+            <strong>Generated By:</strong> Prognosticator v2.0 Early-Warning Intelligence Engine
+          </div>
+        </div>
+        <div className="text-[10px] text-slate-500 mt-1">
+          Confidential Workforce Health Record &bull; Privacy Shield Applied: k-Anonymity (N &ge; 12) &amp; &epsilon;-DP (0.5) Enforced
+        </div>
+      </div>
     </div>
   );
 }

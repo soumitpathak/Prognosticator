@@ -20,6 +20,9 @@
 /* =========================================================================
    High-Contrast Light Mode Rules (Scoped exclusively to ManagerDashboard)
    ========================================================================= */
+html.manager-high-contrast-light,
+body.manager-high-contrast-light,
+#root.manager-high-contrast-light,
 .manager-high-contrast-light {
   background-color: #f8fafc !important;
   color: #020617 !important;
@@ -177,12 +180,23 @@
   }
 
   /* Show dedicated print headers and badges */
-  .print-header-banner {
+  .print-header-banner,
+  .print-footer-banner {
     display: block !important;
     visibility: visible !important;
+  }
+
+  .print-header-banner {
     margin-bottom: 1.5rem !important;
     padding-bottom: 1rem !important;
     border-bottom: 2px solid #0f172a !important;
+  }
+
+  .print-footer-banner {
+    margin-top: 2rem !important;
+    padding-top: 0.75rem !important;
+    border-top: 2px solid #0f172a !important;
+    page-break-inside: avoid !important;
   }
 
   /* Remove dark theme backgrounds and ensure clean card containers with light borders */
