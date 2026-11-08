@@ -36,6 +36,8 @@ interface CriticalAnomalyToastProps {
   onInspectInChart?: (zoneId: string) => void;
   soundEnabled?: boolean;
   onToggleSound?: () => void;
+  isMuted?: boolean;
+  onToggleMuteAlerts?: () => void;
 }
 
 export default function CriticalAnomalyToast({
@@ -46,7 +48,9 @@ export default function CriticalAnomalyToast({
   onDispatchAction,
   onInspectInChart,
   soundEnabled = true,
-  onToggleSound
+  onToggleSound,
+  isMuted = false,
+  onToggleMuteAlerts
 }: CriticalAnomalyToastProps) {
   const [hoveredToastId, setHoveredToastId] = useState<string | null>(null);
   const [expandedAttributions, setExpandedAttributions] = useState<Record<string, boolean>>({});
@@ -64,14 +68,14 @@ export default function CriticalAnomalyToast({
     }
   }, [toasts]);
 
-  // Play audio chime when a new toast arrives
+  // Play audio chime when a new toast arrives (unless muted)
   useEffect(() => {
-    if (toasts.length > 0 && soundEnabled) {
+    if (toasts.length > 0 && soundEnabled && !isMuted) {
       const topToast = toasts[0];
       const sev = topToast.riskTier === 'HIGH_RISK' ? 'HIGH' : 'CRITICAL';
       voiceAlertService.playAlertChime(sev);
     }
-  }, [toasts.length, soundEnabled]);
+  }, [toasts.length, soundEnabled, isMuted]);
 
   const toggleAttributions = (id: string) => {
     setExpandedAttributions((prev) => ({
@@ -112,7 +116,26 @@ export default function CriticalAnomalyToast({
             </div>
 
             <div className="flex items-center space-x-1.5">
-              {onToggleSound && (
+              {onToggleMuteAlerts && (
+                <button
+                  onClick={onToggleMuteAlerts}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition cursor-pointer flex items-center gap-1 ${
+                    isMuted
+                      ? 'bg-amber-950 text-amber-300 border-amber-600 animate-pulse'
+                      : 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white'
+                  }`}
+                  title={isMuted ? 'Alerts are muted — Click to unmute' : 'Mute health anomaly alert notifications'}
+                >
+                  {isMuted ? (
+                    <VolumeX className="h-3 w-3 text-amber-400" />
+                  ) : (
+                    <Volume2 className="h-3 w-3 text-cyan-400" />
+                  )}
+                  <span>{isMuted ? 'MUTED' : 'MUTE ALERTS'}</span>
+                </button>
+              )}
+
+              {onToggleSound && !onToggleMuteAlerts && (
                 <button
                   onClick={onToggleSound}
                   className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"

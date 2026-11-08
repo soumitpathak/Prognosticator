@@ -24,8 +24,11 @@ import {
   Radio,
   MapPin,
   ExternalLink,
-  Info
+  Info,
+  GitMerge,
+  Sparkles
 } from 'lucide-react';
+import RootCauseAnalysisModal from './RootCauseAnalysisModal';
 
 interface ChronologicalAnomalyLogPanelProps {
   alerts: ActiveAnomalyAlert[];
@@ -61,6 +64,7 @@ export default function ChronologicalAnomalyLogPanel({
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+  const [selectedRootCauseAlert, setSelectedRootCauseAlert] = useState<ActiveAnomalyAlert | null>(null);
 
   // Sync zone filter if selectedZoneId prop changes externally
   React.useEffect(() => {
@@ -636,18 +640,23 @@ export default function ChronologicalAnomalyLogPanel({
 
                           {/* Column 4: Anomaly Metric & Telemetry Deviation */}
                           <td className="py-3 px-3 align-top">
-                            <div className="font-bold text-slate-100 flex items-center gap-1.5">
+                            <button
+                              onClick={() => setSelectedRootCauseAlert(alert)}
+                              className="font-bold text-slate-100 hover:text-cyan-300 flex items-center gap-1.5 transition text-left cursor-pointer group"
+                              title="Click to perform Root Cause Analysis (Environmental vs. Operational)"
+                            >
                               {alert.anomaly_metric.toLowerCase().includes('hrv') ? (
-                                <Heart className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                                <Heart className="h-3.5 w-3.5 text-rose-400 shrink-0 group-hover:scale-110 transition" />
                               ) : alert.anomaly_metric.toLowerCase().includes('temp') ? (
-                                <Thermometer className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                                <Thermometer className="h-3.5 w-3.5 text-amber-400 shrink-0 group-hover:scale-110 transition" />
                               ) : alert.anomaly_metric.toLowerCase().includes('noise') ? (
-                                <VolumeIcon className="h-3.5 w-3.5 text-orange-400 shrink-0" />
+                                <VolumeIcon className="h-3.5 w-3.5 text-orange-400 shrink-0 group-hover:scale-110 transition" />
                               ) : (
-                                <Activity className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                                <Activity className="h-3.5 w-3.5 text-cyan-400 shrink-0 group-hover:scale-110 transition" />
                               )}
-                              <span>{alert.anomaly_metric}</span>
-                            </div>
+                              <span className="group-hover:underline">{alert.anomaly_metric}</span>
+                              <GitMerge className="h-3 w-3 text-purple-400 opacity-60 group-hover:opacity-100" />
+                            </button>
 
                             <div className="grid grid-cols-2 gap-1.5 mt-1 bg-slate-950/60 p-1.5 rounded border border-slate-800/80 font-mono text-[11px]">
                               <div>
@@ -660,9 +669,17 @@ export default function ChronologicalAnomalyLogPanel({
                               </div>
                             </div>
 
-                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1 font-mono">
-                              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
-                              <span>{alert.kalman_status}</span>
+                            <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between font-mono">
+                              <span className="flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
+                                <span>{alert.kalman_status}</span>
+                              </span>
+                              <button
+                                onClick={() => setSelectedRootCauseAlert(alert)}
+                                className="text-purple-400 hover:text-purple-300 text-[9px] underline font-sans cursor-pointer"
+                              >
+                                Root Cause &rarr;
+                              </button>
                             </div>
                           </td>
 
@@ -673,7 +690,7 @@ export default function ChronologicalAnomalyLogPanel({
                             </p>
                             <button
                               onClick={() => setExpandedAlertId(isExpandedRow ? null : alert.id)}
-                              className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-semibold mt-1 inline-flex items-center gap-0.5"
+                              className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-semibold mt-1 inline-flex items-center gap-0.5 cursor-pointer"
                             >
                               <span>{isExpandedRow ? 'Hide details' : 'View full triage details'}</span>
                               {isExpandedRow ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -687,7 +704,7 @@ export default function ChronologicalAnomalyLogPanel({
                               {!alert.acknowledged ? (
                                 <button
                                   onClick={() => onAcknowledgeAlert(alert.id)}
-                                  className="flex items-center space-x-1 bg-cyan-600 hover:bg-cyan-500 text-white px-2.5 py-1 rounded text-xs font-semibold transition shadow-xs"
+                                  className="flex items-center space-x-1 bg-cyan-600 hover:bg-cyan-500 text-white px-2.5 py-1 rounded text-xs font-semibold transition shadow-xs cursor-pointer"
                                   title="Acknowledge alert and log to audit trail"
                                 >
                                   <CheckCircle2 className="h-3 w-3" />
@@ -700,21 +717,31 @@ export default function ChronologicalAnomalyLogPanel({
                               )}
 
                               <div className="flex items-center gap-1">
+                                {/* Root Cause Analysis Modal Trigger */}
+                                <button
+                                  onClick={() => setSelectedRootCauseAlert(alert)}
+                                  className="flex items-center space-x-1 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-purple-300 px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer shadow-xs"
+                                  title="Analyze Environmental vs. Operational Root Causes"
+                                >
+                                  <GitMerge className="h-3 w-3 text-purple-400" />
+                                  <span>Root Cause</span>
+                                </button>
+
                                 {/* Isolate Signal in Chart */}
                                 <button
                                   onClick={() => handleIsolateSignalFromAlert(alert.anomaly_metric)}
-                                  className="flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 px-2 py-0.5 rounded text-[11px] font-medium transition"
+                                  className="flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer"
                                   title="Scroll up and isolate this health signal on the 24-hour line chart"
                                 >
                                   <Activity className="h-3 w-3 text-cyan-400" />
-                                  <span>Isolate Signal</span>
+                                  <span>Isolate</span>
                                 </button>
 
                                 {/* Dispatch Action */}
                                 {onDispatchAction && (
                                   <button
                                     onClick={() => onDispatchAction(alert)}
-                                    className="flex items-center space-x-1 bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 px-2 py-0.5 rounded text-[11px] font-medium transition"
+                                    className="flex items-center space-x-1 bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer"
                                     title="Stage Automated Medical or Safety Protocol Dispatch"
                                   >
                                     <Send className="h-3 w-3 text-rose-400" />
@@ -726,7 +753,7 @@ export default function ChronologicalAnomalyLogPanel({
                                 {onSpeakAlert && (
                                   <button
                                     onClick={() => onSpeakAlert(alert)}
-                                    className={`p-1 rounded text-slate-300 hover:text-white border border-slate-700 hover:bg-slate-700 transition ${
+                                    className={`p-1 rounded text-slate-300 hover:text-white border border-slate-700 hover:bg-slate-700 transition cursor-pointer ${
                                       isSpeaking ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800'
                                     }`}
                                     title="Speak alert synthesis over PA/Radio"
@@ -754,7 +781,7 @@ export default function ChronologicalAnomalyLogPanel({
                                   </span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-[11px]">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-[11px] mb-3">
                                   <div>
                                     <span className="text-slate-500 text-[10px] block uppercase">Recommended Protocol</span>
                                     <p className="font-sans text-white text-xs mt-0.5">{alert.recommended_action}</p>
@@ -776,6 +803,30 @@ export default function ChronologicalAnomalyLogPanel({
                                       No raw biometric identifiers stored in central supervisory logs.
                                     </p>
                                   </div>
+                                </div>
+
+                                {/* Root Cause Analysis Launcher in Expanded Dossier */}
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2.5 bg-gradient-to-r from-purple-950/60 via-slate-900 to-slate-900 border border-purple-500/40 rounded-lg gap-2">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="p-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                                      <GitMerge className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                      <span className="text-xs font-bold text-white block">
+                                        Root Cause Heuristic Diagnostics (Environmental vs. Operational)
+                                      </span>
+                                      <span className="text-[11px] text-slate-400 block">
+                                        Analyze causal split between ambient microclimate and operational exertion cadence.
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => setSelectedRootCauseAlert(alert)}
+                                    className="flex items-center space-x-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer shadow-md shrink-0"
+                                  >
+                                    <Sparkles className="h-3.5 w-3.5" />
+                                    <span>Launch Root Cause Analysis</span>
+                                  </button>
                                 </div>
                               </div>
                             </td>
@@ -802,6 +853,22 @@ export default function ChronologicalAnomalyLogPanel({
             </div>
           </div>
         </>
+      )}
+
+      {/* Root Cause Analysis Modal */}
+      {selectedRootCauseAlert && (
+        <RootCauseAnalysisModal
+          isOpen={Boolean(selectedRootCauseAlert)}
+          onClose={() => setSelectedRootCauseAlert(null)}
+          alert={selectedRootCauseAlert}
+          zone={zones.find(
+            (z) =>
+              z.id === selectedRootCauseAlert.location_zone ||
+              z.name.toLowerCase().includes(selectedRootCauseAlert.location_zone.toLowerCase()) ||
+              selectedRootCauseAlert.location_zone.toLowerCase().includes(z.name.toLowerCase())
+          )}
+          onDispatchMitigation={onDispatchAction}
+        />
       )}
     </div>
   );

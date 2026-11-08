@@ -34,10 +34,12 @@ import {
   Sliders,
   CheckCheck,
   Calendar,
-  Share2
+  Share2,
+  GitMerge
 } from 'lucide-react';
 
 import { generateHistoricalAnomalyPdfReport } from '../services/historicalAnomalyPdfGenerator';
+import RootCauseAnalysisModal from './RootCauseAnalysisModal';
 
 export interface HistoricalAnomalyEvent {
   id: string;
@@ -317,6 +319,7 @@ export default function HistoricalAnomalyEventLog({
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(6);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [selectedRootCauseAlert, setSelectedRootCauseAlert] = useState<ActiveAnomalyAlert | null>(null);
 
   // Sync external zone changes
   React.useEffect(() => {
@@ -1102,6 +1105,33 @@ export default function HistoricalAnomalyEventLog({
                           )}
 
                           <div className="flex items-center gap-1">
+                            {/* Root Cause Analysis Action */}
+                            <button
+                              onClick={() => {
+                                const alertPayload: ActiveAnomalyAlert = {
+                                  id: event.id,
+                                  worker_id: event.workerId,
+                                  location_zone: event.zoneName,
+                                  detected_at: event.relativeTime,
+                                  anomaly_metric: event.anomalyMetric,
+                                  raw_value: event.measuredValue,
+                                  kalman_smoothed_value: event.kalmanSmoothedValue,
+                                  severity: event.severityTier,
+                                  kalman_status: 'Confirmed Sensor Spike',
+                                  lead_time: event.leadTime,
+                                  recommended_action: event.operationalDirective,
+                                  acknowledged: event.acknowledged,
+                                  privacy_status: event.privacyCompliance
+                                };
+                                setSelectedRootCauseAlert(alertPayload);
+                              }}
+                              className="flex items-center space-x-1 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-purple-300 px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer shadow-xs"
+                              title="Analyze Environmental vs. Operational Root Causes"
+                            >
+                              <GitMerge className="h-3 w-3 text-purple-400" />
+                              <span>Root Cause</span>
+                            </button>
+
                             {/* Medical / Protocol Dispatch Action */}
                             {onDispatchAction && (
                               <button
@@ -1314,6 +1344,22 @@ export default function HistoricalAnomalyEventLog({
           </div>
         </div>
       </div>
+
+      {/* Root Cause Analysis Modal */}
+      {selectedRootCauseAlert && (
+        <RootCauseAnalysisModal
+          isOpen={Boolean(selectedRootCauseAlert)}
+          onClose={() => setSelectedRootCauseAlert(null)}
+          alert={selectedRootCauseAlert}
+          zone={zones.find(
+            (z) =>
+              z.id === selectedRootCauseAlert.location_zone ||
+              z.name.toLowerCase().includes(selectedRootCauseAlert.location_zone.toLowerCase()) ||
+              selectedRootCauseAlert.location_zone.toLowerCase().includes(z.name.toLowerCase())
+          )}
+          onDispatchMitigation={onDispatchAction}
+        />
+      )}
     </div>
   );
 }

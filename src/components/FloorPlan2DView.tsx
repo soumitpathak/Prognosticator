@@ -159,7 +159,7 @@ export default function FloorPlan2DView({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-xl">
+    <div id="floor-plan-2d-view" className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-xl">
       {/* Component Header & Control Toolbar */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center pb-4 mb-4 border-b border-slate-800 gap-3">
         <div>

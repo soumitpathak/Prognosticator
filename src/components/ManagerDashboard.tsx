@@ -159,7 +159,15 @@ import ProactiveMaintenanceSchedulerCard from './ProactiveMaintenanceSchedulerCa
 import AnomalyDensityHeatmap from './AnomalyDensityHeatmap';
 import AutomatedResponseModule from './AutomatedResponseModule';
 import SignedComplianceReportModal from './SignedComplianceReportModal';
-import { FileText, Loader2, Navigation, ShieldCheck, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind } from 'lucide-react';
+import ComplianceAuditLog from './ComplianceAuditLog';
+import ManagerSummaryMetricsRow from './ManagerSummaryMetricsRow';
+import ResourceUtilizationPanel from './ResourceUtilizationPanel';
+import { complianceAuditService } from '../services/complianceAuditService';
+import { chartAnnotationService } from '../services/chartAnnotationService';
+import { generateDashboardSummaryPdfReport } from '../services/dashboardSummaryPdfGenerator';
+import { FileText, Loader2, Navigation, ShieldCheck, Shield, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind } from 'lucide-react';
+
+export type TeamMemberRole = 'SAFETY_OFFICER' | 'MAINTENANCE_CREW' | 'OPERATIONS_LEAD';
 
 const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   {
@@ -256,8 +264,81 @@ export default function ManagerDashboard() {
 
   // Modals & Primary View Tabs
   const [managerTab, setManagerTab] = useState<
-    'live' | 'compliance' | 'predictiveMaintenance' | 'correlationEngine' | 'density' | 'patterns'
+    'live' | 'resourceUtilization' | 'compliance' | 'complianceAudit' | 'predictiveMaintenance' | 'correlationEngine' | 'density' | 'patterns'
   >('live');
+
+  // Team Member View Role Toggle State: Safety Compliance Officer vs Maintenance Crew vs Operations Lead
+  const [activeRole, setActiveRole] = useState<TeamMemberRole>('SAFETY_OFFICER');
+
+  // Real-Time Alert Mute State (Persisted in localStorage)
+  const [isAlertsMuted, setIsAlertsMuted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('prognosticator_alerts_muted') === 'true';
+    }
+    return false;
+  });
+
+  const handleSwitchRole = (newRole: TeamMemberRole) => {
+    const prevRole = activeRole;
+    setActiveRole(newRole);
+    complianceAuditService.logEvent({
+      eventType: 'MANUAL_OVERRIDE',
+      actor: 'Alex Mercer',
+      actorRole:
+        newRole === 'SAFETY_OFFICER'
+          ? 'Safety Compliance Officer'
+          : newRole === 'MAINTENANCE_CREW'
+          ? 'Maintenance Crew Lead'
+          : 'Site Operations Lead',
+      actorType: 'USER',
+      targetModule: 'Team Member View Access Control',
+      parameter: 'Active Role Switch',
+      previousValue: prevRole,
+      newValue: newRole,
+      justification: `Supervisor switched active dashboard view role to ${newRole}. Access privileges and forecast data visibility dynamically reconfigured.`,
+      regulatoryStandard: 'HIPAA §164.312(b) & EU GDPR Art. 30',
+      complianceStatus: 'VERIFIED'
+    });
+    if (newRole === 'MAINTENANCE_CREW') {
+      setProtocolActiveNotice(
+        'Maintenance Crew View Active: Sensitive worker biometric forecasting is restricted per OSHA/HIPAA regulations. Environmental & equipment monitors active.'
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 7000);
+    } else {
+      setProtocolActiveNotice(`Switched dashboard view role to: ${newRole.replace('_', ' ')}.`);
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+    }
+  };
+
+  const handleToggleMuteAlerts = () => {
+    setIsAlertsMuted((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('prognosticator_alerts_muted', String(next));
+      }
+      complianceAuditService.logEvent({
+        eventType: 'MANUAL_OVERRIDE',
+        actor: 'Alex Mercer',
+        actorRole: 'Safety Compliance Officer',
+        actorType: 'USER',
+        targetModule: 'Real-Time Notification Dispatcher',
+        parameter: 'Alert Notification Mute State',
+        previousValue: prev ? 'MUTED' : 'ACTIVE',
+        newValue: next ? 'MUTED' : 'ACTIVE',
+        justification: next
+          ? 'Supervisor muted live health anomaly alerts (visual audit logging maintained in ledger).'
+          : 'Supervisor unmuted live health anomaly alerts.',
+        regulatoryStandard: 'OSHA 1910.165(b)(2)',
+        complianceStatus: 'OVERRIDDEN'
+      });
+      setProtocolActiveNotice(
+        next ? '🚨 All anomaly alerts MUTED (silent mode). Audit logging active.' : '🔔 Anomaly alerts UNMUTED.'
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+      return next;
+    });
+  };
+
   const [isTeamAlertModalOpen, setIsTeamAlertModalOpen] = useState<boolean>(false);
   const [unreadTeamAlertCount, setUnreadTeamAlertCount] = useState<number>(() =>
     teamAlertService.getUnreadCount()
@@ -475,6 +556,7 @@ export default function ManagerDashboard() {
   // Client-Side Executive PDF Export State
   const [isDirectPdfExporting, setIsDirectPdfExporting] = useState<boolean>(false);
   const [directPdfStatus, setDirectPdfStatus] = useState<string>('');
+  const [isGeneratingSummaryPdf, setIsGeneratingSummaryPdf] = useState<boolean>(false);
 
   // 30-Day Anomaly Trend Frequency Intelligence State
   const [anomalyTrendZoneId, setAnomalyTrendZoneId] = useState<string>('ALL');
@@ -768,12 +850,21 @@ export default function ManagerDashboard() {
         });
       }
 
-      if (toastSoundEnabled) {
+      if (toastSoundEnabled && !isAlertsMuted) {
         const chimeSev = effectiveRiskTier === 'HIGH_RISK' ? 'HIGH' : 'CRITICAL';
         voiceAlertService.playAlertChime(chimeSev, voiceSettings.severityAudioToggles);
       }
+
+      // Voice Alert SpeechSynthesis for New Critical Health Anomalies (Accessibility Mode)
+      if (voiceSettings.enabled && !isAlertsMuted) {
+        if (effectiveRiskTier === 'CRITICAL_RISK' || !voiceSettings.announceCriticalOnly) {
+          const zoneClean = (newToast.zoneName || 'Monitored Facility').replace(/-/g, ' ');
+          const spokenText = `Priority One Critical Health Anomaly detected in ${newToast.department}, ${zoneClean}. Hazard: ${newToast.anomalyMetric}. Required directive: ${newToast.recommendedAction}`;
+          voiceAlertService.speakRawText(spokenText, voiceSettings);
+        }
+      }
     },
-    [toastSoundEnabled, voiceSettings.severityAudioToggles]
+    [toastSoundEnabled, isAlertsMuted, voiceSettings]
   );
 
   // Custom Anomaly Detection Thresholds & Sensitivity State (Visualized on Trend Chart)
@@ -1451,6 +1542,37 @@ export default function ManagerDashboard() {
     }
   };
 
+  // Compile and download comprehensive 2-page PDF summary report of current dashboard metrics and active anomalies
+  const handleDownloadDashboardSummaryPdf = async () => {
+    setIsGeneratingSummaryPdf(true);
+    setProtocolActiveNotice('Compiling current dashboard metrics and active anomalies into PDF summary report...');
+    try {
+      const filename = await generateDashboardSummaryPdfReport({
+        activeAlerts,
+        currentZone: activeZoneObj,
+        zones,
+        telemetryStream,
+        annotations: chartAnnotationService.getAnnotations(),
+        supervisorName: 'Alex Mercer (Safety Compliance Lead)',
+        activeRole:
+          activeRole === 'SAFETY_OFFICER'
+            ? 'Safety Compliance Officer'
+            : activeRole === 'MAINTENANCE_CREW'
+            ? 'Maintenance Crew Lead'
+            : 'Site Operations Lead',
+        onProgress: (msg) => setProtocolActiveNotice(msg)
+      });
+      setProtocolActiveNotice(`Dashboard summary PDF report generated and downloaded: ${filename}`);
+      setTimeout(() => setProtocolActiveNotice(null), 8000);
+    } catch (err: any) {
+      console.error('Failed to generate dashboard summary PDF:', err);
+      setProtocolActiveNotice(`PDF summary generation failed: ${err?.message || 'Unknown error'}`);
+      setTimeout(() => setProtocolActiveNotice(null), 8000);
+    } finally {
+      setIsGeneratingSummaryPdf(false);
+    }
+  };
+
   // Export Current View Anomaly Report as Simulated PDF/CSV with System Audit Logging
   const handleExportViewAuditReport = async (format: 'PDF' | 'CSV') => {
     setIsExportingAuditReport(true);
@@ -2101,20 +2223,42 @@ export default function ManagerDashboard() {
         parameter: 'Current Anomaly Logs & Trend Data CSV Export',
         previousValue: 'N/A',
         newValue: `Exported ${res.recordCount} records (active alerts, audit trail, 30-day trends): ${res.filename}`,
-        justification: 'Exported complete statutory compliance CSV report containing current anomaly logs and trend data under ISO 45001 / OSHA 1910 standards.',
+        justification: 'Exported all analytics CSV dossier containing current anomaly logs and historical trend data for offline compliance auditing (ISO 45001 / OSHA 1910).',
         approvalStatus: 'VERIFIED'
       };
       setSystemAuditLogs((prev) => [auditEntry, ...prev]);
 
+      // Record in tamper-evident compliance audit trail
+      complianceAuditService.logEvent({
+        eventType: 'MANUAL_OVERRIDE',
+        actor: 'Alex Mercer',
+        actorRole:
+          activeRole === 'SAFETY_OFFICER'
+            ? 'Safety Compliance Officer'
+            : activeRole === 'MAINTENANCE_CREW'
+            ? 'Maintenance Crew Lead'
+            : 'Site Operations Lead',
+        actorType: 'USER',
+        targetModule: 'Offline Compliance Audit Ledger',
+        parameter: 'All Analytics CSV Export',
+        previousValue: 'N/A',
+        newValue: `Exported ${res.recordCount} records: ${res.filename}`,
+        justification: 'Exported all analytics CSV of current anomaly log and historical trend data for offline regulatory auditing.',
+        regulatoryStandard: 'OSHA 1910.120 / ISO 45001 §9.1',
+        complianceStatus: 'VERIFIED',
+        zoneId: activeZoneObj.id
+      });
+
       setProtocolActiveNotice(
-        `Compliance Anomaly Logs & Trend Data CSV exported (${res.recordCount} records): ${res.filename}`
+        `All Analytics CSV exported for offline auditing (${res.recordCount} records across active anomaly log and historical trends): ${res.filename}`
       );
-      setTimeout(() => setProtocolActiveNotice(null), 7000);
+      setTimeout(() => setProtocolActiveNotice(null), 8000);
     } catch (err: any) {
-      console.error('Failed to export compliance CSV:', err);
+      console.error('Failed to export all analytics CSV:', err);
       setProtocolActiveNotice('Failed to export CSV: ' + (err?.message || 'Unknown error'));
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
     }
-  }, [activeAlerts, anomalyAuditRecords, anomalyTrend30d, zones, telemetryStream, activeZoneObj]);
+  }, [activeAlerts, anomalyAuditRecords, anomalyTrend30d, zones, telemetryStream, activeZoneObj, activeRole]);
 
   // Initial demonstration high-risk population health anomaly toast alert on mount
   useEffect(() => {
@@ -2834,31 +2978,127 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* Top Navigation Search Bar: Allows users to quickly look up specific departments or worker zones by ID */}
-        <div className="w-full xl:w-[400px] xl:mx-2">
-          <DepartmentZoneSearchLookup
+        {/* Global Search Bar: Queries specific facility zones, past anomaly events by ID, or predictive reports for quick navigation */}
+        <div className="w-full xl:w-[380px] xl:mx-2">
+          <GlobalSearchBar
             zones={zones}
-            selectedZoneId={selectedZone}
-            onSelectEntity={(entity) => {
-              setSelectedZone(entity.rawZoneId);
-              setSelectedComparisonDeptId(entity.rawZoneId);
-              setAnomalyTrendZoneId(entity.rawZoneId);
-              const z = zones.find((item) => item.id === entity.rawZoneId) || activeZoneObj;
+            alerts={activeAlerts}
+            onSelectZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              setSelectedComparisonDeptId(zoneId);
+              setAnomalyTrendZoneId(zoneId);
+              const z = zones.find((item) => item.id === zoneId) || activeZoneObj;
               if (z) {
                 const newPacket = generatePacketForZone(z, z.status === 'CRITICAL');
                 const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
                 setTelemetryAlert(res);
               }
-              setProtocolActiveNotice(
-                `Quick Lookup: Focused on ${entity.type === 'DEPARTMENT' ? 'Department' : 'Worker Zone'} [${entity.id}] ${entity.name}`
-              );
-              setTimeout(() => setProtocolActiveNotice(null), 6000);
+              setProtocolActiveNotice(`Global Search: Focused on Facility Zone [${zoneId}]`);
+              setTimeout(() => setProtocolActiveNotice(null), 5000);
+            }}
+            onSelectAlert={(alertId) => {
+              const matchedAlert = activeAlerts.find((a) => a.id === alertId);
+              if (matchedAlert) {
+                handleOpenAnomalyDetails(matchedAlert);
+              } else {
+                setProtocolActiveNotice(`Viewing anomaly event details for: ${alertId}`);
+                setTimeout(() => setProtocolActiveNotice(null), 5000);
+              }
+            }}
+            onSelectReport={(reportKey) => {
+              if (reportKey === 'EXPORT_ALL_ANALYTICS_CSV') {
+                handleExportAnomalyLogsAndTrendDataCsv();
+              } else if (reportKey === 'DASHBOARD_SUMMARY_PDF') {
+                handleDownloadDashboardSummaryPdf();
+              } else if (reportKey === 'PREDICTIVE_SURGE_48H') {
+                handleScrollToForecastChart();
+              } else if (reportKey === 'SIGNED_COMPLIANCE_PDF') {
+                setIsSignedCompliancePdfModalOpen(true);
+              } else if (reportKey === 'DAILY_SUMMARY_REPORT') {
+                setIsDailySummaryReportOpen(true);
+              } else if (reportKey === 'COMPLIANCE_AUDIT_LOG') {
+                setManagerTab('complianceAudit');
+              } else if (reportKey === 'HEALTH_METRICS_PDF') {
+                setIsHealthMetricsPdfModalOpen(true);
+              } else if (reportKey === 'ANOMALY_TREND_30D') {
+                const el = document.getElementById('anomaly-trend-30d-card');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              } else if (reportKey === 'PREDICTIVE_MAINTENANCE_TAB') {
+                setManagerTab('predictiveMaintenance');
+              } else if (reportKey === 'RESOURCE_UTILIZATION_HEATMAP') {
+                setManagerTab('resourceUtilization');
+                const el = document.getElementById('resource-utilization-panel');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }
             }}
           />
         </div>
 
+        {/* Team Member View Role Toggle: Filters visible data and controls based on specific user role, restricting sensitive forecast data */}
+        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0">
+          <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 flex items-center gap-1">
+            <Users className="h-3 w-3 text-cyan-400" />
+            <span className="hidden sm:inline">Role View:</span>
+          </span>
+          <button
+            onClick={() => handleSwitchRole('SAFETY_OFFICER')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              activeRole === 'SAFETY_OFFICER'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Safety Compliance Officer: Unrestricted access to all forecast models, biometric telemetry, and HIPAA audit trails"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>Safety Officer</span>
+          </button>
+          <button
+            onClick={() => handleSwitchRole('MAINTENANCE_CREW')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              activeRole === 'MAINTENANCE_CREW'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Maintenance Crew: Focus on HVAC, environmental sensors, and equipment health. Sensitive worker biometric forecasts restricted."
+          >
+            <Wrench className="h-3.5 w-3.5" />
+            <span>Maintenance Crew</span>
+            <span className="text-[9px] font-mono bg-amber-950 text-amber-200 px-1 rounded uppercase">Restricted</span>
+          </button>
+          <button
+            onClick={() => handleSwitchRole('OPERATIONS_LEAD')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              activeRole === 'OPERATIONS_LEAD'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Site Operations Lead: Operational throughput, worker coverage, and shift health overview"
+          >
+            <UserCheck className="h-3.5 w-3.5" />
+            <span>Ops Lead</span>
+          </button>
+        </div>
+
         {/* Global Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Mute Alerts Quick Toggle */}
+          <button
+            onClick={handleToggleMuteAlerts}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
+              isAlertsMuted
+                ? 'bg-amber-950 text-amber-300 border-amber-500 animate-pulse'
+                : 'bg-slate-950 text-slate-300 border-slate-700 hover:text-white'
+            }`}
+            title={isAlertsMuted ? 'Health anomaly alerts are MUTED — Click to unmute' : 'Mute health anomaly alert notifications'}
+          >
+            {isAlertsMuted ? (
+              <VolumeX className="h-3.5 w-3.5 text-amber-400" />
+            ) : (
+              <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
+            )}
+            <span>{isAlertsMuted ? 'Alerts Muted' : 'Mute Alerts'}</span>
+          </button>
+
           {/* Top-Right Notification Center anchored in top right */}
           <TopRightNotificationCenter
             alerts={activeAlerts}
@@ -2893,6 +3133,25 @@ export default function ManagerDashboard() {
             onToggleSound={() => setToastSoundEnabled((prev) => !prev)}
           />
 
+          {/* Download Dashboard Summary PDF Report Button: Direct download of 2-page metrics and anomalies documentation */}
+          <button
+            onClick={handleDownloadDashboardSummaryPdf}
+            disabled={isGeneratingSummaryPdf}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md border cursor-pointer ${
+              isGeneratingSummaryPdf
+                ? 'bg-cyan-950 text-cyan-300 border-cyan-500/50 cursor-wait'
+                : 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-400'
+            }`}
+            title="Generate and download a comprehensive 2-page PDF summary report of current dashboard metrics, active anomalies, and zone risk indicators for documentation"
+          >
+            {isGeneratingSummaryPdf ? (
+              <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5 text-white" />
+            )}
+            <span>{isGeneratingSummaryPdf ? 'Generating PDF...' : 'Download PDF Summary'}</span>
+          </button>
+
           {/* Quick Snapshot Button: Instantly generates a summary report of current anomaly counts and high-risk zones in a modal */}
           <button
             onClick={() => setIsQuickSnapshotModalOpen(true)}
@@ -2913,14 +3172,33 @@ export default function ManagerDashboard() {
             <span>Signed Quarterly PDF</span>
           </button>
 
-          {/* Export Compliance CSV Button: Current Anomaly Logs & Trend Data */}
+          {/* Settings Menu Button: Kalman sensitivity and SpeechSynthesis accessibility audio alerts */}
+          <button
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Open Settings Menu to configure Kalman sensitivity and SpeechSynthesis audio alerts"
+          >
+            <Settings className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Settings</span>
+            {voiceSettings.enabled && (
+              <span className="flex h-1.5 w-1.5 relative" title="Speech audio alerts enabled">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-500"></span>
+              </span>
+            )}
+          </button>
+
+          {/* Export All Analytics Button: Triggers simulated CSV download of current anomaly log and historical trend data for offline auditing */}
           <button
             onClick={handleExportAnomalyLogsAndTrendDataCsv}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 cursor-pointer"
-            title="Export current anomaly detection logs and trend data as a CSV file for compliance reporting (ISO 45001 / OSHA 1910)"
+            title="Trigger a simulated CSV download of the current anomaly log and historical trend data for offline auditing (ISO 45001 / OSHA 1910)"
           >
             <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
-            <span>Export Compliance CSV</span>
+            <span>Export All Analytics</span>
+            <span className="text-[10px] font-mono bg-emerald-950/80 px-1 rounded text-emerald-200 ml-0.5">
+              CSV
+            </span>
           </button>
 
           {/* Quick Trigger: Automated Response Module (HVAC/Ventilation) */}
@@ -3065,7 +3343,20 @@ export default function ManagerDashboard() {
             )}
           </button>
 
-          {/* Worker Density Trends & D3 Heatmap Toggle Button */}
+          {/* Resource Utilization (Heatmap) Quick Toggle Button */}
+          <button
+            onClick={() => setManagerTab((prev) => (prev === 'resourceUtilization' ? 'live' : 'resourceUtilization'))}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              managerTab === 'resourceUtilization'
+                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white border-orange-300 shadow-md shadow-orange-500/30'
+                : 'bg-amber-950/70 hover:bg-amber-900/80 border-amber-500/50 text-amber-200'
+            }`}
+            title="Switch to Resource Utilization & Worker Distribution Heatmap Panel"
+          >
+            <Users className="h-3.5 w-3.5 text-amber-400" />
+            <span>{managerTab === 'resourceUtilization' ? '← Live Operations' : 'Resource Utilization'}</span>
+          </button>
+
           {/* Compliance Audit (HIPAA) Quick Toggle Button */}
           <button
             onClick={() => setManagerTab((prev) => (prev === 'compliance' ? 'live' : 'compliance'))}
@@ -3963,7 +4254,47 @@ export default function ManagerDashboard() {
         </div>
       </header>
 
-      {/* Primary Dashboard View Mode Tabs: Live Operations, Compliance Audit, Predictive IoT, Causal Links, Density, Pattern Library */}
+      {/* Role Restriction Banner: Highlighted when Maintenance Crew view is active */}
+      {activeRole === 'MAINTENANCE_CREW' && (
+        <div className="bg-amber-950/80 border border-amber-600/50 rounded-xl p-3.5 px-4 mb-4 text-xs font-mono text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <Lock className="h-4 w-4 text-amber-400 shrink-0" />
+            <span>
+              <strong>MAINTENANCE CREW VIEW ACTIVE:</strong> Sensitive worker health forecasting &amp; personal biometric telemetry are restricted per OSHA 1910 and HIPAA §164.312 privacy requirements. Environmental and equipment telemetry remain active.
+            </span>
+          </div>
+          <button
+            onClick={() => handleSwitchRole('SAFETY_OFFICER')}
+            className="text-amber-300 underline font-bold hover:text-white cursor-pointer shrink-0"
+          >
+            Switch to Safety Officer (Full Access) &rarr;
+          </button>
+        </div>
+      )}
+
+      {/* Row of Summary Metric Cards at Top of ManagerDashboard: Active Anomalies, Worker Coverage, Engine Uptime, System Latency */}
+      <ManagerSummaryMetricsRow
+        activeAlertsCount={activeAlerts.filter((a) => !a.acknowledged).length}
+        criticalAlertsCount={activeAlerts.filter((a) => !a.acknowledged && a.severity === 'CRITICAL').length}
+        highAlertsCount={activeAlerts.filter((a) => !a.acknowledged && a.severity === 'HIGH').length}
+        totalWorkersCount={144}
+        monitoredWorkersCount={142}
+        engineUptimePct={99.98}
+        systemLatencyMs={18.4}
+        onJumpToAlerts={() => {
+          const el = document.getElementById('active-alerts-section');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onJumpToZones={() => {
+          const el = document.getElementById('floorplan-view-section');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onDownloadPdfReport={handleDownloadDashboardSummaryPdf}
+        isGeneratingPdf={isGeneratingSummaryPdf}
+        className="mb-6"
+      />
+
+      {/* Primary Dashboard View Mode Tabs: Live Operations, Compliance Audit Log, System Compliance (HIPAA), Predictive IoT, Causal Links, Density, Pattern Library */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-6 bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-lg">
         <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-slate-800 flex-wrap gap-1">
           <button
@@ -3981,6 +4312,38 @@ export default function ManagerDashboard() {
             </span>
           </button>
 
+          {/* Resource Utilization (Heatmap Overlay) Tab Button */}
+          <button
+            onClick={() => setManagerTab('resourceUtilization')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'resourceUtilization'
+                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white shadow-md shadow-orange-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Users className="h-4 w-4 text-amber-300" />
+            <span>Resource Utilization</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 font-mono font-bold border border-amber-500/40">
+              Heatmap
+            </span>
+          </button>
+
+          {/* New Compliance Audit Log Tab Button */}
+          <button
+            onClick={() => setManagerTab('complianceAudit')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+              managerTab === 'complianceAudit'
+                ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-md shadow-emerald-900/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <ShieldAlert className="h-4 w-4 text-emerald-400" />
+            <span>Compliance Audit Log</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
+              CSV Export
+            </span>
+          </button>
+
           <button
             onClick={() => setManagerTab('compliance')}
             className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
@@ -3990,9 +4353,9 @@ export default function ManagerDashboard() {
             }`}
           >
             <ShieldCheck className="h-4 w-4 text-emerald-300" />
-            <span>System Compliance Audit</span>
+            <span>HIPAA Access Log</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
-              HIPAA
+              Security
             </span>
           </button>
 
@@ -4099,7 +4462,27 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      {managerTab === 'compliance' ? (
+      {managerTab === 'resourceUtilization' ? (
+        <div className="mb-6 animate-fadeIn">
+          <ResourceUtilizationPanel
+            zones={zones}
+            alerts={activeAlerts}
+            selectedZoneId={selectedZone}
+            onSelectZone={(zoneId) => setSelectedZone(zoneId)}
+            onNavigateToFloorplan={() => {
+              setManagerTab('live');
+              setTimeout(() => {
+                const el = document.getElementById('floor-plan-2d-view');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            }}
+          />
+        </div>
+      ) : managerTab === 'complianceAudit' ? (
+        <div className="mb-6 animate-fadeIn">
+          <ComplianceAuditLog />
+        </div>
+      ) : managerTab === 'compliance' ? (
         <div className="mb-6 animate-fadeIn">
           <SystemComplianceAuditModule />
         </div>
@@ -4573,6 +4956,22 @@ export default function ManagerDashboard() {
           const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
           const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
           setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+      {/* Resource Utilization & Worker Distribution Heatmap Panel */}
+      <ResourceUtilizationPanel
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        onNavigateToFloorplan={() => {
+          const el = document.getElementById('floor-plan-2d-view');
+          el?.scrollIntoView({ behavior: 'smooth' });
         }}
         className="mb-6"
       />
@@ -5092,44 +5491,79 @@ export default function ManagerDashboard() {
         className="mb-6"
       />
 
-      {/* 24-48 Hour Prognostic Forecast Panel: Projecting Potential Workforce Health Risks 24-48 Hours Ahead Using Simulated Trend Data */}
-      <PrognosticForecastPanel
-        alerts={activeAlerts}
-        zones={zones}
-        selectedZone={activeZoneObj}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onApplyPreemptiveProtocol={(scenarioType, details) => {
-          const newAudit: AuditEvent = {
-            id: `AUD-PROG-${Date.now().toString().slice(-4)}`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            eventType: 'ALERT_DISPATCH',
-            zone: activeZoneObj.name,
-            cohortCount: activeZoneObj.count,
-            riskTier: 'CRITICAL_RISK',
-            privacyEnforced: 'Differential Privacy Enforced (k=12)',
-            actionTaken: details
-          };
-          setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
-          setProtocolActiveNotice(`Prognostic 24-48h Pre-emptive Countermeasure staged: ${details}`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        className="mb-6"
-      />
+      {/* 24-48 Hour Prognostic Forecast Panel & 12h LSTM: Gated and restricted when Maintenance Crew view is active */}
+      {activeRole === 'MAINTENANCE_CREW' ? (
+        <div className="bg-slate-900 border border-amber-900/40 rounded-xl p-5 mb-6 text-slate-300 shadow-xl relative overflow-hidden">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0">
+              <Lock className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  Sensitive Workforce Health Forecasting Restricted
+                </h3>
+                <span className="text-[10px] font-mono uppercase bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold">
+                  Maintenance Crew Role Gated
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Access to individualized worker physiological stress projections, LSTM neural risk curves, and personal biometric predictions is restricted under OSHA 1910 and HIPAA §164.312 privacy requirements for the Maintenance Crew view. Physical equipment telemetry, HVAC response, and microclimate environmental monitors remain active.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                <span className="text-slate-400 font-mono">
+                  Active for Maintenance: <strong className="text-cyan-400">HVAC Automation</strong> • <strong className="text-cyan-400">Microclimate Environmental Sensors</strong> • <strong className="text-cyan-400">Equipment Vibration &amp; RUL</strong>
+                </span>
+                <button
+                  onClick={() => handleSwitchRole('SAFETY_OFFICER')}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer ml-auto"
+                >
+                  Switch to Safety Officer View (Full Access) &rarr;
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <PrognosticForecastPanel
+            alerts={activeAlerts}
+            zones={zones}
+            selectedZone={activeZoneObj}
+            onSelectZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              setAnomalyTrendZoneId(zoneId);
+              const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+              const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+              const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+              setTelemetryAlert(res);
+            }}
+            onApplyPreemptiveProtocol={(scenarioType, details) => {
+              const newAudit: AuditEvent = {
+                id: `AUD-PROG-${Date.now().toString().slice(-4)}`,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                eventType: 'ALERT_DISPATCH',
+                zone: activeZoneObj.name,
+                cohortCount: activeZoneObj.count,
+                riskTier: 'CRITICAL_RISK',
+                privacyEnforced: 'Differential Privacy Enforced (k=12)',
+                actionTaken: details
+              };
+              setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
+              setProtocolActiveNotice(`Prognostic 24-48h Pre-emptive Countermeasure staged: ${details}`);
+              setTimeout(() => setProtocolActiveNotice(null), 7000);
+            }}
+            className="mb-6"
+          />
 
-      {/* 12-Hour LSTM Predictive Risk Forecasting Panel (Autoencoder temporal simulation & scenario modeling) */}
-      <LstmRiskForecastingPanel12h
-        alerts={activeAlerts}
-        selectedZone={activeZoneObj}
-        onStageMitigation={handleStageLstmPreemptiveMitigation}
-        className="mb-6"
-      />
+          <LstmRiskForecastingPanel12h
+            alerts={activeAlerts}
+            selectedZone={activeZoneObj}
+            onStageMitigation={handleStageLstmPreemptiveMitigation}
+            className="mb-6"
+          />
+        </>
+      )}
 
       {/* Historical Population Health Anomalies Log (Lists the Last 5 Detected Events with Timestamps and Severity Levels) */}
       <HistoricalPopulationHealthAnomaliesLog
@@ -6082,6 +6516,9 @@ export default function ManagerDashboard() {
         onClose={() => setIsSettingsModalOpen(false)}
         currentConfig={kalmanConfig}
         onSaveConfig={handleSaveConfig}
+        voiceSettings={voiceSettings}
+        onUpdateVoiceSettings={setVoiceSettings}
+        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
       />
 
       <MedicalDispatchModal
@@ -6183,8 +6620,10 @@ export default function ManagerDashboard() {
         onClearAll={handleClearAllCriticalToasts}
         onDispatchAction={handleDispatchActionForCriticalToast}
         onInspectInChart={handleInspectCriticalToastInChart}
-        soundEnabled={toastSoundEnabled}
+        soundEnabled={toastSoundEnabled && !isAlertsMuted}
         onToggleSound={() => setToastSoundEnabled((s) => !s)}
+        isMuted={isAlertsMuted}
+        onToggleMuteAlerts={handleToggleMuteAlerts}
       />
 
       {/* Real-Time Threshold Breach Notification Toast Container */}

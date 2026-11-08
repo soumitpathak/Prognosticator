@@ -82,7 +82,10 @@ export default function VoiceAlertsModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white">Audible Voice Alert Synthesis</h3>
+                <h3 className="text-base font-bold text-white">Speech-to-Text &amp; Spoken Audio Alerts</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  SpeechSynthesis API
+                </span>
                 {isSpeaking && (
                   <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse">
                     <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping"></span>
@@ -91,7 +94,7 @@ export default function VoiceAlertsModal({
                 )}
               </div>
               <p className="text-xs text-slate-400">
-                Synthesize spoken context for on-site supervisors without requiring continuous screen monitoring
+                Browser SpeechSynthesis accessibility audio alerts for new critical health anomalies without requiring continuous screen monitoring
               </p>
             </div>
           </div>
@@ -116,9 +119,9 @@ export default function VoiceAlertsModal({
                 <Radio className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">Audible Supervisor Voice Dispatch</h4>
+                <h4 className="text-sm font-semibold text-white">Spoken Audio Alerts for Critical Anomalies</h4>
                 <p className="text-xs text-slate-400">
-                  Automatically synthesize verbal alerts when the Kalman engine flags severe hazards
+                  Automatically synthesize spoken verbal warnings via SpeechSynthesis API when new critical health anomalies occur
                 </p>
               </div>
             </div>

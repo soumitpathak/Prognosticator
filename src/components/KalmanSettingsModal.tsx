@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KalmanSensitivityConfig, SensitivityPreset } from '../types';
+import { KalmanSensitivityConfig, SensitivityPreset, VoiceAlertSettings } from '../types';
 import {
   Sliders,
   Settings,
@@ -9,14 +9,21 @@ import {
   RotateCcw,
   Gauge,
   Sparkles,
-  Info
+  Info,
+  Volume2,
+  VolumeX,
+  Play
 } from 'lucide-react';
+import { voiceAlertService } from '../services/voiceAlertService';
 
 interface KalmanSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentConfig: KalmanSensitivityConfig;
   onSaveConfig: (newConfig: KalmanSensitivityConfig) => void;
+  voiceSettings?: VoiceAlertSettings;
+  onUpdateVoiceSettings?: (newSettings: VoiceAlertSettings) => void;
+  onOpenVoiceModal?: () => void;
 }
 
 export const DEFAULT_KALMAN_CONFIG: KalmanSensitivityConfig = {
@@ -33,9 +40,14 @@ export default function KalmanSettingsModal({
   isOpen,
   onClose,
   currentConfig,
-  onSaveConfig
+  onSaveConfig,
+  voiceSettings,
+  onUpdateVoiceSettings,
+  onOpenVoiceModal
 }: KalmanSettingsModalProps) {
   const [config, setConfig] = useState<KalmanSensitivityConfig>(currentConfig);
+  const [localVoiceEnabled, setLocalVoiceEnabled] = useState<boolean>(voiceSettings?.enabled ?? true);
+  const [testStatus, setTestStatus] = useState<string>('');
 
   if (!isOpen) return null;
 
@@ -67,8 +79,51 @@ export default function KalmanSettingsModal({
     }
   };
 
+  const handleToggleVoiceAlerts = (checked: boolean) => {
+    setLocalVoiceEnabled(checked);
+    if (onUpdateVoiceSettings && voiceSettings) {
+      onUpdateVoiceSettings({
+        ...voiceSettings,
+        enabled: checked
+      });
+    }
+  };
+
+  const handleTestCriticalVoiceAlert = async () => {
+    setTestStatus('Speaking critical anomaly alert...');
+    try {
+      if (voiceAlertService.isSupported()) {
+        await voiceAlertService.speakRawText(
+          'Priority One Critical Alert: Severe cardiovascular autonomic deceleration and core temperature 38.6 degrees Celsius in Outdoor Construction Sector 4. Immediate cooling extraction required.',
+          voiceSettings || {
+            enabled: true,
+            volume: 1.0,
+            rate: 1.05,
+            pitch: 1.0,
+            announceCriticalOnly: false,
+            chimeSound: true,
+            selectedVoiceName: '',
+            severityAudioToggles: { CRITICAL: true, HIGH: true, MODERATE: true, LOW: false }
+          }
+        );
+        setTestStatus('Voice playback completed.');
+        setTimeout(() => setTestStatus(''), 4000);
+      } else {
+        setTestStatus('SpeechSynthesis API not supported.');
+      }
+    } catch {
+      setTestStatus('Speech synthesis playback error.');
+    }
+  };
+
   const handleSave = () => {
     onSaveConfig(config);
+    if (onUpdateVoiceSettings && voiceSettings) {
+      onUpdateVoiceSettings({
+        ...voiceSettings,
+        enabled: localVoiceEnabled
+      });
+    }
     onClose();
   };
 
@@ -264,6 +319,79 @@ export default function KalmanSettingsModal({
               <p className="text-[10px] text-slate-500 mt-0.5">
                 Higher $R$ increases Kalman smoothing, damping harsh electromagnetic sensor spikes.
               </p>
+            </div>
+          </div>
+
+          {/* Accessibility & Speech-to-Text Audio Alerts Section (SpeechSynthesis API) */}
+          <div className="bg-slate-950 p-4 rounded-xl border border-cyan-500/30 space-y-3 text-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span className="font-semibold text-white flex items-center gap-2">
+                <Volume2 className="h-4 w-4 text-cyan-400" />
+                <span>Accessibility &amp; Speech-to-Text Audio Alerts</span>
+              </span>
+              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/80 border border-cyan-700/60 px-2 py-0.5 rounded-full font-bold">
+                SpeechSynthesis API
+              </span>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-medium text-xs">
+                    Spoken Audio Alerts for New Critical Health Anomalies
+                  </span>
+                  {localVoiceEnabled && (
+                    <span className="text-[9px] font-mono text-emerald-300 bg-emerald-950 border border-emerald-800 px-1.5 py-0.2 rounded font-bold uppercase">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Synthesizes spoken audio announcements aloud using the browser's native <code className="text-cyan-300 font-mono">SpeechSynthesis</code> API whenever a new critical health anomaly is detected. Provides hands-free accessibility for field supervisors without requiring continuous screen monitoring.
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                <input
+                  type="checkbox"
+                  checked={localVoiceEnabled}
+                  onChange={(e) => handleToggleVoiceAlerts(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+              </label>
+            </div>
+
+            {/* Test Voice Announcement Button & Advanced Config Link */}
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-900">
+              <button
+                type="button"
+                onClick={handleTestCriticalVoiceAlert}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 transition cursor-pointer shadow-xs"
+                title="Test SpeechSynthesis audio playback for a sample critical health anomaly"
+              >
+                <Play className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Test Critical Speech Alert</span>
+              </button>
+
+              {testStatus && (
+                <span className="text-[11px] text-cyan-300 font-mono animate-pulse">
+                  {testStatus}
+                </span>
+              )}
+
+              {onOpenVoiceModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenVoiceModal();
+                  }}
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 underline font-medium cursor-pointer"
+                >
+                  Advanced Voice &amp; Speed Settings &rarr;
+                </button>
+              )}
             </div>
           </div>
 
