@@ -177,6 +177,11 @@ export default function ReportExportModal({
         currentZone: currentZoneObj,
         zones,
         telemetryElementId: 'telemetry-charts-card',
+        riskTrendElementId: 'workforce-risk-trend-7d-card',
+        predictiveChartElementId: 'kalman-predictive-model-30days-chart',
+        aggregateRiskElementId: 'aggregate-risk-score-trend-24h',
+        health30dElementId: 'workforce-health-30d-trend-card',
+        anomalyTrendElementId: 'anomaly-trend-30d-card',
         projectionElementId: 'incident-projection-chart-card',
         alertsElementId: 'active-alerts-section',
         onProgress: (status) => setPdfGenerationStatus(status)

@@ -249,6 +249,83 @@ class DesktopNotificationService {
 
     return false;
   }
+
+  /**
+   * Dispatches an immediate browser notification when health telemetry risk exceeds the user-defined threshold
+   */
+  public notifyRiskThresholdBreach(
+    breach: {
+      id: string;
+      riskScore: number;
+      threshold: number;
+      delta: number;
+      zoneName: string;
+      workerCount?: number;
+      primarySignal?: string;
+      recommendedAction: string;
+    },
+    options: { forceTrigger?: boolean; playChime?: boolean } = {}
+  ): boolean {
+    if (!this.config.enabled && !options.forceTrigger) return false;
+
+    const now = Date.now();
+    const cooldownMs = this.config.cooldownSeconds * 1000;
+    if (
+      !options.forceTrigger &&
+      this.config.lastAlertSentAt &&
+      now - this.config.lastAlertSentAt < cooldownMs &&
+      this.recentSentAlertIds.has(breach.id)
+    ) {
+      return false;
+    }
+
+    this.recentSentAlertIds.add(breach.id);
+    if (this.recentSentAlertIds.size > 50) {
+      this.recentSentAlertIds.clear();
+    }
+    this.config.lastAlertSentAt = now;
+
+    // Trigger synthetic two-tone audio chime
+    if (options.playChime !== false) {
+      this.playAlertChime('CRITICAL');
+    }
+
+    // Always flash title to alert manager
+    this.startTitleFlashing(`RISK EXCEEDED (${breach.riskScore.toFixed(1)}%) in ${breach.zoneName}!`);
+
+    // Check tabbed-out condition if configured
+    const tabbedOut = this.isTabbedOut();
+    if (this.config.notifyOnlyWhenTabbedOut && !tabbedOut && !options.forceTrigger) {
+      return false;
+    }
+
+    // Dispatch Native OS Browser Desktop Notification
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const title = `🚨 HEALTH RISK BREACH: ${breach.riskScore.toFixed(1)}% (Threshold: ${breach.threshold.toFixed(1)}%)`;
+        const body = `Sector: ${breach.zoneName}${breach.workerCount ? ` (${breach.workerCount} workers)` : ''}\nDelta: +${breach.delta.toFixed(1)}% above cutoff\nPrimary Strain: ${breach.primarySignal || 'Multivariate Cardiovascular & Heat Stress'}\nAction: ${breach.recommendedAction}`;
+
+        const notif = new Notification(title, {
+          body,
+          tag: `prognosticator-risk-breach-${breach.id}`,
+          requireInteraction: true,
+          silent: !this.config.soundChimeEnabled
+        });
+
+        notif.onclick = () => {
+          window.focus();
+          this.stopTitleFlashing();
+          notif.close();
+        };
+
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
 }
 
 export const desktopNotificationService = new DesktopNotificationService();

@@ -287,6 +287,7 @@ export interface SystemAuditLogEntry {
   justification: string;
   approvalStatus: 'VERIFIED' | 'APPLIED' | 'FLAGGED';
   ipAddress?: string;
+  zoneId?: string;
 }
 
 // ==========================================
@@ -867,6 +868,37 @@ export interface DesktopAlertPayload {
   metric: string;
   timestamp: string;
   actionRequired: string;
+}
+
+export interface TelemetryRiskThresholdConfig {
+  thresholdPct: number;
+  browserAlertsEnabled: boolean;
+  soundChimeEnabled: boolean;
+  notifyOnlyWhenTabbedOut: boolean;
+  cooldownSeconds: number;
+  minimumDeltaForUrgentAlertPct: number;
+}
+
+export interface TelemetryRiskBreachEvent {
+  id: string;
+  timestamp: string;
+  timeFormatted: string;
+  riskScore: number;
+  threshold: number;
+  delta: number;
+  zoneId: string;
+  zoneName: string;
+  workerCount: number;
+  severity: 'CRITICAL' | 'HIGH';
+  triggerSignals: Array<{
+    signalName: string;
+    measuredValue: string;
+    referenceBaseline: string;
+  }>;
+  recommendedAction: string;
+  acknowledged: boolean;
+  browserAlertDispatched: boolean;
+  workerPseudonym?: string;
 }
 
 // -------------------------------------------------------------

@@ -41,9 +41,10 @@ import {
   Phone,
   Shield,
   MessageSquare,
-  AlertCircle,
   FileText,
-  Loader2
+  Loader2,
+  VolumeX,
+  Gauge
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -52,9 +53,11 @@ import {
   IncidentAssignee,
   IncidentAssignment,
   IncidentActivityLogEntry,
-  TeamAlertNotification
+  TeamAlertNotification,
+  TelemetryRiskBreachEvent
 } from '../types';
 import { teamAlertService } from '../services/teamAlertService';
+import { desktopNotificationService } from '../services/desktopNotificationService';
 
 export interface DepartmentBreachInfo {
   departmentId: string;
@@ -205,6 +208,50 @@ export const INITIAL_INCIDENT_ASSIGNMENTS: Record<string, IncidentAssignment> = 
   }
 };
 
+export const INITIAL_RISK_BREACHES: TelemetryRiskBreachEvent[] = [
+  {
+    id: 'BREACH-8901',
+    timestamp: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    timeFormatted: '4 mins ago',
+    riskScore: 84.8,
+    threshold: 75.0,
+    delta: 9.8,
+    zoneId: 'Outdoor-Construction-Sector-4',
+    zoneName: 'Outdoor Construction Sector 4',
+    workerCount: 18,
+    severity: 'CRITICAL',
+    triggerSignals: [
+      { signalName: 'Cardiovascular Autonomic Collapse', measuredValue: 'HRV 28.2 ms (Drop -52%)', referenceBaseline: 'Nominal >= 55.0 ms' },
+      { signalName: 'Apparent Heat Index Plume', measuredValue: '43.2°C (WBGT 32.1°C)', referenceBaseline: 'Nominal <= 35.0°C' },
+      { signalName: 'Mean Tachycardia Cohort Load', measuredValue: '138 BPM', referenceBaseline: 'Safe Max <= 115 BPM' }
+    ],
+    recommendedAction: 'Immediate shaded cooling extraction, oral electrolyte hydration protocol, and stage on-site medical liaison.',
+    acknowledged: false,
+    browserAlertDispatched: true,
+    workerPseudonym: 'W-9921'
+  },
+  {
+    id: 'BREACH-8894',
+    timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+    timeFormatted: '18 mins ago',
+    riskScore: 78.4,
+    threshold: 75.0,
+    delta: 3.4,
+    zoneId: 'Subgrade-Utility-Tunnel-B',
+    zoneName: 'Subgrade Utility Tunnel B',
+    workerCount: 8,
+    severity: 'HIGH',
+    triggerSignals: [
+      { signalName: 'Thermal Work Limit (TWL) Deceleration', measuredValue: '108.4 W/m²', referenceBaseline: 'Min Safe >= 140 W/m²' },
+      { signalName: 'Relative Humidity Saturation', measuredValue: '86% RH (Subgrade Plume)', referenceBaseline: 'Comfort Range <= 65%' }
+    ],
+    recommendedAction: 'Mandate immediate 15-minute rest rotation in acclimatized staging bay; activate booster air blowers.',
+    acknowledged: true,
+    browserAlertDispatched: true,
+    workerPseudonym: 'W-4402'
+  }
+];
+
 export interface NotificationCenterProps {
   alerts: ActiveAnomalyAlert[];
   zones: FacilityZone[];
@@ -221,6 +268,21 @@ export interface NotificationCenterProps {
   isGeneratingPdf?: boolean;
   incidentAssignments?: Record<string, IncidentAssignment>;
   onUpdateIncidentAssignment?: (assignment: IncidentAssignment) => void;
+  // User-defined health telemetry risk threshold & browser alert props
+  telemetryRiskThreshold?: number;
+  onUpdateTelemetryRiskThreshold?: (val: number) => void;
+  riskThresholdBreaches?: TelemetryRiskBreachEvent[];
+  onAcknowledgeRiskBreach?: (id: string) => void;
+  onClearRiskBreaches?: () => void;
+  currentTelemetryRisk?: number;
+  onTestBrowserAlert?: () => void;
+  onSimulateRiskBreach?: () => void;
+  browserPermission?: 'granted' | 'denied' | 'default' | 'unsupported';
+  onRequestBrowserPermission?: () => void;
+  browserAlertsEnabled?: boolean;
+  onToggleBrowserAlerts?: () => void;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
   className?: string;
 }
 
@@ -461,8 +523,157 @@ export default function NotificationCenter({
   isGeneratingPdf = false,
   incidentAssignments: propAssignments,
   onUpdateIncidentAssignment,
+  telemetryRiskThreshold: propRiskThreshold,
+  onUpdateTelemetryRiskThreshold,
+  riskThresholdBreaches: propRiskBreaches,
+  onAcknowledgeRiskBreach: propOnAcknowledgeRiskBreach,
+  onClearRiskBreaches: propOnClearRiskBreaches,
+  currentTelemetryRisk = 84.8,
+  onTestBrowserAlert,
+  onSimulateRiskBreach,
+  browserPermission: propPermission,
+  onRequestBrowserPermission,
+  browserAlertsEnabled: propBrowserAlertsEnabled,
+  onToggleBrowserAlerts,
+  soundEnabled: propSoundEnabled,
+  onToggleSound,
   className = ''
 }: NotificationCenterProps) {
+  // Notification View Mode: 'ALL_ALERTS' | 'RISK_BREACHES' | 'WORKFLOW_DISPATCH'
+  const [activeViewMode, setActiveViewMode] = useState<'ALL_ALERTS' | 'RISK_BREACHES' | 'WORKFLOW_DISPATCH'>('ALL_ALERTS');
+
+  // Internal or controlled threshold
+  const [internalRiskThreshold, setInternalRiskThreshold] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('prognosticator_telemetry_risk_threshold');
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 40 && parsed <= 95) return parsed;
+      }
+    }
+    return 75.0;
+  });
+
+  const activeRiskThreshold = propRiskThreshold !== undefined ? propRiskThreshold : internalRiskThreshold;
+
+  const handleUpdateThreshold = (val: number) => {
+    const clamped = Math.max(40, Math.min(95, Number(val.toFixed(1))));
+    setInternalRiskThreshold(clamped);
+    try {
+      localStorage.setItem('prognosticator_telemetry_risk_threshold', clamped.toString());
+    } catch {}
+    if (onUpdateTelemetryRiskThreshold) {
+      onUpdateTelemetryRiskThreshold(clamped);
+    }
+  };
+
+  // Internal or controlled risk breaches
+  const [internalRiskBreaches, setInternalRiskBreaches] = useState<TelemetryRiskBreachEvent[]>(INITIAL_RISK_BREACHES);
+  const activeRiskBreaches = propRiskBreaches !== undefined ? propRiskBreaches : internalRiskBreaches;
+
+  const handleAcknowledgeBreach = (id: string) => {
+    if (propOnAcknowledgeRiskBreach) {
+      propOnAcknowledgeRiskBreach(id);
+    } else {
+      setInternalRiskBreaches((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, acknowledged: true } : b))
+      );
+    }
+  };
+
+  const handleClearBreaches = () => {
+    if (propOnClearRiskBreaches) {
+      propOnClearRiskBreaches();
+    } else {
+      setInternalRiskBreaches([]);
+    }
+  };
+
+  // Browser Permission State
+  const [localPermission, setLocalPermission] = useState<'granted' | 'denied' | 'default' | 'unsupported'>(() => {
+    return desktopNotificationService.checkPermission();
+  });
+  const permission = propPermission || localPermission;
+
+  const [testNotificationFeedback, setTestNotificationFeedback] = useState<string | null>(null);
+
+  const handleRequestPermission = async () => {
+    if (onRequestBrowserPermission) {
+      onRequestBrowserPermission();
+    } else {
+      const res = await desktopNotificationService.requestPermission();
+      setLocalPermission(res);
+    }
+  };
+
+  const handleFireTestAlert = () => {
+    if (onTestBrowserAlert) {
+      onTestBrowserAlert();
+    } else {
+      desktopNotificationService.notifyRiskThresholdBreach(
+        {
+          id: `TEST-BREACH-${Date.now()}`,
+          riskScore: currentTelemetryRisk || 85.0,
+          threshold: activeRiskThreshold,
+          delta: Number(((currentTelemetryRisk || 85.0) - activeRiskThreshold).toFixed(1)),
+          zoneName: 'Outdoor Construction Sector 4',
+          workerCount: 18,
+          primarySignal: 'Acute Tachycardia & Core Thermal Plume',
+          recommendedAction: 'Immediate shaded rest rotation and hydration triage.'
+        },
+        { forceTrigger: true }
+      );
+    }
+    setTestNotificationFeedback('🚨 Test Browser Alert dispatched! Check your desktop/OS notification center.');
+    setTimeout(() => setTestNotificationFeedback(null), 6000);
+  };
+
+  const handleSimulateSurge = () => {
+    if (onSimulateRiskBreach) {
+      onSimulateRiskBreach();
+    } else {
+      const simulatedScore = Number((activeRiskThreshold + 9.8).toFixed(1));
+      const simulatedBreach: TelemetryRiskBreachEvent = {
+        id: `BREACH-SIM-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        timeFormatted: 'Just now',
+        riskScore: simulatedScore,
+        threshold: activeRiskThreshold,
+        delta: Number((simulatedScore - activeRiskThreshold).toFixed(1)),
+        zoneId: 'Outdoor-Construction-Sector-4',
+        zoneName: 'Outdoor Construction Sector 4',
+        workerCount: 18,
+        severity: 'CRITICAL',
+        triggerSignals: [
+          { signalName: 'Elevated Cardiac Strain Vector', measuredValue: '142 BPM Tachycardia', referenceBaseline: 'Safe Max <= 115 BPM' },
+          { signalName: 'Thermal Index Plume Spike', measuredValue: '43.8°C Extreme Danger', referenceBaseline: 'Ceiling <= 38.0°C' },
+          { signalName: 'TWL Fatigue Index', measuredValue: '88.5 W/m² (Severe)', referenceBaseline: 'Buffer >= 115 W/m²' }
+        ],
+        recommendedAction: 'Mandate immediate shaded rest extraction and stage oral rehydration protocol.',
+        acknowledged: false,
+        browserAlertDispatched: true,
+        workerPseudonym: 'W-9921'
+      };
+      setInternalRiskBreaches((prev) => [simulatedBreach, ...prev]);
+      desktopNotificationService.notifyRiskThresholdBreach(
+        {
+          id: simulatedBreach.id,
+          riskScore: simulatedBreach.riskScore,
+          threshold: simulatedBreach.threshold,
+          delta: simulatedBreach.delta,
+          zoneName: simulatedBreach.zoneName,
+          workerCount: simulatedBreach.workerCount,
+          primarySignal: 'Elevated Cardiac Strain & Thermal Spike',
+          recommendedAction: simulatedBreach.recommendedAction
+        },
+        { forceTrigger: true }
+      );
+    }
+    setActiveViewMode('RISK_BREACHES');
+    setTestNotificationFeedback('⚡ Simulated Risk Surge (84.8%) triggered! Browser alert dispatched and logged.');
+    setTimeout(() => setTestNotificationFeedback(null), 6000);
+  };
+
   const [filterSeverity, setFilterSeverity] = useState<'ALL' | 'CRITICAL' | 'UNACKNOWLEDGED'>('ALL');
   const [filterWorkflowStatus, setFilterWorkflowStatus] = useState<'ALL' | 'Pending' | 'Investigating' | 'Resolved'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -909,6 +1120,309 @@ export default function NotificationCenter({
         </div>
       </div>
 
+      {/* ========================================================= */}
+      {/* HEALTH TELEMETRY RISK THRESHOLD & BROWSER ALERT SENTINEL  */}
+      {/* ========================================================= */}
+      <div className="mb-4 bg-slate-950/90 border border-slate-800 rounded-xl p-4 shadow-inner relative overflow-hidden">
+        {/* Glow accent */}
+        <div className={`absolute top-0 right-0 w-64 h-32 rounded-full blur-2xl pointer-events-none ${
+          currentTelemetryRisk >= activeRiskThreshold ? 'bg-rose-500/10' : 'bg-cyan-500/10'
+        }`} />
+
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-3 border-b border-slate-800">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="p-1.5 rounded-lg bg-cyan-950 border border-cyan-500/40 text-cyan-300">
+                <Sliders className="h-4 w-4" />
+              </span>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span>Health Telemetry Risk Threshold &amp; Browser Alerts Sentinel</span>
+              </h3>
+              {currentTelemetryRisk >= activeRiskThreshold ? (
+                <span className="text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-ping" />
+                  <span>Threshold Exceeded (+{(currentTelemetryRisk - activeRiskThreshold).toFixed(1)}%)</span>
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono font-bold uppercase bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  <span>Within Safety Envelope</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Configure your critical cutoff. When streaming population health telemetry risk exceeds this user-defined threshold, immediate browser alerts, sirens, and field dispatch directives are triggered.
+            </p>
+          </div>
+
+          {/* Quick Browser Alert Testing Controls */}
+          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+            {permission !== 'granted' ? (
+              <button
+                onClick={handleRequestPermission}
+                className="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm transition cursor-pointer"
+                title="Request native browser notification permission"
+              >
+                <Bell className="h-3.5 w-3.5 text-white animate-bounce" />
+                <span>Enable Browser Alerts</span>
+              </button>
+            ) : (
+              <span className="text-[11px] font-mono font-semibold text-emerald-400 bg-emerald-950/70 border border-emerald-500/40 px-2 py-1 rounded-lg flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <span>OS Push: Permitted</span>
+              </span>
+            )}
+
+            <button
+              onClick={handleFireTestAlert}
+              className="flex items-center space-x-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs cursor-pointer"
+              title="Dispatch a test OS browser alert to verify native push notification and audio chime"
+            >
+              <Zap className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Test Browser Alert</span>
+            </button>
+
+            <button
+              onClick={handleSimulateSurge}
+              className="flex items-center space-x-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-500/50 text-rose-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-xs cursor-pointer"
+              title="Simulate sudden telemetry spike exceeding user threshold to verify automated alert trigger"
+            >
+              <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+              <span>Simulate Risk Surge</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Feedback notice when test fired */}
+        {testNotificationFeedback && (
+          <div className="my-2 p-2 rounded-lg bg-cyan-950/80 border border-cyan-500/50 text-cyan-200 text-xs font-mono flex items-center justify-between animate-fadeIn">
+            <span>{testNotificationFeedback}</span>
+            <button onClick={() => setTestNotificationFeedback(null)} className="text-cyan-400 hover:text-white text-xs">&times;</button>
+          </div>
+        )}
+
+        {/* Controls Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-3 pt-1">
+          {/* Left: Interactive Threshold Slider & Preset Tiers */}
+          <div className="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sliders className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>User-Defined Risk Threshold Cutoff</span>
+                </span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-slate-400 font-mono">Cutoff:</span>
+                  <div className="flex items-center space-x-1">
+                    <input
+                      type="number"
+                      min="40"
+                      max="95"
+                      step="0.5"
+                      value={activeRiskThreshold}
+                      onChange={(e) => handleUpdateThreshold(parseFloat(e.target.value) || 75)}
+                      className="w-16 bg-slate-950 border border-cyan-500/50 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-cyan-300 text-right focus:outline-none focus:border-cyan-400"
+                    />
+                    <span className="text-xs font-mono font-bold text-cyan-400">%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Slider with visual gradient background */}
+              <div className="relative mb-2">
+                <input
+                  type="range"
+                  min="40"
+                  max="95"
+                  step="0.5"
+                  value={activeRiskThreshold}
+                  onChange={(e) => handleUpdateThreshold(parseFloat(e.target.value))}
+                  className="w-full h-2.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                  <span>40% (Cautious)</span>
+                  <span>65% (EHS Baseline)</span>
+                  <span className="text-cyan-400 font-bold">75% (Recommended)</span>
+                  <span>85% (Severe)</span>
+                  <span>95% (Life Safety)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Preset Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-slate-800/80">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                Presets:
+              </span>
+              {[
+                { label: '60% Cautious', val: 60.0 },
+                { label: '70% Standard EHS', val: 70.0 },
+                { label: '75% Recommended', val: 75.0 },
+                { label: '80% High Strain', val: 80.0 },
+                { label: '85% Acute Triage', val: 85.0 }
+              ].map((p) => (
+                <button
+                  key={p.val}
+                  onClick={() => handleUpdateThreshold(p.val)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition cursor-pointer ${
+                    activeRiskThreshold === p.val
+                      ? 'bg-cyan-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Live Telemetry Risk vs Threshold Comparison Gauge */}
+          <div className="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Gauge className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Live Telemetry Risk Monitor</span>
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Outdoor Sector 4 Live
+                </span>
+              </div>
+
+              {/* Progress Gauge */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-baseline text-xs font-mono">
+                  <span className="text-slate-400">Current Health Risk:</span>
+                  <span className={`text-sm font-bold ${
+                    currentTelemetryRisk >= activeRiskThreshold ? 'text-rose-400 animate-pulse' : 'text-emerald-400'
+                  }`}>
+                    {currentTelemetryRisk.toFixed(1)}%
+                  </span>
+                </div>
+
+                {/* Progress bar with cutoff line */}
+                <div className="relative w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className={`h-full transition-all duration-500 ${
+                      currentTelemetryRisk >= activeRiskThreshold
+                        ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-rose-600'
+                        : 'bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(100, currentTelemetryRisk)}%` }}
+                  />
+                  {/* Threshold vertical line indicator */}
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-white shadow-xs z-10"
+                    style={{ left: `${Math.min(100, activeRiskThreshold)}%` }}
+                    title={`User Threshold: ${activeRiskThreshold}%`}
+                  />
+                </div>
+
+                <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                  <span>0% Safe</span>
+                  <span className="text-white font-bold">Cutoff: {activeRiskThreshold.toFixed(1)}%</span>
+                  <span>100% Critical</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Threshold Exceedance Result Banner */}
+            <div className={`mt-2 p-2 rounded-lg border text-xs font-mono flex items-center justify-between ${
+              currentTelemetryRisk >= activeRiskThreshold
+                ? 'bg-rose-950/70 border-rose-500/60 text-rose-200'
+                : 'bg-slate-950 border-slate-800 text-slate-300'
+            }`}>
+              <div className="flex items-center gap-1.5">
+                {currentTelemetryRisk >= activeRiskThreshold ? (
+                  <>
+                    <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0 animate-bounce" />
+                    <span className="font-bold">EXCEEDED: +{(currentTelemetryRisk - activeRiskThreshold).toFixed(1)}% above cutoff!</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span>Safe buffer: {(activeRiskThreshold - currentTelemetryRisk).toFixed(1)}% below cutoff</span>
+                  </>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 uppercase font-bold">
+                {currentTelemetryRisk >= activeRiskThreshold ? 'Immediate Alert Sent' : 'Monitored'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Primary View Mode Switcher */}
+      <div className="mb-3.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center space-x-1.5 flex-wrap">
+          <button
+            onClick={() => setActiveViewMode('ALL_ALERTS')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              activeViewMode === 'ALL_ALERTS'
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
+            <span>High-Risk Anomaly Alerts ({highRiskEvents.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveViewMode('RISK_BREACHES')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              activeViewMode === 'RISK_BREACHES'
+                ? 'bg-gradient-to-r from-rose-950 to-amber-950 text-rose-200 border border-rose-500/60 shadow-xs'
+                : 'text-slate-400 hover:text-rose-300'
+            }`}
+          >
+            <BellRing className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+            <span>Telemetry Risk Threshold Breaches</span>
+            {activeRiskBreaches.filter((b) => !b.acknowledged).length > 0 ? (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-mono font-bold animate-pulse">
+                {activeRiskBreaches.filter((b) => !b.acknowledged).length} Active
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.2 rounded-full bg-slate-900 text-slate-300 text-[10px] font-mono">
+                {activeRiskBreaches.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveViewMode('WORKFLOW_DISPATCH')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              activeViewMode === 'WORKFLOW_DISPATCH'
+                ? 'bg-cyan-950 text-cyan-200 border border-cyan-500/60 shadow-xs'
+                : 'text-slate-400 hover:text-cyan-300'
+            }`}
+          >
+            <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Incident Field Dispatch ({workflowCounts.investigating} Active)</span>
+          </button>
+        </div>
+
+        {activeViewMode === 'RISK_BREACHES' && activeRiskBreaches.length > 0 && (
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                activeRiskBreaches.forEach((b) => handleAcknowledgeBreach(b.id));
+              }}
+              className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-bold cursor-pointer"
+            >
+              <CheckCheck className="h-3 w-3" />
+              <span>Acknowledge All Breaches</span>
+            </button>
+            <button
+              onClick={handleClearBreaches}
+              className="text-[11px] font-mono text-slate-500 hover:text-rose-400 cursor-pointer ml-1"
+            >
+              Clear Log
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Incident Response Workflow Status Filter Ribbon */}
       <div className="mb-3.5 bg-slate-950 p-2 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center space-x-2">
@@ -1016,28 +1530,161 @@ export default function NotificationCenter({
         </div>
       )}
 
-      {/* Filter / Search Sub-Bar */}
-      <div className="relative mb-3">
-        <Search className="h-3.5 w-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Filter recent high-risk events by anomaly type, assignee, zone, or worker..."
-          className="w-full bg-slate-950/80 border border-slate-800 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/40 transition font-mono"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs cursor-pointer"
-          >
-            &times;
-          </button>
-        )}
-      </div>
+      {/* If viewing Risk Threshold Breaches */}
+      {activeViewMode === 'RISK_BREACHES' ? (
+        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 select-none scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+          {activeRiskBreaches.length === 0 ? (
+            <div className="py-10 px-4 text-center rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto mb-2 opacity-80" />
+              <h4 className="text-sm font-bold text-white">No Telemetry Risk Threshold Breaches Recorded</h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                Streaming health risk telemetry is stabilized below your configured threshold cutoff of {activeRiskThreshold.toFixed(1)}%.
+              </p>
+            </div>
+          ) : (
+            activeRiskBreaches.map((breach) => {
+              const isCritical = breach.severity === 'CRITICAL' || breach.riskScore >= 80;
+              return (
+                <div
+                  key={breach.id}
+                  className={`p-4 rounded-xl border transition-all flex flex-col ${
+                    !breach.acknowledged
+                      ? isCritical
+                        ? 'bg-rose-950/30 border-rose-500/70 shadow-lg shadow-rose-950/20'
+                        : 'bg-amber-950/25 border-amber-500/60'
+                      : 'bg-slate-950/60 border-slate-800/80 opacity-80'
+                  }`}
+                >
+                  {/* Header Row */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
+                    <div className="flex items-center space-x-2.5 flex-wrap">
+                      <span className="p-1.5 rounded-lg bg-rose-950 border border-rose-500/50 text-rose-400">
+                        <Radio className="h-4 w-4 animate-pulse" />
+                      </span>
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded uppercase bg-rose-500/20 text-rose-300 border border-rose-500/50">
+                        {breach.riskScore.toFixed(1)}% RISK SCORE
+                      </span>
+                      <span className="font-mono text-xs font-bold text-amber-300">
+                        +{breach.delta.toFixed(1)}% above cutoff ({breach.threshold.toFixed(1)}%)
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                        ID: {breach.id}
+                      </span>
+                    </div>
 
-      {/* Scrollable Events List */}
-      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 select-none scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+                    <div className="flex items-center space-x-2 font-mono text-xs text-slate-400">
+                      <Clock className="h-3.5 w-3.5 text-slate-500" />
+                      <span>{breach.timeFormatted} ({new Date(breach.timestamp).toLocaleTimeString()})</span>
+                    </div>
+                  </div>
+
+                  {/* Sector & Worker Cohort */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 text-xs font-mono">
+                      <span className="text-slate-400 flex items-center gap-1 font-bold">
+                        <MapPin className="h-3.5 w-3.5 text-cyan-400" />
+                        <span className="text-white">{breach.zoneName}</span>
+                      </span>
+                      <span className="text-slate-500">&bull;</span>
+                      <span className="text-cyan-300 font-semibold">{breach.workerCount} Active Workers in Cohort</span>
+                      {breach.workerPseudonym && (
+                        <>
+                          <span className="text-slate-500">&bull;</span>
+                          <span className="text-indigo-300">Subject: {breach.workerPseudonym}</span>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-1.5 text-[10px] font-mono">
+                      <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        <span>OS Push Alert Dispatched</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Triggering Signals Breakdown */}
+                  <div className="mt-2.5 grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {breach.triggerSignals.map((sig, idx) => (
+                      <div key={idx} className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 text-[11px] font-mono">
+                        <div className="text-slate-400 text-[10px] font-semibold">{sig.signalName}</div>
+                        <div className="text-rose-300 font-bold mt-0.5">{sig.measuredValue}</div>
+                        <div className="text-slate-500 text-[9px] mt-0.5">Ref: {sig.referenceBaseline}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Recommended Action */}
+                  <div className="mt-2.5 p-2 rounded-lg bg-amber-950/20 border border-amber-500/30 text-xs">
+                    <strong className="text-amber-300 uppercase tracking-wider text-[10px] block mb-0.5">Recommended Safety Directive:</strong>
+                    <p className="text-slate-300 leading-relaxed font-mono text-[11px]">{breach.recommendedAction}</p>
+                  </div>
+
+                  {/* Action Bar */}
+                  <div className="mt-3 pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-mono">
+                      {breach.acknowledged ? (
+                        <span className="text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Acknowledged by Safety Supervisor</span>
+                        </span>
+                      ) : (
+                        <span className="text-rose-400 flex items-center gap-1 font-bold animate-pulse">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          <span>Immediate Action Required</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      {!breach.acknowledged && (
+                        <button
+                          onClick={() => handleAcknowledgeBreach(breach.id)}
+                          className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition cursor-pointer"
+                        >
+                          Acknowledge Breach
+                        </button>
+                      )}
+                      {onSelectZone && (
+                        <button
+                          onClick={() => onSelectZone(breach.zoneId)}
+                          className="px-3 py-1 rounded-lg bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <span>Inspect Zone</span>
+                          <ArrowUpRight className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Filter / Search Sub-Bar */}
+          <div className="relative mb-3">
+            <Search className="h-3.5 w-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter recent high-risk events by anomaly type, assignee, zone, or worker..."
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/40 transition font-mono"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs cursor-pointer"
+              >
+                &times;
+              </button>
+            )}
+          </div>
+
+          {/* Scrollable Events List */}
+          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 select-none scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
         {filteredEvents.length === 0 ? (
           <div className="py-8 px-4 text-center rounded-xl bg-slate-950/60 border border-slate-800/80">
             <CheckCircle2 className="h-8 w-8 text-emerald-400 mx-auto mb-2 opacity-80" />
@@ -1668,6 +2315,8 @@ export default function NotificationCenter({
           })
         )}
       </div>
+      </>
+      )}
 
       {/* Incident Response Assignment & Status Management Modal */}
       {activeWorkflowModalAlert && (

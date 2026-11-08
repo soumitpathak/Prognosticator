@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import {
   ResponsiveContainer,
+  ComposedChart,
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -19,8 +21,23 @@ import {
   Filter,
   RotateCcw,
   Clock,
-  ChevronDown
+  ChevronDown,
+  Layers,
+  Sparkles,
+  Info,
+  Sliders,
+  Zap,
+  Eye,
+  CheckCircle2,
+  ArrowRight
 } from 'lucide-react';
+import {
+  WhatIfParameters,
+  DEFAULT_WHAT_IF_PARAMETERS,
+  recalculateTrendWithWhatIf,
+  calculateWhatIfImpact
+} from '../services/whatIfSimulationEngine';
+import WhatIfSimulatorPanel from './WhatIfSimulatorPanel';
 
 export interface DayRiskPoint {
   isoDate: string; // YYYY-MM-DD
@@ -231,11 +248,38 @@ export const EXTENDED_RISK_DATA: DayRiskPoint[] = [
 export interface WorkforceRiskTrend7DaysChartProps {
   className?: string;
   onSelectDay?: (day: DayRiskPoint) => void;
+  whatIfParams?: WhatIfParameters;
+  onUpdateWhatIfParams?: (params: WhatIfParameters) => void;
+  isWhatIfOpen?: boolean;
+  onToggleWhatIfOpen?: () => void;
+  theme?: 'dark' | 'high-contrast-light';
+}
+
+export interface EnrichedRiskPoint extends DayRiskPoint {
+  isForecast?: boolean;
+  forecastUpper?: number;
+  forecastLower?: number;
+  uncertaintyMargin?: number;
+  // What-If simulated dynamic fields
+  simulatedPeakRiskScore?: number;
+  simulatedAvgRiskScore?: number;
+  simulatedForecastUpper?: number;
+  simulatedForecastLower?: number;
+  simulatedUncertaintyMargin?: number;
+  simulatedIsSpike?: boolean;
+  simulatedAnomalyCount?: number;
+  simulatedCriticalCount?: number;
+  riskDelta?: number;
 }
 
 export default function WorkforceRiskTrend7DaysChart({
   className = '',
-  onSelectDay
+  onSelectDay,
+  whatIfParams: propWhatIfParams,
+  onUpdateWhatIfParams,
+  isWhatIfOpen: propIsWhatIfOpen,
+  onToggleWhatIfOpen,
+  theme = 'dark'
 }: WorkforceRiskTrend7DaysChartProps) {
   // Date Range Filtering State (Default: Last 7 Days: 2026-10-31 to 2026-11-06)
   const [startDate, setStartDate] = useState<string>('2026-10-31');
@@ -243,6 +287,40 @@ export default function WorkforceRiskTrend7DaysChart({
   const [activePreset, setActivePreset] = useState<'7d' | '3d' | 'surge' | '14d' | 'custom'>('7d');
   const [viewMetric, setViewMetric] = useState<'both' | 'peak' | 'avg'>('both');
   const [selectedDay, setSelectedDay] = useState<DayRiskPoint | null>(EXTENDED_RISK_DATA[EXTENDED_RISK_DATA.length - 1]);
+
+  // Prediction Uncertainty & Confidence Interval Band State
+  const [showConfidenceBand, setShowConfidenceBand] = useState<boolean>(true);
+  const [showForecastHorizon, setShowForecastHorizon] = useState<boolean>(true);
+  const [confidenceLevel, setConfidenceLevel] = useState<90 | 95 | 99>(95);
+
+  // What-If Simulator State (supports internal or controlled props)
+  const [internalWhatIfParams, setInternalWhatIfParams] = useState<WhatIfParameters>(DEFAULT_WHAT_IF_PARAMETERS);
+  const [internalIsWhatIfOpen, setInternalIsWhatIfOpen] = useState<boolean>(false);
+  const [compareWithBaseline, setCompareWithBaseline] = useState<boolean>(true);
+
+  const activeWhatIfParams = propWhatIfParams ?? internalWhatIfParams;
+  const isSimulatorOpen = propIsWhatIfOpen ?? internalIsWhatIfOpen;
+
+  const handleParamsChange = (newParams: WhatIfParameters) => {
+    if (onUpdateWhatIfParams) {
+      onUpdateWhatIfParams(newParams);
+    } else {
+      setInternalWhatIfParams(newParams);
+    }
+  };
+
+  const handleToggleSimulator = () => {
+    if (onToggleWhatIfOpen) {
+      onToggleWhatIfOpen();
+    } else {
+      setInternalIsWhatIfOpen((prev) => !prev);
+    }
+  };
+
+  // Compute live What-If impact summary metrics
+  const whatIfImpact = useMemo(() => {
+    return calculateWhatIfImpact(activeWhatIfParams);
+  }, [activeWhatIfParams]);
 
   // Apply custom date range filter to the risk trend data
   const filteredData = useMemo(() => {
@@ -252,9 +330,19 @@ export default function WorkforceRiskTrend7DaysChart({
     return list.length > 0 ? list : EXTENDED_RISK_DATA.slice(-7);
   }, [startDate, endDate]);
 
+  // Combined Dataset: Historical Points + Dynamic 72h Forward Forecast with 95% Confidence Interval Band & Real-Time What-If Recalculations
+  const chartData: EnrichedRiskPoint[] = useMemo(() => {
+    return recalculateTrendWithWhatIf(
+      filteredData,
+      activeWhatIfParams,
+      confidenceLevel,
+      showForecastHorizon
+    );
+  }, [filteredData, activeWhatIfParams, confidenceLevel, showForecastHorizon]);
+
   const spikesCount = useMemo(() => {
-    return filteredData.filter((d) => d.isSpike).length;
-  }, [filteredData]);
+    return chartData.filter((d) => (activeWhatIfParams.isSimulationActive ? d.simulatedIsSpike : d.isSpike)).length;
+  }, [chartData, activeWhatIfParams.isSimulationActive]);
 
   const highestSpikeDay = useMemo(() => {
     return [...filteredData].sort((a, b) => b.peakRiskScore - a.peakRiskScore)[0] || filteredData[0];
@@ -298,7 +386,10 @@ export default function WorkforceRiskTrend7DaysChart({
   };
 
   return (
-    <div className={`bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg ${className}`}>
+    <div
+      id="workforce-risk-trend-7d-card"
+      className={`bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg ${className}`}
+    >
       {/* Header and Controls */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-800">
         <div>
@@ -313,40 +404,168 @@ export default function WorkforceRiskTrend7DaysChart({
             <span className="text-[10px] font-mono font-bold bg-rose-500/10 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-full">
               {spikesCount} Spikes Identified
             </span>
+            <span className="text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <Layers className="h-3 w-3 text-indigo-400" />
+              <span>{confidenceLevel}% Prediction Uncertainty Band</span>
+            </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Tracking longitudinal aggregate risk trajectories and identifying diurnal/environmental stress spikes with custom time window filtering
+            Tracking longitudinal aggregate risk trajectories and identifying diurnal/environmental stress spikes with shaded prediction uncertainty corridor
           </p>
         </div>
 
-        {/* View Metric Toggles */}
-        <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+        {/* View Metric Toggles & Confidence Band Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* What-If Simulator Toggle Button */}
           <button
-            onClick={() => setViewMetric('both')}
-            className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
-              viewMetric === 'both' ? 'bg-cyan-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+            type="button"
+            onClick={handleToggleSimulator}
+            className={`px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              activeWhatIfParams.isSimulationActive
+                ? 'bg-amber-500 text-slate-950 border-amber-400 ring-2 ring-amber-400/40 font-black'
+                : isSimulatorOpen
+                ? 'bg-amber-950/80 text-amber-300 border-amber-500/60'
+                : 'bg-slate-950 text-slate-300 border-slate-700 hover:text-white'
             }`}
+            title="Open 'What-If' Simulator to adjust vaccination rates, humidity, and heat"
           >
-            Peak &amp; Avg
+            <Sliders className="h-3.5 w-3.5 text-amber-400" />
+            <span>&lsquo;What-If&rsquo; Simulator</span>
+            {activeWhatIfParams.isSimulationActive ? (
+              <span className="text-[9px] font-mono px-1 rounded bg-slate-950 text-amber-300 font-black">
+                ACTIVE
+              </span>
+            ) : isSimulatorOpen ? (
+              <span className="text-[9px] font-mono px-1 rounded bg-slate-800 text-slate-300">
+                OPEN
+              </span>
+            ) : null}
           </button>
+
+          {/* Shaded Uncertainty Band Toggle */}
           <button
-            onClick={() => setViewMetric('peak')}
-            className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
-              viewMetric === 'peak' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+            onClick={() => setShowConfidenceBand((prev) => !prev)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              showConfidenceBand
+                ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/60 shadow-indigo-950/20'
+                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
             }`}
+            title="Toggle shaded prediction uncertainty corridor on health risk trend"
           >
-            Peak Only
+            <Layers className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Uncertainty Band</span>
+            <span className="text-[10px] font-mono bg-indigo-900/80 px-1 rounded text-white">
+              {showConfidenceBand ? `${confidenceLevel}% CI` : 'OFF'}
+            </span>
           </button>
+
+          {/* Forward 72h Projection Toggle */}
           <button
-            onClick={() => setViewMetric('avg')}
-            className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
-              viewMetric === 'avg' ? 'bg-cyan-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+            onClick={() => setShowForecastHorizon((prev) => !prev)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              showForecastHorizon
+                ? 'bg-amber-950/80 text-amber-300 border-amber-500/60 shadow-amber-950/20'
+                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
             }`}
+            title="Toggle +72-hour forward predictive projection points"
           >
-            Average Only
+            <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+            <span>+72h Forecast</span>
+            <span className="text-[10px] font-mono bg-amber-900/80 px-1 rounded text-white">
+              {showForecastHorizon ? 'ON' : 'OFF'}
+            </span>
           </button>
+
+          {/* View Metric Toggles */}
+          <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+            <button
+              onClick={() => setViewMetric('both')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                viewMetric === 'both' ? 'bg-cyan-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Peak &amp; Avg
+            </button>
+            <button
+              onClick={() => setViewMetric('peak')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                viewMetric === 'peak' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Peak Only
+            </button>
+            <button
+              onClick={() => setViewMetric('avg')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                viewMetric === 'avg' ? 'bg-cyan-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Average Only
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Embedded What-If Simulator Tool Panel */}
+      <WhatIfSimulatorPanel
+        params={activeWhatIfParams}
+        onChangeParams={handleParamsChange}
+        isOpen={isSimulatorOpen}
+        onToggleOpen={handleToggleSimulator}
+        theme={theme}
+        className="mt-3.5"
+      />
+
+      {/* Real-time What-If Comparison Toolbar */}
+      {activeWhatIfParams.isSimulationActive && (
+        <div className="mt-3.5 p-3 rounded-xl bg-amber-950/30 border border-amber-500/50 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span className="font-bold text-amber-300">
+              ⚡ What-If Recalculations Displayed:
+            </span>
+            <span className="text-slate-300">
+              Vax: <strong>{activeWhatIfParams.vaccinationRatePct}%</strong> | Humidity: <strong>{activeWhatIfParams.seasonalHumidityPct}%</strong> | Heat: <strong>{activeWhatIfParams.ambientHeatC}°C</strong> | Shift: <strong>{activeWhatIfParams.shiftDurationHours}h</strong>
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded font-bold border ${
+                whatIfImpact.netRiskDelta > 0
+                  ? 'bg-rose-950 text-rose-300 border-rose-500/40'
+                  : 'bg-emerald-950 text-emerald-300 border-emerald-500/40'
+              }`}
+            >
+              {whatIfImpact.netRiskDelta > 0 ? `+${whatIfImpact.netRiskDelta}%` : `${whatIfImpact.netRiskDelta}%`} Risk Delta
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCompareWithBaseline((prev) => !prev)}
+              className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition cursor-pointer flex items-center gap-1 ${
+                compareWithBaseline
+                  ? 'bg-slate-800 text-white border-slate-600'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+              }`}
+              title="Toggle baseline reference lines overlay on chart"
+            >
+              <Eye className="h-3 w-3" />
+              <span>{compareWithBaseline ? 'Compare with Baseline (On)' : 'Simulation Only'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleParamsChange({ ...DEFAULT_WHAT_IF_PARAMETERS, isSimulationActive: false })}
+              className="text-[11px] text-amber-400 hover:text-white underline cursor-pointer ml-1"
+            >
+              Reset to Baseline
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Date Range Picker Component Bar */}
       <div className="mt-3.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs font-mono">
@@ -386,7 +605,7 @@ export default function WorkforceRiskTrend7DaysChart({
           </div>
         </div>
 
-        {/* Quick Range Presets */}
+        {/* Quick Range Presets & Confidence Level selector */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] uppercase text-slate-500 font-bold mr-1">Presets:</span>
           <button
@@ -429,6 +648,25 @@ export default function WorkforceRiskTrend7DaysChart({
           >
             Full 14 Days
           </button>
+          {showConfidenceBand && (
+            <div className="flex items-center gap-1 border-l border-slate-800 pl-2 ml-1">
+              <span className="text-[10px] uppercase text-slate-500 font-bold">CI:</span>
+              {([90, 95, 99] as const).map((lvl) => (
+                <button
+                  key={lvl}
+                  onClick={() => setConfidenceLevel(lvl)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition cursor-pointer ${
+                    confidenceLevel === lvl
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-900 text-slate-400 hover:text-indigo-300 border border-slate-800'
+                  }`}
+                  title={`Set statistical uncertainty corridor to ${lvl}% Confidence Interval`}
+                >
+                  {lvl}%
+                </button>
+              ))}
+            </div>
+          )}
           {activePreset === 'custom' && (
             <button
               onClick={() => handleApplyPreset('7d')}
@@ -441,20 +679,27 @@ export default function WorkforceRiskTrend7DaysChart({
         </div>
       </div>
 
-      {/* Main Recharts Line Chart */}
+      {/* Main Recharts Composed Chart with Shaded Prediction Uncertainty Band & What-If Overlay */}
       <div className="mt-4">
-        <div className="h-64 w-full">
+        <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={filteredData}
+            <ComposedChart
+              data={chartData}
               margin={{ top: 15, right: 30, left: -10, bottom: 5 }}
               onClick={(state: any) => {
                 if (state && state.activePayload && state.activePayload.length > 0) {
-                  const clickedData = state.activePayload[0].payload as DayRiskPoint;
+                  const clickedData = state.activePayload[0].payload as EnrichedRiskPoint;
                   handlePointClick(clickedData);
                 }
               }}
             >
+              <defs>
+                <linearGradient id="workforceRiskUncertaintyGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={activeWhatIfParams.isSimulationActive ? "#f59e0b" : "#818cf8"} stopOpacity={0.38} />
+                  <stop offset="50%" stopColor={activeWhatIfParams.isSimulationActive ? "#d97706" : "#6366f1"} stopOpacity={0.16} />
+                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
               <XAxis
                 dataKey="date"
@@ -472,34 +717,100 @@ export default function WorkforceRiskTrend7DaysChart({
               <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
-                    const data = payload[0].payload as DayRiskPoint;
+                    const data = payload[0].payload as EnrichedRiskPoint;
+                    const isSimActive = activeWhatIfParams.isSimulationActive;
+
                     return (
-                      <div className="bg-slate-950 border border-slate-700 p-3 rounded-xl shadow-2xl text-xs font-mono">
+                      <div className="bg-slate-950 border border-slate-700 p-3.5 rounded-xl shadow-2xl text-xs font-mono min-w-[280px]">
                         <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-1.5 mb-2">
-                          <span className="font-bold text-white">{data.fullDate}</span>
-                          {data.isSpike && (
-                            <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/40 text-[10px]">
-                              SPIKE
-                            </span>
-                          )}
+                          <span className="font-bold text-white flex items-center gap-1.5">
+                            {data.isForecast && <Sparkles className="h-3 w-3 text-amber-400" />}
+                            <span>{data.fullDate}</span>
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {isSimActive && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 text-[10px]">
+                                WHAT-IF
+                              </span>
+                            )}
+                            {data.isForecast ? (
+                              <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40 text-[10px]">
+                                FORECAST
+                              </span>
+                            ) : (data.simulatedIsSpike ?? data.isSpike) ? (
+                              <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/40 text-[10px]">
+                                SPIKE
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between gap-4 text-rose-400">
-                            <span>Peak Workforce Risk:</span>
-                            <span className="font-bold tabular-nums">{data.peakRiskScore}%</span>
-                          </div>
-                          <div className="flex justify-between gap-4 text-cyan-300">
-                            <span>Daily Mean Risk:</span>
-                            <span className="font-bold tabular-nums">{data.avgRiskScore}%</span>
-                          </div>
-                          <div className="flex justify-between gap-4 text-slate-400">
-                            <span>Anomalies Detected:</span>
+
+                        <div className="space-y-1.5">
+                          {isSimActive ? (
+                            <>
+                              <div className="p-2 rounded bg-amber-950/30 border border-amber-500/40">
+                                <div className="flex justify-between items-center text-amber-300 font-bold">
+                                  <span>Simulated Peak Risk:</span>
+                                  <span className="text-sm tabular-nums text-white">
+                                    {data.simulatedPeakRiskScore}%
+                                  </span>
+                                </div>
+                                <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                                  <span>Baseline Peak: {data.peakRiskScore}%</span>
+                                  <span className={`font-bold ${data.riskDelta && data.riskDelta > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    {data.riskDelta && data.riskDelta > 0 ? `+${data.riskDelta}%` : `${data.riskDelta}%`} vs Base
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex justify-between gap-4 text-cyan-300">
+                                <span>Simulated Mean Risk:</span>
+                                <span className="font-bold tabular-nums">
+                                  {data.simulatedAvgRiskScore}%{' '}
+                                  <span className="text-slate-500 font-normal text-[10px]">(Base: {data.avgRiskScore}%)</span>
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex justify-between gap-4 text-rose-400">
+                                <span>{data.isForecast ? 'Forecasted Peak Risk:' : 'Peak Workforce Risk:'}</span>
+                                <span className="font-bold tabular-nums">{data.peakRiskScore}%</span>
+                              </div>
+                              <div className="flex justify-between gap-4 text-cyan-300">
+                                <span>{data.isForecast ? 'Projected Mean Risk:' : 'Daily Mean Risk:'}</span>
+                                <span className="font-bold tabular-nums">{data.avgRiskScore}%</span>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Shaded Uncertainty Band in Tooltip */}
+                          {showConfidenceBand && (
+                            <div className="mt-1 pt-1 border-t border-slate-800/80 bg-indigo-950/40 p-1.5 rounded border border-indigo-500/30">
+                              <div className="flex justify-between text-indigo-300 font-semibold text-[11px]">
+                                <span>{confidenceLevel}% Uncertainty Corridor:</span>
+                                <span className="font-mono text-white">
+                                  [{isSimActive ? data.simulatedForecastLower : data.forecastLower}% – {isSimActive ? data.simulatedForecastUpper : data.forecastUpper}%]
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                                <span>Confidence Margin:</span>
+                                <span className="text-indigo-400 font-mono">
+                                  ±{isSimActive ? data.simulatedUncertaintyMargin : data.uncertaintyMargin}%
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex justify-between gap-4 text-slate-400 pt-1">
+                            <span>Anomalies {isSimActive ? 'Simulated:' : data.isForecast ? 'Projected:' : 'Detected:'}</span>
                             <span className="font-bold text-white tabular-nums">
-                              {data.anomalyCount} ({data.criticalCount} Critical)
+                              {isSimActive ? data.simulatedAnomalyCount : data.anomalyCount} ({isSimActive ? data.simulatedCriticalCount : data.criticalCount} Critical)
                             </span>
                           </div>
+
                           <div className="flex justify-between gap-4 text-slate-400">
-                            <span>Peak Risk Time:</span>
+                            <span>Peak Window:</span>
                             <span className="text-slate-300">{data.peakTime}</span>
                           </div>
                           <div className="pt-1 text-[11px] text-amber-300 border-t border-slate-800/80">
@@ -547,48 +858,136 @@ export default function WorkforceRiskTrend7DaysChart({
                 }}
               />
 
-              {/* Peak Risk Line */}
-              {(viewMetric === 'both' || viewMetric === 'peak') && (
-                <Line
+              {/* Shaded Confidence Interval / Prediction Uncertainty Band */}
+              {showConfidenceBand && (
+                <Area
                   type="monotone"
-                  dataKey="peakRiskScore"
-                  name="Peak Daily Risk Level"
-                  stroke="#f43f5e"
-                  strokeWidth={2.5}
-                  dot={(props: any) => {
-                    const { cx, cy, payload } = props;
-                    const isSpike = payload.isSpike;
-                    return (
-                      <circle
-                        key={`dot-peak-${payload.date}`}
-                        cx={cx}
-                        cy={cy}
-                        r={isSpike ? 6 : 4}
-                        fill={isSpike ? '#ef4444' : '#f43f5e'}
-                        stroke="#0f172a"
-                        strokeWidth={2}
-                        className={isSpike ? 'animate-pulse' : ''}
-                      />
-                    );
-                  }}
-                  activeDot={{ r: 7, stroke: '#ffffff', strokeWidth: 2 }}
+                  dataKey={activeWhatIfParams.isSimulationActive ? "simulatedForecastUpper" : "forecastUpper"}
+                  name={activeWhatIfParams.isSimulationActive ? `${confidenceLevel}% What-If Recalculated Uncertainty Band` : `${confidenceLevel}% Prediction Uncertainty Band`}
+                  stroke={activeWhatIfParams.isSimulationActive ? "#f59e0b" : "#818cf8"}
+                  strokeWidth={1.2}
+                  strokeDasharray="3 3"
+                  fill="url(#workforceRiskUncertaintyGradient)"
                 />
               )}
 
-              {/* Average Risk Line */}
-              {(viewMetric === 'both' || viewMetric === 'avg') && (
-                <Line
-                  type="monotone"
-                  dataKey="avgRiskScore"
-                  name="Average Daily Risk Level"
-                  stroke="#38bdf8"
-                  strokeWidth={2}
-                  strokeDasharray="4 2"
-                  dot={{ r: 3.5, fill: '#38bdf8', stroke: '#0f172a', strokeWidth: 1.5 }}
-                  activeDot={{ r: 6, stroke: '#ffffff', strokeWidth: 2 }}
-                />
+              {/* Baseline Reference Lines when What-If is Active and compareWithBaseline is True */}
+              {activeWhatIfParams.isSimulationActive && compareWithBaseline && (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="peakRiskScore"
+                    name="Baseline Peak Risk (Reference)"
+                    stroke="#64748b"
+                    strokeWidth={1.8}
+                    strokeDasharray="5 3"
+                    dot={{ r: 3, fill: '#64748b', stroke: '#0f172a', strokeWidth: 1 }}
+                    activeDot={{ r: 5 }}
+                  />
+                  {(viewMetric === 'both' || viewMetric === 'avg') && (
+                    <Line
+                      type="monotone"
+                      dataKey="avgRiskScore"
+                      name="Baseline Avg Risk (Reference)"
+                      stroke="#475569"
+                      strokeWidth={1.4}
+                      strokeDasharray="3 3"
+                      dot={false}
+                    />
+                  )}
+                </>
               )}
-            </LineChart>
+
+              {/* Active Simulation Recalculated Peak Risk Line */}
+              {activeWhatIfParams.isSimulationActive ? (
+                (viewMetric === 'both' || viewMetric === 'peak') && (
+                  <Line
+                    type="monotone"
+                    dataKey="simulatedPeakRiskScore"
+                    name="What-If Recalculated Peak Risk"
+                    stroke="#f59e0b"
+                    strokeWidth={2.8}
+                    dot={(props: any) => {
+                      const { cx, cy, payload } = props;
+                      const isSpike = payload.simulatedIsSpike;
+                      const isForecast = payload.isForecast;
+                      return (
+                        <circle
+                          key={`dot-sim-${payload.date}`}
+                          cx={cx}
+                          cy={cy}
+                          r={isSpike ? 6.5 : isForecast ? 5 : 4.5}
+                          fill={isSpike ? '#ef4444' : isForecast ? '#f59e0b' : '#fbbf24'}
+                          stroke="#ffffff"
+                          strokeWidth={2}
+                          className={isSpike ? 'animate-pulse' : ''}
+                        />
+                      );
+                    }}
+                    activeDot={{ r: 8, stroke: '#ffffff', strokeWidth: 2 }}
+                  />
+                )
+              ) : (
+                /* Standard Non-Simulated Peak Risk Line */
+                (viewMetric === 'both' || viewMetric === 'peak') && (
+                  <Line
+                    type="monotone"
+                    dataKey="peakRiskScore"
+                    name="Peak Daily Risk Level"
+                    stroke="#f43f5e"
+                    strokeWidth={2.5}
+                    dot={(props: any) => {
+                      const { cx, cy, payload } = props;
+                      const isSpike = payload.isSpike;
+                      const isForecast = payload.isForecast;
+                      return (
+                        <circle
+                          key={`dot-peak-${payload.date}`}
+                          cx={cx}
+                          cy={cy}
+                          r={isSpike ? 6 : isForecast ? 4.5 : 4}
+                          fill={isForecast ? '#f59e0b' : isSpike ? '#ef4444' : '#f43f5e'}
+                          stroke={isForecast ? '#ffffff' : '#0f172a'}
+                          strokeWidth={2}
+                          className={isSpike ? 'animate-pulse' : ''}
+                        />
+                      );
+                    }}
+                    activeDot={{ r: 7, stroke: '#ffffff', strokeWidth: 2 }}
+                  />
+                )
+              )}
+
+              {/* Active Simulation Recalculated Avg Risk Line */}
+              {activeWhatIfParams.isSimulationActive ? (
+                (viewMetric === 'both' || viewMetric === 'avg') && (
+                  <Line
+                    type="monotone"
+                    dataKey="simulatedAvgRiskScore"
+                    name="What-If Recalculated Mean Risk"
+                    stroke="#06b6d4"
+                    strokeWidth={2.2}
+                    strokeDasharray="4 2"
+                    dot={{ r: 3.5, fill: '#06b6d4', stroke: '#0f172a', strokeWidth: 1.5 }}
+                    activeDot={{ r: 6, stroke: '#ffffff', strokeWidth: 2 }}
+                  />
+                )
+              ) : (
+                /* Standard Non-Simulated Average Risk Line */
+                (viewMetric === 'both' || viewMetric === 'avg') && (
+                  <Line
+                    type="monotone"
+                    dataKey="avgRiskScore"
+                    name="Average Daily Risk Level"
+                    stroke="#38bdf8"
+                    strokeWidth={2}
+                    strokeDasharray="4 2"
+                    dot={{ r: 3.5, fill: '#38bdf8', stroke: '#0f172a', strokeWidth: 1.5 }}
+                    activeDot={{ r: 6, stroke: '#ffffff', strokeWidth: 2 }}
+                  />
+                )
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>

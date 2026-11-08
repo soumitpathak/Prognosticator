@@ -43,7 +43,8 @@ import {
   DepartmentRiskThreshold,
   Lstm12hForecastResult,
   Lstm12hForecastHour,
-  IncidentAssignment
+  IncidentAssignment,
+  TelemetryRiskBreachEvent
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -112,12 +113,14 @@ import KalmanCohortAnomalyNotificationPanel from './KalmanCohortAnomalyNotificat
 import CohortHealthComparisonLineView from './CohortHealthComparisonLineView';
 import KalmanPredictiveModel30DaysChart from './KalmanPredictiveModel30DaysChart';
 import IncidentLog from './IncidentLog';
-import NotificationCenter, { INITIAL_INCIDENT_ASSIGNMENTS } from './NotificationCenter';
+import NotificationCenter, { INITIAL_INCIDENT_ASSIGNMENTS, INITIAL_RISK_BREACHES } from './NotificationCenter';
 import DepartmentRiskThresholdConfigPanel, { DEFAULT_DEPARTMENT_RISK_THRESHOLDS } from './DepartmentRiskThresholdConfigPanel';
 import AggregateRiskScoreTrend24hChart from './AggregateRiskScoreTrend24hChart';
 import WorkforceRiskTrend7DaysChart from './WorkforceRiskTrend7DaysChart';
 import DailySummaryReportModal from './DailySummaryReportModal';
 import DailySummaryConfigModal from './DailySummaryConfigModal';
+import HealthTelemetryVarianceSummary from './HealthTelemetryVarianceSummary';
+import AlertForecastCard from './AlertForecastCard';
 import SpatialZoneRiskHeatmap from './SpatialZoneRiskHeatmap';
 import ExplainableAiLogWindow from './ExplainableAiLogWindow';
 import ScenarioSimulationModal from './ScenarioSimulationModal';
@@ -273,6 +276,153 @@ export default function ManagerDashboard() {
   // Longitudinal Date Range & Timeframe Filter State (Filters Historical Trends & Department Split Comparison)
   const [healthDateRange, setHealthDateRange] = useState<DateRangeSelection>(DEFAULT_DATE_RANGE);
   const [selectedComparisonDeptId, setSelectedComparisonDeptId] = useState<string>('Outdoor-Construction-Sector-4');
+
+  // What-If Simulator state for WorkforceRiskTrend7DaysChart
+  const [isWhatIfSimulatorOpen, setIsWhatIfSimulatorOpen] = useState<boolean>(false);
+
+  const handleOpenWhatIfSimulator = () => {
+    setIsWhatIfSimulatorOpen(true);
+    const el = document.getElementById('workforce-risk-trend-7d-card');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
+    }
+  };
+
+  // User-Defined Health Telemetry Risk Threshold State (Persisted in localStorage)
+  const [telemetryRiskThreshold, setTelemetryRiskThreshold] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('prognosticator_telemetry_risk_threshold');
+      if (saved) {
+        const val = parseFloat(saved);
+        if (!isNaN(val) && val >= 40 && val <= 95) return val;
+      }
+    }
+    return 75.0;
+  });
+
+  const [riskThresholdBreaches, setRiskThresholdBreaches] = useState<TelemetryRiskBreachEvent[]>(INITIAL_RISK_BREACHES);
+  const lastRiskBreachAlertRef = useRef<number>(0);
+
+  const handleUpdateTelemetryRiskThreshold = useCallback((newThreshold: number) => {
+    const clamped = Math.max(40, Math.min(95, Number(newThreshold.toFixed(1))));
+    setTelemetryRiskThreshold(clamped);
+    try {
+      localStorage.setItem('prognosticator_telemetry_risk_threshold', clamped.toString());
+    } catch {}
+
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-THRESH-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Safety Supervisor',
+      category: 'THRESHOLD_CHANGE',
+      targetModule: 'Health Telemetry Risk Threshold Sentinel',
+      parameter: 'Telemetry Risk Cutoff Percentage',
+      previousValue: `${telemetryRiskThreshold.toFixed(1)}%`,
+      newValue: `${clamped.toFixed(1)}%`,
+      justification: `Updated supervisory cutoff for automated browser alerts and immediate awareness protocols.`,
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    setProtocolActiveNotice(`Health telemetry risk threshold updated to ${clamped.toFixed(1)}%. Browser alerts will fire above this cutoff.`);
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  }, [telemetryRiskThreshold]);
+
+  const handleAcknowledgeRiskBreach = useCallback((id: string) => {
+    setRiskThresholdBreaches((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, acknowledged: true } : b))
+    );
+  }, []);
+
+  const handleClearRiskBreaches = useCallback(() => {
+    setRiskThresholdBreaches([]);
+    setProtocolActiveNotice('All telemetry risk threshold breach records cleared.');
+    setTimeout(() => setProtocolActiveNotice(null), 4000);
+  }, []);
+
+  const triggerTelemetryRiskBrowserAlert = useCallback(
+    (currentRisk: number, zone: FacilityZone, result?: AnomalyPredictionResult) => {
+      const now = Date.now();
+      // Cooldown of 12 seconds to prevent alert saturation
+      if (now - lastRiskBreachAlertRef.current < 12000) {
+        return;
+      }
+      lastRiskBreachAlertRef.current = now;
+
+      const delta = Number((currentRisk - telemetryRiskThreshold).toFixed(1));
+      const breachId = `BREACH-${Date.now().toString().slice(-4)}`;
+
+      // 1. Spawning browser native notification + audio chime + title flash
+      desktopNotificationService.notifyRiskThresholdBreach(
+        {
+          id: breachId,
+          riskScore: currentRisk,
+          threshold: telemetryRiskThreshold,
+          delta,
+          zoneName: zone.name,
+          workerCount: zone.count,
+          primarySignal: result?.explainable_attributions
+            ? Object.keys(result.explainable_attributions)[0]
+            : 'Acute Autonomic Deceleration & Thermal Strain',
+          recommendedAction: result?.recommended_operational_action || 'Mandate shaded cooling rest and oral hydration.'
+        },
+        { forceTrigger: true }
+      );
+
+      // 2. Add to breach ledger
+      const newBreach: TelemetryRiskBreachEvent = {
+        id: breachId,
+        timestamp: new Date().toISOString(),
+        timeFormatted: 'Just now',
+        riskScore: currentRisk,
+        threshold: telemetryRiskThreshold,
+        delta,
+        zoneId: zone.id,
+        zoneName: zone.name,
+        workerCount: zone.count,
+        severity: currentRisk >= 80 ? 'CRITICAL' : 'HIGH',
+        triggerSignals: [
+          { signalName: 'Multivariate LSTM Risk Probability', measuredValue: `${currentRisk.toFixed(1)}% (Cutoff: ${telemetryRiskThreshold.toFixed(1)}%)`, referenceBaseline: `Safe Floor <= ${telemetryRiskThreshold}%` },
+          { signalName: 'Thermal Work Limit (TWL) Status', measuredValue: `${zone.twl ? zone.twl.toFixed(1) : '94.2'} W/m²`, referenceBaseline: 'Nominal >= 140 W/m²' },
+          { signalName: 'Ambient / WBGT Heat Plume', measuredValue: `${zone.temp || '41.2'}°C`, referenceBaseline: 'Ceiling <= 36.0°C' }
+        ],
+        recommendedAction: result?.recommended_operational_action || 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
+        acknowledged: false,
+        browserAlertDispatched: true,
+        workerPseudonym: result?.worker_id || 'W-9921'
+      };
+
+      setRiskThresholdBreaches((prev) => [newBreach, ...prev].slice(0, 30));
+
+      // 3. System audit log
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-NOTIF-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor',
+        category: 'THRESHOLD_CHANGE',
+        targetModule: 'Health Telemetry Risk Threshold Sentinel',
+        parameter: 'Browser Alert Triggered',
+        previousValue: `${telemetryRiskThreshold.toFixed(1)}% Threshold`,
+        newValue: `Exceeded: ${currentRisk.toFixed(1)}% (+${delta}%)`,
+        justification: `Automated browser alert dispatched because health telemetry risk in ${zone.name} exceeded user-defined cutoff (${telemetryRiskThreshold}%).`,
+        approvalStatus: 'VERIFIED',
+        zoneId: zone.id
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `🚨 BROWSER ALERT DISPATCHED: Telemetry risk in ${zone.name} (${currentRisk.toFixed(1)}%) exceeded your ${telemetryRiskThreshold}% threshold (+${delta}%).`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 8000);
+    },
+    [telemetryRiskThreshold]
+  );
 
   // Subscribe to centralized browser desktop notification service
   useEffect(() => {
@@ -2327,6 +2477,12 @@ export default function ManagerDashboard() {
       const result = predictWorkforceAnomaly(packet, undefined, kalmanConfig);
       setTelemetryAlert(result);
 
+      // Evaluate live telemetry risk against user-defined threshold for browser alerts
+      const currentRisk = Number((result.risk_probability * 100).toFixed(1));
+      if (currentRisk >= telemetryRiskThreshold) {
+        triggerTelemetryRiskBrowserAlert(currentRisk, activeZoneObj, result);
+      }
+
       // Dynamically compute real-time Kalman filter confidence based on noise & jitter
       const jitterPenalty = jitterEnabled ? Math.abs(jitterFactor) * 1.5 : Math.abs(jitterFactor) * 0.5;
       const dynamicKalmanConf = Number(Math.max(68.0, Math.min(99.4, 96.8 - jitterPenalty + (Math.random() - 0.5) * 1.5)).toFixed(1));
@@ -2408,7 +2564,7 @@ export default function ManagerDashboard() {
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerAnomalyToast, kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification]);
+  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerAnomalyToast, kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification, telemetryRiskThreshold, triggerTelemetryRiskBrowserAlert]);
 
   // Handle Burst Event Triggers
   const handleTriggerBurst = (type: 'HEATWAVE' | 'NOISE' | 'CARDIAC' | 'DROPOUT') => {
@@ -3006,11 +3162,12 @@ export default function ManagerDashboard() {
           </div>
         </div>
 
-        {/* Global Search Bar: Queries specific facility zones, past anomaly events by ID, or predictive reports for quick navigation */}
-        <div className="w-full xl:w-[380px] xl:mx-2">
+        {/* Global Search Bar: Queries specific alert logs (e.g. ALR-8842, INC-2026), worker IDs (e.g. W-9921), telemetry categories, or facility zones */}
+        <div className="w-full xl:w-[460px] xl:mx-3">
           <GlobalSearchBar
             zones={zones}
             alerts={activeAlerts}
+            theme={dashboardTheme}
             onSelectZone={(zoneId) => {
               setSelectedZone(zoneId);
               setSelectedComparisonDeptId(zoneId);
@@ -3029,9 +3186,37 @@ export default function ManagerDashboard() {
               if (matchedAlert) {
                 handleOpenAnomalyDetails(matchedAlert);
               } else {
-                setProtocolActiveNotice(`Viewing anomaly event details for: ${alertId}`);
+                if (managerTab !== 'live') setManagerTab('live');
+                setProtocolActiveNotice(`Global Search: Selected Alert Log [${alertId}]. Navigating to Incident Records.`);
                 setTimeout(() => setProtocolActiveNotice(null), 5000);
+                const el = document.getElementById('incident-log-section') || document.getElementById('historical-anomaly-events-log');
+                el?.scrollIntoView({ behavior: 'smooth' });
               }
+            }}
+            onSelectWorker={(workerId, zoneId) => {
+              if (zoneId) {
+                setSelectedZone(zoneId);
+                setSelectedComparisonDeptId(zoneId);
+                setAnomalyTrendZoneId(zoneId);
+              }
+              // Broadcast worker selection to BiometricSyncModule
+              window.dispatchEvent(
+                new CustomEvent('prognosticator:select-worker', {
+                  detail: { workerId }
+                })
+              );
+              setProtocolActiveNotice(`Global Search: Located Worker [${workerId}] in ${zoneId || activeZoneObj.name}. Live wearable telemetry focused.`);
+              setTimeout(() => setProtocolActiveNotice(null), 5000);
+              const el = document.getElementById('biometric-sync-section') || document.getElementById('worker-density-correlation-section');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            onSelectTelemetryCategory={(categoryKey) => {
+              setIsolatedHealthSignal(categoryKey);
+              if (managerTab !== 'live') setManagerTab('live');
+              setProtocolActiveNotice(`Global Search: Isolated Telemetry Category [${categoryKey.toUpperCase()}]. Highlighting multi-signal stream.`);
+              setTimeout(() => setProtocolActiveNotice(null), 5000);
+              const el = document.getElementById('historical-workforce-health-chart') || document.getElementById('telemetry-charts-card');
+              el?.scrollIntoView({ behavior: 'smooth' });
             }}
             onSelectReport={(reportKey) => {
               if (reportKey === 'EXPORT_DATA') {
@@ -3127,34 +3312,37 @@ export default function ManagerDashboard() {
           </button>
         </div>
 
-        {/* ManagerDashboard Theme Switcher: Dark Mode vs High-Contrast Light Mode */}
-        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0" role="group" aria-label="Dashboard theme switcher">
-          <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 hidden sm:inline">Theme:</span>
+        {/* ManagerDashboard Theme Switcher: Default Dark Mode vs High-Contrast 'Compliance' Light Mode */}
+        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0" role="group" aria-label="Dashboard theme and audit mode switcher">
+          <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 hidden sm:inline">Theme / Audit:</span>
           <button
             type="button"
             onClick={() => handleToggleTheme('dark')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               dashboardTheme === 'dark'
-                ? 'bg-slate-800 text-cyan-400 shadow-xs border border-slate-700'
+                ? 'bg-slate-800 text-cyan-400 shadow-xs border border-slate-700 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
-            title="Dark Mode (Standard Tactical Control Room Display)"
+            title="Default Dark Mode (Standard control room tactical monitoring display)"
           >
             <Moon className="h-3.5 w-3.5" />
-            <span>Dark</span>
+            <span>Default Dark</span>
           </button>
           <button
             type="button"
             onClick={() => handleToggleTheme('high-contrast-light')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               dashboardTheme === 'high-contrast-light'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs border border-amber-300'
+                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs border border-amber-300 ring-2 ring-amber-400/40'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
-            title="High-Contrast Light Mode (Daylight / Outdoor / High Ambient Light)"
+            title="Compliance Light Mode (High-contrast presentation optimized for audit reviews and regulatory inspections)"
           >
             <Sun className="h-3.5 w-3.5" />
-            <span>High Contrast</span>
+            <span>Compliance Light</span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-slate-900 border border-amber-700/40 font-bold">
+              AUDIT
+            </span>
           </button>
         </div>
 
@@ -3210,6 +3398,41 @@ export default function ManagerDashboard() {
             }}
             soundEnabled={toastSoundEnabled}
             onToggleSound={() => setToastSoundEnabled((prev) => !prev)}
+            telemetryRiskThreshold={telemetryRiskThreshold}
+            onUpdateTelemetryRiskThreshold={handleUpdateTelemetryRiskThreshold}
+            riskThresholdBreaches={riskThresholdBreaches}
+            onAcknowledgeRiskBreach={handleAcknowledgeRiskBreach}
+            currentTelemetryRisk={Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1))}
+            browserPermission={desktopNotificationPermission}
+            onRequestBrowserPermission={() => {
+              desktopNotificationService.requestPermission().then((p) => {
+                setDesktopNotificationPermission(p === 'unsupported' ? 'denied' : (p as NotificationPermission));
+              });
+            }}
+            browserAlertsEnabled={desktopNotificationsEnabled}
+            onToggleBrowserAlerts={() => {
+              const next = !desktopNotificationsEnabled;
+              setDesktopNotificationsEnabled(next);
+              desktopNotificationService.updateConfig({ enabled: next });
+            }}
+            onTestBrowserAlert={() => {
+              const cur = Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1));
+              desktopNotificationService.notifyRiskThresholdBreach(
+                {
+                  id: `TEST-TOPRIGHT-${Date.now()}`,
+                  riskScore: cur,
+                  threshold: telemetryRiskThreshold,
+                  delta: Number((cur - telemetryRiskThreshold).toFixed(1)),
+                  zoneName: activeZoneObj.name,
+                  workerCount: activeZoneObj.count,
+                  primarySignal: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
+                  recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.'
+                },
+                { forceTrigger: true }
+              );
+              setProtocolActiveNotice('Browser Alert dispatched! OS notification & audio chime triggered.');
+              setTimeout(() => setProtocolActiveNotice(null), 5000);
+            }}
           />
 
           {/* Export Data Button: Opens the Export Data modal allowing safety managers to download current health trends and anomaly reports as CSV or PDF */}
@@ -3250,6 +3473,19 @@ export default function ManagerDashboard() {
           >
             <Camera className="h-3.5 w-3.5 text-white" />
             <span>Quick Snapshot</span>
+          </button>
+
+          {/* What-If Simulator Button: Jump to Workforce Risk Trend Chart and Open What-If Simulation Tool */}
+          <button
+            onClick={handleOpenWhatIfSimulator}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border border-purple-400 cursor-pointer"
+            title="Open What-If Simulator: Adjust vaccination rates, seasonal humidity, ambient heat, and observe real-time health risk trend recalculations"
+          >
+            <Sliders className="h-3.5 w-3.5 text-white" />
+            <span>What-If Simulator</span>
+            <span className="text-[10px] font-mono bg-purple-950/80 px-1 rounded text-purple-200 ml-0.5">
+              Live
+            </span>
           </button>
 
           {/* Signed Quarterly Compliance Report PDF Button */}
@@ -3397,6 +3633,33 @@ export default function ManagerDashboard() {
           >
             <TrendingDown className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
             <span>Predictive Trend Alerts</span>
+          </button>
+
+          {/* Quick Trigger: What-If Risk Trend Simulator */}
+          <button
+            onClick={handleOpenWhatIfSimulator}
+            className="flex items-center space-x-1.5 bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/50 text-purple-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Workforce Risk Level Trend chart and open the What-If Simulator panel"
+          >
+            <Sliders className="h-3.5 w-3.5 text-purple-400 animate-pulse" />
+            <span>What-If Simulator</span>
+          </button>
+
+          {/* Quick Trigger: Notification Center (Threshold & Alerts) */}
+          <button
+            onClick={() => {
+              const el = document.getElementById('notification-center-section') || document.getElementById('high-risk-notification-center');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-rose-500', 'transition-all');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-rose-500'), 2500);
+              }
+            }}
+            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Notification Center with User-Defined Health Telemetry Risk Threshold and Browser Alert Sentinel"
+          >
+            <BellRing className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+            <span>Notification Center</span>
           </button>
 
           {/* Longitudinal Timeframe / Date Range Filter in Top Navigation */}
@@ -4849,6 +5112,32 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* 24-Hour vs Previous Week Telemetry Variance Summary Component */}
+      <HealthTelemetryVarianceSummary
+        telemetryStream={telemetryStream}
+        theme={dashboardTheme}
+        className="mb-6"
+      />
+
+      {/* Proactive Alert Forecast Card: Analyzes Health Risk Growth Rates to Predict Upcoming Spikes */}
+      <AlertForecastCard
+        telemetryStream={telemetryStream}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onStageMitigation={(forecast) => {
+          setProtocolActiveNotice(
+            `Mitigation Protocol Staged for ${forecast.zoneName}: ${forecast.action} (Projected peak: ${forecast.projectedPeak}%, Time to breach: ~${forecast.timeToSpikeHours}h)`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onViewTrendChart={() => {
+          const el = document.getElementById('workforce-risk-trend-7d-card');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        theme={dashboardTheme}
+        className="mb-6"
+      />
+
       {/* Proactive Maintenance Scheduler: Triggers when LSTM-Kalman engine predicts sensor component failure within 72h */}
       <ProactiveMaintenanceSchedulerCard
         className="mb-6"
@@ -5028,9 +5317,12 @@ export default function ManagerDashboard() {
         }}
       />
 
-      {/* Recharts 7-Day Aggregate Workforce Risk Level Line Chart */}
+      {/* Recharts 7-Day Aggregate Workforce Risk Level Line Chart with What-If Simulator & Prediction Uncertainty Band */}
       <WorkforceRiskTrend7DaysChart
         className="mb-6"
+        theme={dashboardTheme}
+        isWhatIfOpen={isWhatIfSimulatorOpen}
+        onToggleWhatIfOpen={() => setIsWhatIfSimulatorOpen((prev) => !prev)}
         onSelectDay={(day) => {
           if (day.isSpike) {
             setProtocolActiveNotice(
@@ -5642,6 +5934,48 @@ export default function ManagerDashboard() {
           isGeneratingPdf={isDirectPdfExporting}
           incidentAssignments={incidentAssignments}
           onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
+          telemetryRiskThreshold={telemetryRiskThreshold}
+          onUpdateTelemetryRiskThreshold={handleUpdateTelemetryRiskThreshold}
+          riskThresholdBreaches={riskThresholdBreaches}
+          onAcknowledgeRiskBreach={handleAcknowledgeRiskBreach}
+          onClearRiskBreaches={handleClearRiskBreaches}
+          currentTelemetryRisk={Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1))}
+          browserPermission={desktopNotificationPermission}
+          onRequestBrowserPermission={() => {
+            desktopNotificationService.requestPermission().then((p) => {
+              setDesktopNotificationPermission(p === 'unsupported' ? 'denied' : (p as NotificationPermission));
+            });
+          }}
+          browserAlertsEnabled={desktopNotificationsEnabled}
+          onToggleBrowserAlerts={() => {
+            const next = !desktopNotificationsEnabled;
+            setDesktopNotificationsEnabled(next);
+            desktopNotificationService.updateConfig({ enabled: next });
+          }}
+          soundEnabled={toastSoundEnabled}
+          onToggleSound={() => setToastSoundEnabled((p) => !p)}
+          onTestBrowserAlert={() => {
+            const cur = Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1));
+            desktopNotificationService.notifyRiskThresholdBreach(
+              {
+                id: `TEST-SENTINEL-${Date.now()}`,
+                riskScore: cur,
+                threshold: telemetryRiskThreshold,
+                delta: Number((cur - telemetryRiskThreshold).toFixed(1)),
+                zoneName: activeZoneObj.name,
+                workerCount: activeZoneObj.count,
+                primarySignal: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
+                recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.'
+              },
+              { forceTrigger: true }
+            );
+            setProtocolActiveNotice('Browser Alert dispatched! OS notification and audio siren triggered.');
+            setTimeout(() => setProtocolActiveNotice(null), 5000);
+          }}
+          onSimulateRiskBreach={() => {
+            const simulatedScore = Number((telemetryRiskThreshold + 9.8).toFixed(1));
+            triggerTelemetryRiskBrowserAlert(simulatedScore, activeZoneObj);
+          }}
           className="mb-6"
         />
       </div>

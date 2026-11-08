@@ -25,8 +25,57 @@ import {
   Layers,
   Thermometer,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquarePlus,
+  Pin,
+  Trash2,
+  Edit3,
+  X,
+  Tag,
+  Plus
 } from 'lucide-react';
+
+export interface ProjectedAnnotation {
+  id: string;
+  dayNumber: number;
+  dateLabel: string;
+  fullDate: string;
+  projectedMean: number;
+  title: string;
+  note: string;
+  category: 'MITIGATION_PLAN' | 'HVAC_MAINTENANCE' | 'EXTREME_WEATHER' | 'CREW_REST' | 'OTHER';
+  author: string;
+  createdAt: string;
+}
+
+const STORAGE_KEY_PROJECTED_NOTES = 'prognosticator_projected_chart_notes_v1';
+
+const INITIAL_PROJECTED_NOTES: Record<number, ProjectedAnnotation> = {
+  14: {
+    id: 'NOTE-PROJ-014',
+    dayNumber: 14,
+    dateLabel: 'Day 14',
+    fullDate: 'Mid-Month Forecasted Inflection',
+    projectedMean: 78.5,
+    title: 'Pre-Staged Rapid Cooling & Misting Intervention',
+    note: 'Forecasted wet-bulb heatwave peak. Safety supervisor pre-staged auxiliary chillers and 20-min mandatory shaded rest rotation.',
+    category: 'MITIGATION_PLAN',
+    author: 'Alex Mercer (Safety Lead)',
+    createdAt: new Date().toISOString()
+  },
+  21: {
+    id: 'NOTE-PROJ-021',
+    dayNumber: 21,
+    dateLabel: 'Day 21',
+    fullDate: 'Post-Surge Stabilization Window',
+    projectedMean: 48.0,
+    title: 'Scheduled Ventilation Ducts Inspection',
+    note: 'Scheduled quarterly airflow calibration and conveyor bearing re-lubrication.',
+    category: 'HVAC_MAINTENANCE',
+    author: 'Elena Rostova (Compliance Lead)',
+    createdAt: new Date().toISOString()
+  }
+};
 
 interface KalmanPredictiveModel30DaysChartProps {
   zones: FacilityZone[];
@@ -67,6 +116,101 @@ export default function KalmanPredictiveModel30DaysChart({
   const [activeZoneId, setActiveZoneId] = useState<string>(selectedZoneId);
   const [targetMetric, setTargetMetric] = useState<ProjectedMetric>('riskScore');
   const [scenario, setScenario] = useState<ScenarioPreset>('NOMINAL');
+
+  // Manual Notes / Qualitative Annotations attached to projected data points
+  const [annotations, setAnnotations] = useState<Record<number, ProjectedAnnotation>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY_PROJECTED_NOTES);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      } catch (e) {
+        console.warn('Failed to parse projected annotations from localStorage:', e);
+      }
+    }
+    return INITIAL_PROJECTED_NOTES;
+  });
+
+  // Modal State for Adding/Editing Note on a Clicked Projected Point
+  const [selectedPointForNote, setSelectedPointForNote] = useState<ProjectedDayData | null>(null);
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
+  const [formNoteTitle, setFormNoteTitle] = useState<string>('');
+  const [formNoteBody, setFormNoteBody] = useState<string>('');
+  const [formNoteCategory, setFormNoteCategory] = useState<ProjectedAnnotation['category']>('MITIGATION_PLAN');
+  const [formNoteAuthor, setFormNoteAuthor] = useState<string>('Alex Mercer (Safety Lead)');
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const saveAnnotationsToStorage = (updated: Record<number, ProjectedAnnotation>) => {
+    setAnnotations(updated);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_PROJECTED_NOTES, JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('Failed to save projected annotations to localStorage:', e);
+    }
+  };
+
+  const handleOpenNoteModal = (point: ProjectedDayData) => {
+    setSelectedPointForNote(point);
+    const existing = annotations[point.dayNumber];
+    if (existing) {
+      setFormNoteTitle(existing.title);
+      setFormNoteBody(existing.note);
+      setFormNoteCategory(existing.category);
+      setFormNoteAuthor(existing.author);
+    } else {
+      const isBreached = point.isThresholdBreached;
+      setFormNoteTitle(
+        isBreached
+          ? `Pre-Emptive Intervention: Day ${point.dayNumber}`
+          : `Operational Observation: Day ${point.dayNumber}`
+      );
+      setFormNoteBody(
+        isBreached
+          ? `Projected value of ${point.projectedMean} exceeds safety cutoff. Pre-stage misting fans and hydration stations.`
+          : `Nominal baseline progress observation recorded for ${point.dateLabel}.`
+      );
+      setFormNoteCategory(isBreached ? 'MITIGATION_PLAN' : 'OTHER');
+      setFormNoteAuthor('Alex Mercer (Safety Lead)');
+    }
+    setIsNoteModalOpen(true);
+  };
+
+  const handleSaveNote = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPointForNote) return;
+
+    const dayNum = selectedPointForNote.dayNumber;
+    const newNote: ProjectedAnnotation = {
+      id: `NOTE-PROJ-${dayNum}-${Date.now().toString().slice(-4)}`,
+      dayNumber: dayNum,
+      dateLabel: selectedPointForNote.dateLabel,
+      fullDate: selectedPointForNote.fullDate,
+      projectedMean: selectedPointForNote.projectedMean,
+      title: formNoteTitle.trim() || `Day ${dayNum} Note`,
+      note: formNoteBody.trim(),
+      category: formNoteCategory,
+      author: formNoteAuthor.trim() || 'Alex Mercer',
+      createdAt: new Date().toISOString()
+    };
+
+    const updated = { ...annotations, [dayNum]: newNote };
+    saveAnnotationsToStorage(updated);
+    setIsNoteModalOpen(false);
+    setSavedNotice(`Attached note to Day ${dayNum} (${selectedPointForNote.dateLabel}): "${newNote.title}"`);
+    setTimeout(() => setSavedNotice(null), 4000);
+  };
+
+  const handleDeleteNote = (dayNum: number) => {
+    const updated = { ...annotations };
+    delete updated[dayNum];
+    saveAnnotationsToStorage(updated);
+    setSavedNotice(`Removed annotation from Day ${dayNum}`);
+    setTimeout(() => setSavedNotice(null), 3000);
+  };
 
   const currentZoneObj = useMemo(() => {
     if (activeZoneId === 'ALL') return null;
@@ -380,12 +524,33 @@ export default function KalmanPredictiveModel30DaysChart({
         </div>
       </div>
 
+      {/* Notification banner when annotation is saved */}
+      {savedNotice && (
+        <div className="mb-3 p-2.5 rounded-xl bg-purple-950/80 border border-purple-500/50 text-xs font-mono text-purple-200 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-purple-400 shrink-0" />
+            <span>{savedNotice}</span>
+          </span>
+          <span className="text-[10px] text-purple-400 uppercase font-bold">Persisted</span>
+        </div>
+      )}
+
       {/* 30-Day Forward Projection Recharts Line / Area Composed Chart */}
-      <div className="h-[290px] w-full pt-1">
+      <div className="h-[295px] w-full pt-1 relative">
+        <div className="absolute top-1 left-2 z-10 text-[10px] font-mono text-slate-500 bg-slate-950/70 px-2 py-0.5 rounded border border-slate-800 pointer-events-none">
+          💡 Click any point on the forecast line to attach manual notes or annotations
+        </div>
+
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={projectionData}
-            margin={{ top: 10, right: 20, left: -10, bottom: 20 }}
+            margin={{ top: 15, right: 20, left: -10, bottom: 20 }}
+            onClick={(state: any) => {
+              if (state && state.activePayload && state.activePayload.length > 0) {
+                const clickedPoint = state.activePayload[0].payload as ProjectedDayData;
+                handleOpenNoteModal(clickedPoint);
+              }
+            }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
             <XAxis
@@ -406,11 +571,12 @@ export default function KalmanPredictiveModel30DaysChart({
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   const d: ProjectedDayData = payload[0].payload;
+                  const annot = annotations[d.dayNumber];
                   return (
-                    <div className="bg-slate-950 border border-slate-700 p-3.5 rounded-lg shadow-xl text-xs space-y-1.5 z-50 min-w-[240px]">
+                    <div className="bg-slate-950 border border-slate-700 p-3.5 rounded-xl shadow-2xl text-xs space-y-2 z-50 min-w-[260px] max-w-xs">
                       <div className="font-bold text-white border-b border-slate-800 pb-1 flex items-center justify-between font-mono">
                         <span>Day {d.dayNumber}: {d.dateLabel} ({d.dayOfWeek})</span>
-                        <span className={d.isThresholdBreached ? 'text-rose-400' : 'text-emerald-400'}>
+                        <span className={d.isThresholdBreached ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
                           {d.isThresholdBreached ? 'BREACH ALERT' : 'NOMINAL'}
                         </span>
                       </div>
@@ -434,9 +600,31 @@ export default function KalmanPredictiveModel30DaysChart({
                         </div>
                       </div>
 
-                      <div className="pt-1.5 border-t border-slate-800 text-[10px] text-slate-400">
-                        <div><strong>Phase:</strong> {d.operationalPhase}</div>
-                        <div className="text-slate-500 italic mt-0.5">{d.drivingStressor}</div>
+                      {/* Display Qualitative Annotation Attached to this Projected Day */}
+                      {annot && (
+                        <div className="mt-1.5 p-2 rounded-lg bg-purple-950/70 border border-purple-500/50 text-xs">
+                          <div className="flex items-center justify-between text-purple-300 font-mono text-[10px] font-bold">
+                            <span className="flex items-center gap-1">
+                              <Pin className="h-3 w-3 text-purple-400" />
+                              <span>{annot.category.replace('_', ' ')}</span>
+                            </span>
+                            <span className="text-purple-400">{annot.author.split(' ')[0]}</span>
+                          </div>
+                          <div className="text-white font-semibold text-xs mt-0.5">{annot.title}</div>
+                          {annot.note && (
+                            <p className="text-slate-300 text-[10px] mt-0.5 line-clamp-2">{annot.note}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+                        <div>
+                          <div><strong>Phase:</strong> {d.operationalPhase}</div>
+                          <div className="text-slate-500 italic mt-0.5">{d.drivingStressor}</div>
+                        </div>
+                        <span className="text-purple-400 font-mono text-[10px] font-semibold shrink-0 ml-2">
+                          Click to {annot ? 'edit note' : 'add note'}
+                        </span>
                       </div>
                     </div>
                   );
@@ -475,7 +663,7 @@ export default function KalmanPredictiveModel30DaysChart({
               fillOpacity={0.15}
             />
 
-            {/* Projected Mean Line */}
+            {/* Projected Mean Line with Interactive Annotation Pins */}
             <Line
               type="monotone"
               dataKey="projectedMean"
@@ -484,22 +672,55 @@ export default function KalmanPredictiveModel30DaysChart({
               strokeWidth={2.5}
               dot={(props: any) => {
                 const { cx, cy, payload } = props;
-                if (payload.isThresholdBreached) {
+                if (!cx || !cy || !payload) return null;
+                const dayNum = payload.dayNumber;
+                const hasNote = Boolean(annotations[dayNum]);
+                const isBreached = payload.isThresholdBreached;
+
+                // Render prominent pin marker for annotated projected days
+                if (hasNote) {
+                  return (
+                    <g key={`annot-proj-dot-${dayNum}`} className="cursor-pointer">
+                      <circle cx={cx} cy={cy} r={8} fill="#a855f7" fillOpacity={0.35} className="animate-ping" />
+                      <circle cx={cx} cy={cy} r={5.5} fill="#a855f7" stroke="#ffffff" strokeWidth={2} />
+                      <g transform={`translate(${cx - 7}, ${cy - 22})`}>
+                        <rect width="14" height="12" rx="3" fill="#a855f7" stroke="#ffffff" strokeWidth="1" />
+                        <text x="7" y="9" textAnchor="middle" fill="#ffffff" fontSize="8" fontWeight="bold">
+                          📌
+                        </text>
+                      </g>
+                    </g>
+                  );
+                }
+
+                if (isBreached) {
                   return (
                     <circle
                       cx={cx}
                       cy={cy}
-                      r={4}
+                      r={4.5}
                       fill="#f43f5e"
                       stroke="#ffffff"
                       strokeWidth={1.5}
-                      key={`dot-${payload.dayNumber}`}
+                      key={`dot-${dayNum}`}
+                      className="cursor-pointer hover:r-6 transition-all"
                     />
                   );
                 }
-                return null;
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={2.5}
+                    fill="#06b6d4"
+                    stroke="#0f172a"
+                    strokeWidth={1}
+                    key={`dot-${dayNum}`}
+                    className="cursor-pointer hover:r-5 transition-all opacity-80 hover:opacity-100"
+                  />
+                );
               }}
-              activeDot={{ r: 6, fill: '#06b6d4' }}
+              activeDot={{ r: 7, fill: '#06b6d4', stroke: '#ffffff', strokeWidth: 2 }}
             />
           </ComposedChart>
         </ResponsiveContainer>
@@ -547,6 +768,187 @@ export default function KalmanPredictiveModel30DaysChart({
           </span>
         </div>
       </div>
+
+      {/* Attached Projected Notes Tray */}
+      <div className="mt-4 pt-3 border-t border-slate-800">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <MessageSquarePlus className="h-4 w-4 text-purple-400" />
+            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
+              Projected Annotations &amp; Mitigation Notes ({Object.keys(annotations).length})
+            </h4>
+          </div>
+          <span className="text-[11px] text-slate-400">
+            Click any point above or attach note to forecast
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          {Object.values(annotations).map((annot) => (
+            <div
+              key={annot.id}
+              className="p-3 rounded-lg bg-slate-950 border border-purple-500/30 hover:border-purple-500/60 transition flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="flex items-center gap-1.5 font-bold text-purple-300 font-mono text-[11px]">
+                    <Pin className="h-3.5 w-3.5 text-purple-400" />
+                    <span>Day {annot.dayNumber} ({annot.dateLabel})</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-700">
+                    {annot.category.replace('_', ' ')}
+                  </span>
+                </div>
+                <div className="font-semibold text-white text-xs">{annot.title}</div>
+                {annot.note && (
+                  <p className="text-slate-300 text-[11px] mt-1 leading-relaxed">{annot.note}</p>
+                )}
+              </div>
+
+              <div className="mt-2.5 pt-2 border-t border-slate-850 flex items-center justify-between text-[10px] text-slate-400">
+                <span className="font-mono">Author: {annot.author}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const pt = projectionData.find((d) => d.dayNumber === annot.dayNumber) || {
+                        dayNumber: annot.dayNumber,
+                        dateLabel: annot.dateLabel,
+                        fullDate: annot.fullDate,
+                        dayOfWeek: '',
+                        isWeekend: false,
+                        projectedMean: annot.projectedMean,
+                        upperBound: annot.projectedMean + 5,
+                        lowerBound: annot.projectedMean - 5,
+                        ambientTempC: 34,
+                        confidencePct: 90,
+                        isThresholdBreached: annot.projectedMean >= 70,
+                        drivingStressor: '',
+                        operationalPhase: ''
+                      };
+                      handleOpenNoteModal(pt);
+                    }}
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Edit3 className="h-3 w-3" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteNote(annot.dayNumber)}
+                    className="text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Modal for Adding / Editing Note on Projected Data Point */}
+      {isNoteModalOpen && selectedPointForNote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-5 shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-500/20 border border-purple-500/40 rounded-xl text-purple-300">
+                  <MessageSquarePlus className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {annotations[selectedPointForNote.dayNumber] ? 'Edit Projected Note' : 'Attach Note to Projected Point'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                    Day {selectedPointForNote.dayNumber}: {selectedPointForNote.dateLabel} &bull; Projected {selectedPointForNote.projectedMean} {metricConfig.unit}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsNoteModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNote} className="space-y-3.5 text-xs font-sans">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase font-mono">
+                  Note Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formNoteTitle}
+                  onChange={(e) => setFormNoteTitle(e.target.value)}
+                  placeholder="e.g., Pre-Staged Misting Fans & Hydration Directive"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-hidden focus:border-purple-500 transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase font-mono">
+                  Operational Tag / Category
+                </label>
+                <select
+                  value={formNoteCategory}
+                  onChange={(e) => setFormNoteCategory(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-hidden focus:border-purple-500 transition cursor-pointer"
+                >
+                  <option value="MITIGATION_PLAN">Pre-Emptive Mitigation Protocol</option>
+                  <option value="HVAC_MAINTENANCE">Scheduled HVAC &amp; Equipment Maintenance</option>
+                  <option value="EXTREME_WEATHER">Extreme Weather / Heatwave Surge</option>
+                  <option value="CREW_REST">Mandatory Crew Rest &amp; Hydration</option>
+                  <option value="OTHER">General Qualitative Observation</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase font-mono">
+                  Detailed Notes / Operational Context
+                </label>
+                <textarea
+                  rows={3}
+                  value={formNoteBody}
+                  onChange={(e) => setFormNoteBody(e.target.value)}
+                  placeholder="Explain why this projected data point requires operational attention..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white focus:outline-hidden focus:border-purple-500 transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase font-mono">
+                  Author / Safety Supervisor
+                </label>
+                <input
+                  type="text"
+                  value={formNoteAuthor}
+                  onChange={(e) => setFormNoteAuthor(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-hidden focus:border-purple-500 transition font-mono"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsNoteModalOpen(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 bg-slate-950 border border-slate-800 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-600/30 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                  <span>Save Note to Point</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

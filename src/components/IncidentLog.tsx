@@ -330,19 +330,26 @@ export default function IncidentLog({
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null);
 
-  // Local acknowledgment state for seed incidents or instant UI feedback
-  const [localStatuses, setLocalStatuses] = useState<Record<string, 'ACKNOWLEDGED' | 'DISPATCHED'>>({});
+  // Bulk action selection state
+  const [selectedIncidentIds, setSelectedIncidentIds] = useState<Set<string>>(new Set());
+  const [bulkFeedback, setBulkFeedback] = useState<{ message: string; count: number } | null>(null);
+
+  // Local acknowledgment/resolution state for seed incidents or instant UI feedback
+  const [localStatuses, setLocalStatuses] = useState<Record<string, 'ACKNOWLEDGED' | 'DISPATCHED' | 'RESOLVED'>>({});
 
   // Merge live incoming alerts with seed historical archive
   const allIncidents = useMemo<HistoricalIncident[]>(() => {
     // Convert active live alerts into HistoricalIncident format
     const liveConverted: HistoricalIncident[] = alerts.map((a) => {
       const zoneObj = zones.find((z) => z.name === a.location_zone || z.id === a.location_zone);
+      const isLocallyResolved = localStatuses[a.id] === 'RESOLVED';
       const isLocallyAcked = localStatuses[a.id] === 'ACKNOWLEDGED' || a.acknowledged;
       const isLocallyDispatched = localStatuses[a.id] === 'DISPATCHED';
 
       let status: 'PENDING_ACTION' | 'ACKNOWLEDGED' | 'DISPATCHED' | 'RESOLVED' = 'PENDING_ACTION';
-      if (isLocallyDispatched) {
+      if (isLocallyResolved) {
+        status = 'RESOLVED';
+      } else if (isLocallyDispatched) {
         status = 'DISPATCHED';
       } else if (isLocallyAcked) {
         status = 'ACKNOWLEDGED';
@@ -374,13 +381,12 @@ export default function IncidentLog({
     const liveIds = new Set(liveConverted.map((i) => i.id));
     const historyFiltered: HistoricalIncident[] = SEED_HISTORICAL_INCIDENTS.filter((i) => !liveIds.has(i.id)).map((i) => {
       if (localStatuses[i.id]) {
-        const updatedStatus: 'PENDING_ACTION' | 'ACKNOWLEDGED' | 'DISPATCHED' | 'RESOLVED' =
-          localStatuses[i.id] === 'DISPATCHED' ? 'DISPATCHED' : 'ACKNOWLEDGED';
+        const updatedStatus = localStatuses[i.id];
         return {
           ...i,
           status: updatedStatus,
-          acknowledgedAt: localStatuses[i.id] === 'ACKNOWLEDGED' ? 'Just now' : i.acknowledgedAt,
-          dispatchedAt: localStatuses[i.id] === 'DISPATCHED' ? 'Just now' : i.dispatchedAt
+          acknowledgedAt: updatedStatus === 'ACKNOWLEDGED' ? 'Just now' : i.acknowledgedAt,
+          dispatchedAt: updatedStatus === 'DISPATCHED' ? 'Just now' : i.dispatchedAt
         };
       }
       return i;
@@ -475,6 +481,75 @@ export default function IncidentLog({
       onAcknowledgeAlert(incident.id);
     }
   }, [onAcknowledgeAlert]);
+
+  // Bulk selection toggles and bulk operations
+  const allFilteredSelected = useMemo(() => {
+    if (filteredIncidents.length === 0) return false;
+    return filteredIncidents.every((inc) => selectedIncidentIds.has(inc.id));
+  }, [filteredIncidents, selectedIncidentIds]);
+
+  const toggleSelectAll = useCallback(() => {
+    if (allFilteredSelected) {
+      setSelectedIncidentIds(new Set());
+    } else {
+      setSelectedIncidentIds(new Set(filteredIncidents.map((inc) => inc.id)));
+    }
+  }, [allFilteredSelected, filteredIncidents]);
+
+  const toggleSelectIncident = useCallback((id: string) => {
+    setSelectedIncidentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleBulkAcknowledge = useCallback(() => {
+    if (selectedIncidentIds.size === 0) return;
+    const count = selectedIncidentIds.size;
+    setLocalStatuses((prev) => {
+      const updated = { ...prev };
+      selectedIncidentIds.forEach((id) => {
+        updated[id] = 'ACKNOWLEDGED';
+        if (onAcknowledgeAlert) {
+          onAcknowledgeAlert(id);
+        }
+      });
+      return updated;
+    });
+    setBulkFeedback({
+      message: `Successfully acknowledged ${count} alert${count > 1 ? 's' : ''}`,
+      count
+    });
+    setSelectedIncidentIds(new Set());
+    setTimeout(() => setBulkFeedback(null), 4000);
+  }, [selectedIncidentIds, onAcknowledgeAlert]);
+
+  const handleBulkResolve = useCallback(() => {
+    if (selectedIncidentIds.size === 0) return;
+    const count = selectedIncidentIds.size;
+    setLocalStatuses((prev) => {
+      const updated = { ...prev };
+      selectedIncidentIds.forEach((id) => {
+        updated[id] = 'RESOLVED';
+      });
+      return updated;
+    });
+    setBulkFeedback({
+      message: `Successfully resolved ${count} alert${count > 1 ? 's' : ''}`,
+      count
+    });
+    setSelectedIncidentIds(new Set());
+    setTimeout(() => setBulkFeedback(null), 4000);
+  }, [selectedIncidentIds]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedIncidentIds(new Set());
+  }, []);
 
   // Handle medical/field dispatch
   const handleDispatch = useCallback((incident: HistoricalIncident) => {
@@ -837,12 +912,84 @@ export default function IncidentLog({
         )}
       </div>
 
+      {/* Bulk Action Feedback Notice */}
+      {bulkFeedback && (
+        <div className="mb-3 p-3 rounded-lg bg-emerald-950/80 border border-emerald-500/50 text-emerald-200 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span className="font-semibold">{bulkFeedback.message}</span>
+          </div>
+          <button
+            onClick={() => setBulkFeedback(null)}
+            className="text-emerald-400 hover:text-emerald-200 text-xs px-2 py-0.5 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectedIncidentIds.size > 0 && (
+        <div className="mb-3 p-3 rounded-xl bg-cyan-950/90 border border-cyan-500/50 shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-full bg-cyan-500 text-slate-950 font-bold font-mono text-xs flex items-center justify-center">
+              {selectedIncidentIds.size}
+            </div>
+            <div>
+              <span className="font-bold text-cyan-200">
+                {selectedIncidentIds.size} incident{selectedIncidentIds.size > 1 ? 's' : ''} selected
+              </span>
+              <span className="text-[11px] text-cyan-300/80 ml-2">
+                (Bulk triage &amp; compliance actions)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkAcknowledge}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+              title="Acknowledge all selected alerts simultaneously"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Bulk Acknowledge ({selectedIncidentIds.size})</span>
+            </button>
+
+            <button
+              onClick={handleBulkResolve}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+              title="Mark all selected alerts as resolved in audit trail"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Bulk Resolve ({selectedIncidentIds.size})</span>
+            </button>
+
+            <button
+              onClick={handleClearSelection}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-slate-700"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content View: Table Mode */}
       {viewMode === 'table' ? (
         <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-900 text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
               <tr>
+                <th className="py-2.5 px-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    className="rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500 cursor-pointer h-3.5 w-3.5"
+                    title={allFilteredSelected ? 'Deselect all' : 'Select all matching incidents'}
+                    aria-label="Select all incidents"
+                  />
+                </th>
                 <th className="py-2.5 px-3">Incident ID &amp; Time</th>
                 <th className="py-2.5 px-3">Severity</th>
                 <th className="py-2.5 px-3">Facility Site &amp; Cohort</th>
@@ -855,7 +1002,7 @@ export default function IncidentLog({
             <tbody className="divide-y divide-slate-800/60 font-sans">
               {filteredIncidents.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-500">
+                  <td colSpan={8} className="py-10 text-center text-slate-500">
                     <AlertTriangle className="h-6 w-6 mx-auto mb-2 text-slate-600" />
                     No incidents match the active search filter parameters.
                   </td>
@@ -864,6 +1011,7 @@ export default function IncidentLog({
                 filteredIncidents.map((incident) => {
                   const isExpanded = expandedIncidentId === incident.id;
                   const isPending = incident.status === 'PENDING_ACTION';
+                  const isSelected = selectedIncidentIds.has(incident.id);
 
                   // Severity badge styles
                   let sevBadge = 'bg-slate-800 text-slate-300 border-slate-700';
@@ -893,10 +1041,21 @@ export default function IncidentLog({
                     <React.Fragment key={incident.id}>
                       <tr
                         className={`hover:bg-slate-900/60 transition cursor-pointer ${
-                          isPending ? 'bg-rose-950/10' : ''
+                          isSelected ? 'bg-cyan-950/20' : isPending ? 'bg-rose-950/10' : ''
                         }`}
                         onClick={() => setExpandedIncidentId(isExpanded ? null : incident.id)}
                       >
+                        {/* Row Selection Checkbox */}
+                        <td className="py-3 px-3 align-top text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectIncident(incident.id)}
+                            className="rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500 cursor-pointer h-3.5 w-3.5 mt-0.5"
+                            aria-label={`Select incident ${incident.id}`}
+                          />
+                        </td>
+
                         {/* Incident ID & Timestamp */}
                         <td className="py-3 px-3 align-top whitespace-nowrap">
                           <div className="font-mono font-bold text-slate-200 flex items-center gap-1.5">
@@ -1037,7 +1196,7 @@ export default function IncidentLog({
                       {/* Expandable Incident Details Drawer */}
                       {isExpanded && (
                         <tr className="bg-slate-950/90 border-b border-slate-800">
-                          <td colSpan={7} className="p-4">
+                          <td colSpan={8} className="p-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                               <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
                                 <div className="text-[10px] font-mono uppercase text-slate-400 font-bold mb-1 flex items-center gap-1">
@@ -1120,10 +1279,12 @@ export default function IncidentLog({
           ) : (
             filteredIncidents.map((incident) => {
               const isPending = incident.status === 'PENDING_ACTION';
+              const isSelected = selectedIncidentIds.has(incident.id);
 
               let borderAccent = 'border-slate-800';
-              if (incident.severity === 'CRITICAL') borderAccent = 'border-rose-500/50 bg-rose-950/10';
-              if (incident.severity === 'HIGH') borderAccent = 'border-amber-500/50';
+              if (isSelected) borderAccent = 'border-cyan-500/80 bg-cyan-950/20';
+              else if (incident.severity === 'CRITICAL') borderAccent = 'border-rose-500/50 bg-rose-950/10';
+              else if (incident.severity === 'HIGH') borderAccent = 'border-amber-500/50';
 
               return (
                 <div
@@ -1133,7 +1294,14 @@ export default function IncidentLog({
                   <div>
                     {/* Top Tag Row */}
                     <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectIncident(incident.id)}
+                          className="rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500 cursor-pointer h-3.5 w-3.5"
+                          aria-label={`Select incident ${incident.id}`}
+                        />
                         <span className="text-xs font-mono font-bold text-cyan-400">{incident.id}</span>
                         <span className="text-[10px] text-slate-500 font-mono">• {incident.timeAgo}</span>
                       </div>

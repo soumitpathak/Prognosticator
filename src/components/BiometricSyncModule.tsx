@@ -69,8 +69,48 @@ export default function BiometricSyncModule({
     return () => unsub();
   }, []);
 
+  // Listen to global worker selection events (from Global Search Bar)
+  useEffect(() => {
+    const handleWorkerSelected = (e: Event) => {
+      const customEvt = e as CustomEvent<{ workerId: string }>;
+      if (customEvt.detail?.workerId) {
+        setSelectedWorkerId(customEvt.detail.workerId);
+      }
+    };
+    window.addEventListener('prognosticator:select-worker', handleWorkerSelected);
+    return () => window.removeEventListener('prognosticator:select-worker', handleWorkerSelected);
+  }, []);
+
   const selectedDevice =
-    devices.find((d) => d.workerId === selectedWorkerId) || devices[0];
+    devices.find((d) => d.workerId === selectedWorkerId) ||
+    (selectedWorkerId
+      ? {
+          id: `DEV-BLE-${selectedWorkerId.replace('W-', '')}`,
+          workerId: selectedWorkerId,
+          workerName: `Worker ${selectedWorkerId}`,
+          zoneId: selectedZoneId,
+          zoneName: zones.find((z) => z.id === selectedZoneId)?.name || 'Facility Worksite',
+          deviceModel: 'Polar H10 ECG Chest Strap',
+          deviceType: 'CHEST_STRAP' as const,
+          connectionStatus: 'CONNECTED' as const,
+          batteryPct: 82,
+          rssiSignalDbm: -65,
+          currentHeartRate: 98,
+          currentRmssd: 36,
+          currentSdnn: 42,
+          stressScore: 66,
+          stressTier: 'HIGH_STRESS' as const,
+          pnsIndex: -1.2,
+          snsIndex: 1.4,
+          rrIntervals: [620, 615, 630, 610, 625, 618, 622, 612],
+          recentHrvHistory: [
+            { timestamp: '10:15', timeLabel: '10:15', rmssd: 52, heartRate: 80, stressScore: 42, skinTempC: 36.5 },
+            { timestamp: '10:30', timeLabel: '10:30', rmssd: 44, heartRate: 88, stressScore: 56, skinTempC: 36.9 },
+            { timestamp: '10:45', timeLabel: '10:45', rmssd: 36, heartRate: 98, stressScore: 66, skinTempC: 37.4 }
+          ],
+          lastSyncTime: 'Live (0.4s ago)'
+        }
+      : devices[0]);
 
   const handleToggleStreaming = () => {
     const nextState = !isLiveStreaming;
