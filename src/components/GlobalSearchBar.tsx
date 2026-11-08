@@ -53,6 +53,34 @@ export interface SearchResultItem {
 
 export const PREDICTIVE_REPORTS_INDEX = [
   {
+    key: 'INCIDENT_LOG',
+    title: 'Incident Log & Anomaly Records',
+    subtitle: 'Historical register of multi-signal alerts, Kalman innovation spikes, and physiological threshold breaches',
+    badge: 'INCIDENT LOG',
+    badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+  },
+  {
+    key: 'COHORT_COMPARISON_VIEW',
+    title: 'Cohort & Site Side-by-Side Comparison View',
+    subtitle: 'Select two population cohorts or sites to visualize vital health telemetry metrics side-by-side on a line chart',
+    badge: 'COHORT COMPARISON',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+  },
+  {
+    key: 'PREDICTIVE_30D_MODEL',
+    title: '30-Day Forward Predictive Health Modeling',
+    subtitle: 'Uses current Kalman filter data to extrapolate and project health trends over the next 30 days',
+    badge: '30D KALMAN MODEL',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+  },
+  {
+    key: 'EXPORT_DATA',
+    title: 'Export Data (CSV / PDF)',
+    subtitle: 'Download current health trends time-series and active anomaly reports as CSV or PDF files',
+    badge: 'EXPORT DATA',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+  },
+  {
     key: 'RESOURCE_UTILIZATION_HEATMAP',
     title: 'Resource Utilization & Workforce Heatmap',
     subtitle: 'Worker distribution across high-risk zones, thermal heat strain overlay, and shift rebalancing',

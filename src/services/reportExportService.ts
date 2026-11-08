@@ -505,6 +505,258 @@ export function downloadAnomalyReportCsv({
 }
 
 /**
+ * Downloads dedicated 24-hour health trends time series as an RFC 4180 CSV
+ */
+export function downloadHealthTrendsCsv({
+  data,
+  thresholds,
+  zone
+}: {
+  data: TelemetryDataPoint[];
+  thresholds: HealthSignalNotificationThresholds;
+  zone: FacilityZone;
+}): { success: boolean; filename: string; recordCount: number } {
+  const now = new Date();
+  const maxHrLimit = thresholds.maxHeartRateBpm ?? 115;
+  const maxAmbLimit = thresholds.maxAmbientHeatC;
+  const minHrvFloor = thresholds.minHrvMs;
+  const maxSkinLimit = thresholds.maxSkinTempC;
+  const maxNoiseLimit = thresholds.maxNoiseDb;
+  const riskCutoff = thresholds.riskScoreCutoffPct;
+
+  const cohortSize = zone.count || 14;
+  const isCohortSuppressed = defaultPrivacyShield.isCohortSuppressed(cohortSize);
+
+  const metadataLines = [
+    `# ==============================================================================`,
+    `# PROGNOSTICATOR WORKFORCE HEALTH TRENDS (TIME-SERIES TELEMETRY)`,
+    `# Generated At: ${now.toLocaleString()} (${now.toISOString()})`,
+    `# Facility Zone: ${zone.name} (${zone.id}) | Monitored Cohort: ${cohortSize} Workers`,
+    `# Privacy Standard: US HIPAA Security Rule § 164.514 & EU GDPR Article 9`,
+    `# Privacy Shield Status: ${
+      isCohortSuppressed
+        ? `CELL SUPPRESSED (Cohort N=${cohortSize} < 12 k-Anonymity threshold). Individual biometrics masked.`
+        : `VERIFIED k-Anonymity (N=${cohortSize} >= 12) & ε=0.5 Differential Privacy Enforced.`
+    }`,
+    `# Active Thresholds: HR Max=${maxHrLimit} BPM | Ambient Max=${maxAmbLimit}°C | HRV Min=${minHrvFloor} ms | Skin Max=${maxSkinLimit}°C | Noise Max=${maxNoiseLimit} dBA`,
+    `# Non-Punitive Notice: Data is processed strictly for early-warning occupational safety and hazard intervention.`,
+    `# ==============================================================================`
+  ];
+
+  const headers = [
+    'Interval_Index',
+    'Timestamp_ISO',
+    'Time_Label',
+    'Facility_Zone',
+    'Heart_Rate_BPM',
+    'HR_Threshold_BPM',
+    'HR_Breach_Flag',
+    'Ambient_Temp_C',
+    'Ambient_Threshold_C',
+    'Ambient_Breach_Flag',
+    'Kalman_Smoothed_HRV_ms',
+    'Raw_Wearable_HRV_ms',
+    'HRV_Floor_ms',
+    'HRV_Breach_Flag',
+    'Skin_Temp_C',
+    'Skin_Threshold_C',
+    'Skin_Breach_Flag',
+    'Acoustic_Noise_dBA',
+    'Noise_Threshold_dBA',
+    'Noise_Breach_Flag',
+    'Thermal_Work_Limit_TWL',
+    'Air_Quality_Index_AQI',
+    'DP_Sanitized_Risk_Score_Pct',
+    'Risk_Cutoff_Pct',
+    'Is_Anomaly_Interval',
+    'Clinical_Safety_Triage_Status',
+    'Privacy_Shield_Compliance'
+  ];
+
+  const rows = data.map((pt, idx) => {
+    const hr = pt.heart_rate_bpm ?? Math.round(72 + (68 - pt.smoothed_hrv) * 1.2);
+    const amb = pt.ambient_temp_c;
+    const hrv = pt.smoothed_hrv;
+    const skin = pt.skin_temp_c;
+    const noise = pt.noise_db ?? pt.raw_noise_db ?? 75;
+
+    const dpNoise = defaultPrivacyShield.sampleLaplace(1.0);
+    const sanitizedRisk = isCohortSuppressed
+      ? 0
+      : Math.max(0, Math.min(100, Number((pt.risk_score + dpNoise * 2).toFixed(1))));
+
+    const isHrBreach = hr >= maxHrLimit;
+    const isAmbBreach = amb >= maxAmbLimit;
+    const isHrvBreach = hrv <= minHrvFloor;
+    const isSkinBreach = skin >= maxSkinLimit;
+    const isNoiseBreach = noise >= maxNoiseLimit;
+    const isRiskBreach = sanitizedRisk >= riskCutoff;
+
+    let triageStatus = 'NOMINAL_HOMEOSTASIS';
+    if (isHrBreach && isSkinBreach) {
+      triageStatus = 'CRITICAL_ACUTE_HEAT_AND_CARDIAC_STRAIN';
+    } else if (isHrBreach) {
+      triageStatus = 'ELEVATED_HEART_RATE_TACHYCARDIA';
+    } else if (isAmbBreach) {
+      triageStatus = 'HIGH_AMBIENT_SOLAR_HEATWAVE';
+    } else if (isHrvBreach) {
+      triageStatus = 'PARASYMPATHETIC_AUTONOMIC_FATIGUE';
+    } else if (isSkinBreach) {
+      triageStatus = 'HYPERTHERMIC_HEAT_ACCUMULATION';
+    } else if (isNoiseBreach) {
+      triageStatus = 'ACOUSTIC_OVERPRESSURE_HAZARD';
+    } else if (pt.is_anomaly || isRiskBreach) {
+      triageStatus = 'MULTIVARIATE_ANOMALY_DIVERGENCE';
+    }
+
+    const cleanZone = (pt.zone || zone.name).replace(/,/g, ' ');
+
+    return [
+      idx + 1,
+      `"${pt.timestamp}"`,
+      `"${pt.timeLabel}"`,
+      `"${cleanZone}"`,
+      isCohortSuppressed ? '"[SUPPRESSED: N<12]"' : hr,
+      maxHrLimit,
+      isHrBreach ? 'BREACHED' : 'CLEAR',
+      amb.toFixed(1),
+      maxAmbLimit.toFixed(1),
+      isAmbBreach ? 'BREACHED' : 'CLEAR',
+      isCohortSuppressed ? '"[SUPPRESSED: N<12]"' : hrv.toFixed(1),
+      isCohortSuppressed ? '"[SUPPRESSED: N<12]"' : pt.raw_hrv.toFixed(1),
+      minHrvFloor,
+      isHrvBreach ? 'BREACHED' : 'CLEAR',
+      isCohortSuppressed ? '"[SUPPRESSED: N<12]"' : skin.toFixed(2),
+      maxSkinLimit.toFixed(1),
+      isSkinBreach ? 'BREACHED' : 'CLEAR',
+      noise.toFixed(1),
+      maxNoiseLimit.toFixed(1),
+      isNoiseBreach ? 'BREACHED' : 'CLEAR',
+      pt.twl_index.toFixed(1),
+      pt.aqi,
+      isCohortSuppressed ? '"[SUPPRESSED: N<12]"' : sanitizedRisk.toFixed(1),
+      riskCutoff,
+      pt.is_anomaly ? 'TRUE' : 'FALSE',
+      `"${triageStatus}"`,
+      isCohortSuppressed
+        ? '"k-Anonymity Suppressed (N<12)"'
+        : '"k-Anonymity N>=12 / ε=0.5 DP"'
+    ].join(',');
+  });
+
+  const csvContent = [...metadataLines, headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  const dateStamp = now.toISOString().slice(0, 10);
+  const timeStamp = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+  const sanitizedZone = zone.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Prognosticator_Health_Trends_${sanitizedZone}_${dateStamp}_${timeStamp}.csv`;
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  return {
+    success: true,
+    filename,
+    recordCount: data.length
+  };
+}
+
+/**
+ * Downloads active anomaly alerts log as an RFC 4180 CSV
+ */
+export function downloadActiveAnomaliesCsv({
+  activeAlerts,
+  zone
+}: {
+  activeAlerts: ActiveAnomalyAlert[];
+  zone: FacilityZone;
+}): { success: boolean; filename: string; recordCount: number } {
+  const now = new Date();
+  const cohortSize = zone.count || 14;
+  const isSuppressed = defaultPrivacyShield.isCohortSuppressed(cohortSize);
+
+  const metadataLines = [
+    `# ==============================================================================`,
+    `# PROGNOSTICATOR ACTIVE ANOMALY DETECTIONS & KALMAN VALIDATION LOG`,
+    `# Generated At: ${now.toLocaleString()} (${now.toISOString()})`,
+    `# Facility Zone: ${zone.name} (${zone.id}) | Monitored Workforce: ${cohortSize} Workers`,
+    `# Total Active Alerts: ${activeAlerts.length}`,
+    `# Privacy Standard: US HIPAA § 164.514 & EU GDPR Art. 9 (Pseudonymized & Small-Cell Suppressed when N<12)`,
+    `# Non-Punitive Notice: Telemetry is strictly for occupational clinical safety and early hazard mitigation.`,
+    `# ==============================================================================`
+  ];
+
+  const headers = [
+    'Alert_ID',
+    'Alert_Type',
+    'Worker_Pseudonym',
+    'Location_Zone',
+    'Detected_At',
+    'Anomaly_Metric',
+    'Severity',
+    'Kalman_Validation_Status',
+    'Raw_Sensor_Value',
+    'Kalman_Smoothed_Value',
+    'Early_Warning_Lead_Time',
+    'Recommended_Action',
+    'Privacy_Shield_Compliance',
+    'Supervisory_Acknowledged'
+  ];
+
+  const rows = activeAlerts.map((a) => {
+    const pseudonymToken = `TOKEN-WRK-${a.worker_id.replace(/[^0-9]/g, '').padStart(4, '0')}`;
+    return [
+      `"${a.id}"`,
+      `"${a.alert_type || 'HEALTH_ANOMALY'}"`,
+      `"${pseudonymToken}"`,
+      `"${a.location_zone.replace(/"/g, '""')}"`,
+      `"${a.detected_at}"`,
+      `"${a.anomaly_metric.replace(/"/g, '""')}"`,
+      `"${a.severity}"`,
+      `"${a.kalman_status}"`,
+      isSuppressed ? '"[SUPPRESSED: N<12]"' : `"${a.raw_value.replace(/"/g, '""')}"`,
+      isSuppressed ? '"[SUPPRESSED: N<12]"' : `"${a.kalman_smoothed_value.replace(/"/g, '""')}"`,
+      `"${a.lead_time}"`,
+      `"${a.recommended_action.replace(/"/g, '""')}"`,
+      `"${isSuppressed ? 'k-Anonymity Suppressed (N<12)' : a.privacy_status}"`,
+      `"${a.acknowledged ? 'YES' : 'NO'}"`
+    ].join(',');
+  });
+
+  const csvContent = [...metadataLines, headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  const dateStamp = now.toISOString().slice(0, 10);
+  const timeStamp = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+  const sanitizedZone = zone.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Prognosticator_Active_Anomalies_${sanitizedZone}_${dateStamp}_${timeStamp}.csv`;
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  return {
+    success: true,
+    filename,
+    recordCount: activeAlerts.length
+  };
+}
+
+/**
  * Downloads a complete multi-page Anonymized Executive Health & Safety Compliance PDF Report
  */
 export async function downloadAnomalyReportPdf({

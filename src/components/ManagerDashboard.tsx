@@ -107,6 +107,11 @@ import HistoricalAnomalyCsvExportModal from './HistoricalAnomalyCsvExportModal';
 import HistoricalAnomalyPdfExportModal from './HistoricalAnomalyPdfExportModal';
 import OrganizationalAnomalyHeatmap from './OrganizationalAnomalyHeatmap';
 import GeographicalZoneRiskHeatmap from './GeographicalZoneRiskHeatmap';
+import GeospatialSummaryWidget from './GeospatialSummaryWidget';
+import KalmanCohortAnomalyNotificationPanel from './KalmanCohortAnomalyNotificationPanel';
+import CohortHealthComparisonLineView from './CohortHealthComparisonLineView';
+import KalmanPredictiveModel30DaysChart from './KalmanPredictiveModel30DaysChart';
+import IncidentLog from './IncidentLog';
 import NotificationCenter, { INITIAL_INCIDENT_ASSIGNMENTS } from './NotificationCenter';
 import DepartmentRiskThresholdConfigPanel, { DEFAULT_DEPARTMENT_RISK_THRESHOLDS } from './DepartmentRiskThresholdConfigPanel';
 import AggregateRiskScoreTrend24hChart from './AggregateRiskScoreTrend24hChart';
@@ -165,7 +170,7 @@ import ResourceUtilizationPanel from './ResourceUtilizationPanel';
 import { complianceAuditService } from '../services/complianceAuditService';
 import { chartAnnotationService } from '../services/chartAnnotationService';
 import { generateDashboardSummaryPdfReport } from '../services/dashboardSummaryPdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Shield, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Shield, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind, GitCompare, Sun, Moon, AlertOctagon } from 'lucide-react';
 
 export type TeamMemberRole = 'SAFETY_OFFICER' | 'MAINTENANCE_CREW' | 'OPERATIONS_LEAD';
 
@@ -226,6 +231,24 @@ export default function ManagerDashboard() {
 
   // Live Weather State
   const [currentWeather, setCurrentWeather] = useState<ZoneWeatherData | null>(null);
+
+  // Dashboard Theme Switcher: 'dark' (Standard Tactical) or 'high-contrast-light' (Daylight / High-Contrast Accessibility)
+  const [dashboardTheme, setDashboardTheme] = useState<'dark' | 'high-contrast-light'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('prognosticator_dashboard_theme');
+      if (saved === 'high-contrast-light' || saved === 'dark') return saved;
+    }
+    return 'dark';
+  });
+
+  const handleToggleTheme = (newTheme: 'dark' | 'high-contrast-light') => {
+    setDashboardTheme(newTheme);
+    try {
+      localStorage.setItem('prognosticator_dashboard_theme', newTheme);
+    } catch {
+      // ignore
+    }
+  };
 
   // Streaming IoT Hub Simulator State (Active by default for continuous anomaly detection)
   const [isStreamingActive, setIsStreamingActive] = useState<boolean>(true);
@@ -2962,8 +2985,13 @@ export default function ManagerDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-6">
-      {/* Top Navigation Bar */}
+    <div
+      className={`min-h-screen font-sans p-4 md:p-6 transition-colors duration-200 ${
+        dashboardTheme === 'high-contrast-light'
+          ? 'manager-high-contrast-light bg-slate-100 text-slate-900'
+          : 'bg-slate-950 text-slate-100'
+      }`}
+    >
       {/* Top Navigation Bar */}
       <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
         <div className="flex items-center space-x-3 shrink-0">
@@ -3006,7 +3034,9 @@ export default function ManagerDashboard() {
               }
             }}
             onSelectReport={(reportKey) => {
-              if (reportKey === 'EXPORT_ALL_ANALYTICS_CSV') {
+              if (reportKey === 'EXPORT_DATA') {
+                setIsReportModalOpen(true);
+              } else if (reportKey === 'EXPORT_ALL_ANALYTICS_CSV') {
                 handleExportAnomalyLogsAndTrendDataCsv();
               } else if (reportKey === 'DASHBOARD_SUMMARY_PDF') {
                 handleDownloadDashboardSummaryPdf();
@@ -3029,6 +3059,24 @@ export default function ManagerDashboard() {
                 setManagerTab('resourceUtilization');
                 const el = document.getElementById('resource-utilization-panel');
                 el?.scrollIntoView({ behavior: 'smooth' });
+              } else if (reportKey === 'COHORT_COMPARISON_VIEW') {
+                if (managerTab !== 'live') setManagerTab('live');
+                setTimeout(() => {
+                  const el = document.getElementById('cohort-health-comparison-line-view');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              } else if (reportKey === 'PREDICTIVE_30D_MODEL') {
+                if (managerTab !== 'live') setManagerTab('live');
+                setTimeout(() => {
+                  const el = document.getElementById('kalman-predictive-model-30days-chart');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
+              } else if (reportKey === 'INCIDENT_LOG') {
+                if (managerTab !== 'live') setManagerTab('live');
+                setTimeout(() => {
+                  const el = document.getElementById('incident-log-section');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }, 50);
               }
             }}
           />
@@ -3076,6 +3124,37 @@ export default function ManagerDashboard() {
           >
             <UserCheck className="h-3.5 w-3.5" />
             <span>Ops Lead</span>
+          </button>
+        </div>
+
+        {/* ManagerDashboard Theme Switcher: Dark Mode vs High-Contrast Light Mode */}
+        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0" role="group" aria-label="Dashboard theme switcher">
+          <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 hidden sm:inline">Theme:</span>
+          <button
+            type="button"
+            onClick={() => handleToggleTheme('dark')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              dashboardTheme === 'dark'
+                ? 'bg-slate-800 text-cyan-400 shadow-xs border border-slate-700'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Dark Mode (Standard Tactical Control Room Display)"
+          >
+            <Moon className="h-3.5 w-3.5" />
+            <span>Dark</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleToggleTheme('high-contrast-light')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              dashboardTheme === 'high-contrast-light'
+                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs border border-amber-300'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="High-Contrast Light Mode (Daylight / Outdoor / High Ambient Light)"
+          >
+            <Sun className="h-3.5 w-3.5" />
+            <span>High Contrast</span>
           </button>
         </div>
 
@@ -3132,6 +3211,17 @@ export default function ManagerDashboard() {
             soundEnabled={toastSoundEnabled}
             onToggleSound={() => setToastSoundEnabled((prev) => !prev)}
           />
+
+          {/* Export Data Button: Opens the Export Data modal allowing safety managers to download current health trends and anomaly reports as CSV or PDF */}
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            id="export-data-feature-btn"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white border border-cyan-400 cursor-pointer"
+            title="Export Data: Download current health trends and anomaly reports as a CSV or PDF file"
+          >
+            <Download className="h-3.5 w-3.5 text-white" />
+            <span>Export Data</span>
+          </button>
 
           {/* Download Dashboard Summary PDF Report Button: Direct download of 2-page metrics and anomalies documentation */}
           <button
@@ -3435,6 +3525,54 @@ export default function ManagerDashboard() {
           >
             <Mail className="h-3.5 w-3.5 text-cyan-400" />
             <span>Daily Summary Report (24h)</span>
+          </button>
+
+          {/* Quick Jump: Cohort Comparison View */}
+          <button
+            onClick={() => {
+              if (managerTab !== 'live') setManagerTab('live');
+              setTimeout(() => {
+                const el = document.getElementById('cohort-health-comparison-line-view');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Population Cohort & Site Side-by-Side Health Telemetry Line Chart"
+          >
+            <GitCompare className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Cohort Comparison</span>
+          </button>
+
+          {/* Quick Jump: 30-Day Kalman Predictive Model */}
+          <button
+            onClick={() => {
+              if (managerTab !== 'live') setManagerTab('live');
+              setTimeout(() => {
+                const el = document.getElementById('kalman-predictive-model-30days-chart');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-indigo-500/40 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to 30-Day Forward Predictive Health Modeling Chart using Kalman Filter Extrapolation"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+            <span>30D Kalman Model</span>
+          </button>
+
+          {/* Quick Jump: Incident Log */}
+          <button
+            onClick={() => {
+              if (managerTab !== 'live') setManagerTab('live');
+              setTimeout(() => {
+                const el = document.getElementById('incident-log-section');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }, 50);
+            }}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-rose-500/40 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Jump to Historical Incident Log & Anomaly Records"
+          >
+            <AlertOctagon className="h-3.5 w-3.5 text-rose-400" />
+            <span>Incident Log</span>
           </button>
 
           {/* Test Anomaly Injection Button */}
@@ -4739,6 +4877,43 @@ export default function ManagerDashboard() {
         }}
       />
 
+      {/* Kalman Filter Cohort Anomaly Sentinel & Notification Panel: Alerts safety managers when anomaly scores exceed defined thresholds for any population cohort */}
+      <KalmanCohortAnomalyNotificationPanel
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(cohortName, action) => {
+          setProtocolActiveNotice(`Mitigation Protocol Dispatched to ${cohortName}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onLogAudit={(action, details) => {
+          const entry: SystemAuditLogEntry = {
+            id: `AUD-KALMAN-${Date.now().toString().slice(-4)}`,
+            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+            userId: 'USR-MGR-2026',
+            userName: 'Alex Mercer',
+            userRole: 'EHS Operations Supervisor',
+            category: 'THRESHOLD_CHANGE',
+            targetModule: 'Kalman Cohort Sentinel',
+            parameter: action,
+            previousValue: 'NOMINAL',
+            newValue: action,
+            justification: details,
+            approvalStatus: 'VERIFIED'
+          };
+          setSystemAuditLogs((prev) => [entry, ...prev]);
+        }}
+        className="mb-6"
+      />
+
       {/* Real-Time Health Metric Safety Alert System Monitor Bar */}
       <div id="real-time-alert-system-panel" className="mb-6 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
@@ -5964,6 +6139,23 @@ export default function ManagerDashboard() {
         className="mb-6"
       />
 
+      {/* 30-Day Forward Predictive Health Modeling using Kalman Filter Extrapolation */}
+      <KalmanPredictiveModel30DaysChart
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
       {/* Historical Workforce Health Signal Data Line Chart (Last 24 Hours via Recharts) */}
       <HistoricalWorkforceHealthChart
         data={telemetryStream}
@@ -6039,11 +6231,66 @@ export default function ManagerDashboard() {
         onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
       />
 
+      {/* Incident Log: Comprehensive Historical Alerts Triggered by Anomaly Detection System */}
+      <IncidentLog
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        isSpeaking={isSpeaking}
+        theme={dashboardTheme}
+        className="mb-6"
+      />
+
+      {/* Geospatial Summary Widget: Categorizes health telemetry metrics by site location / region using a simple chart */}
+      <GeospatialSummaryWidget
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
       {/* Sliding 24-Hour Recharts Telemetry Stream with 1-Hour Forecast */}
       <TelemetryCharts
         data={telemetryStream}
         zoneName={activeZoneObj.name}
         streamToggles={streamToggles}
+        onExportData={() => setIsReportModalOpen(true)}
+      />
+
+      {/* Side-by-Side Population Cohort & Site Health Telemetry Line Chart Comparison View */}
+      <CohortHealthComparisonLineView
+        zones={zones}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setSelectedComparisonDeptId(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
       />
 
       {/* Multi-Variable Sensor Correlation & Root-Cause Scatter Plot (Recharts) */}
@@ -6098,6 +6345,7 @@ export default function ManagerDashboard() {
         onSpeakAlert={handleSpeakAlert}
         isSpeaking={isSpeaking}
         voiceEnabled={voiceSettings.enabled}
+        onExportData={() => setIsReportModalOpen(true)}
       />
 
       {/* Automated Predictive Maintenance Scheduler Tool (Correlating Alerts with Technician Availability) */}

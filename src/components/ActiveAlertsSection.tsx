@@ -28,7 +28,8 @@ import {
   Layers,
   Calendar,
   SlidersHorizontal,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 import AnomalyHeatmap, { HeatmapCellData } from './AnomalyHeatmap';
 
@@ -133,6 +134,7 @@ interface ActiveAlertsSectionProps {
   onSpeakAlert?: (alert: ActiveAnomalyAlert) => void;
   isSpeaking?: boolean;
   voiceEnabled?: boolean;
+  onExportData?: () => void;
 }
 
 export default function ActiveAlertsSection({
@@ -142,7 +144,8 @@ export default function ActiveAlertsSection({
   onOpenVoiceSettings,
   onSpeakAlert,
   isSpeaking = false,
-  voiceEnabled = true
+  voiceEnabled = true,
+  onExportData
 }: ActiveAlertsSectionProps) {
   // Filter & Sort State
   const [selectedSeverity, setSelectedSeverity] = useState<SeverityFilterOption>('ALL');
@@ -461,6 +464,18 @@ export default function ActiveAlertsSection({
             <span>Weekly Heatmap</span>
             {showHeatmap ? <ChevronUp className="h-3.5 w-3.5 ml-0.5" /> : <ChevronDown className="h-3.5 w-3.5 ml-0.5" />}
           </button>
+
+          {/* Export Anomaly Reports Button */}
+          {onExportData && (
+            <button
+              onClick={onExportData}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold transition cursor-pointer shadow-xs"
+              title="Export active anomaly reports as CSV or PDF"
+            >
+              <Download className="h-3.5 w-3.5 text-rose-400" />
+              <span>Export Anomalies</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -17,3 +17,117 @@
   }
 }
 
+/* =========================================================================
+   High-Contrast Light Mode Rules (Scoped exclusively to ManagerDashboard)
+   ========================================================================= */
+.manager-high-contrast-light {
+  background-color: #f8fafc !important;
+  color: #020617 !important;
+}
+
+.manager-high-contrast-light .bg-slate-950 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #020617 !important;
+}
+
+.manager-high-contrast-light .bg-slate-900 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #020617 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08) !important;
+}
+
+.manager-high-contrast-light .bg-slate-900\/60,
+.manager-high-contrast-light .bg-slate-900\/50,
+.manager-high-contrast-light .bg-slate-900\/80,
+.manager-high-contrast-light .bg-slate-900\/90 {
+  background-color: #f8fafc !important;
+}
+
+.manager-high-contrast-light .bg-slate-800 {
+  background-color: #e2e8f0 !important;
+  border-color: #94a3b8 !important;
+  color: #020617 !important;
+}
+
+.manager-high-contrast-light .bg-slate-850 {
+  background-color: #e2e8f0 !important;
+}
+
+.manager-high-contrast-light .border-slate-800,
+.manager-high-contrast-light .border-slate-700,
+.manager-high-contrast-light .border-slate-850,
+.manager-high-contrast-light .border-slate-900 {
+  border-color: #cbd5e1 !important;
+}
+
+.manager-high-contrast-light .text-white,
+.manager-high-contrast-light .text-slate-100,
+.manager-high-contrast-light .text-slate-200,
+.manager-high-contrast-light .text-slate-300 {
+  color: #020617 !important;
+}
+
+.manager-high-contrast-light .text-slate-400,
+.manager-high-contrast-light .text-slate-500 {
+  color: #334155 !important; /* >7:1 WCAG contrast on #fff/#f8fafc */
+}
+
+.manager-high-contrast-light .text-cyan-400 {
+  color: #0284c7 !important;
+}
+
+.manager-high-contrast-light .text-cyan-300 {
+  color: #0369a1 !important;
+}
+
+.manager-high-contrast-light .text-rose-400,
+.manager-high-contrast-light .text-rose-300,
+.manager-high-contrast-light .text-red-400 {
+  color: #b91c1c !important;
+}
+
+.manager-high-contrast-light .text-amber-400,
+.manager-high-contrast-light .text-amber-300,
+.manager-high-contrast-light .text-orange-400 {
+  color: #c2410c !important;
+}
+
+.manager-high-contrast-light .text-emerald-400,
+.manager-high-contrast-light .text-emerald-300,
+.manager-high-contrast-light .text-green-400 {
+  color: #15803d !important;
+}
+
+.manager-high-contrast-light .text-indigo-400,
+.manager-high-contrast-light .text-indigo-300,
+.manager-high-contrast-light .text-purple-400 {
+  color: #4338ca !important;
+}
+
+.manager-high-contrast-light select,
+.manager-high-contrast-light input[type="text"],
+.manager-high-contrast-light input[type="search"],
+.manager-high-contrast-light input[type="number"],
+.manager-high-contrast-light textarea {
+  background-color: #ffffff !important;
+  color: #020617 !important;
+  border-color: #64748b !important;
+}
+
+.manager-high-contrast-light .recharts-cartesian-grid line {
+  stroke: #cbd5e1 !important;
+}
+
+.manager-high-contrast-light .recharts-text {
+  fill: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+.manager-high-contrast-light .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border: 1.5px solid #0f172a !important;
+  color: #020617 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}

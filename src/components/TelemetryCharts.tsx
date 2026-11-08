@@ -24,13 +24,15 @@ import {
   Sparkles,
   Sliders,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Download
 } from 'lucide-react';
 
 interface TelemetryChartsProps {
   data: TelemetryDataPoint[];
   zoneName: string;
   streamToggles?: SensorStreamToggles;
+  onExportData?: () => void;
 }
 
 interface ChartDataWithForecastAndMA extends Partial<TelemetryDataPoint> {
@@ -48,7 +50,12 @@ interface ChartDataWithForecastAndMA extends Partial<TelemetryDataPoint> {
   formattedDate?: string;
 }
 
-export default function TelemetryCharts({ data, zoneName, streamToggles }: TelemetryChartsProps) {
+export default function TelemetryCharts({
+  data,
+  zoneName,
+  streamToggles,
+  onExportData
+}: TelemetryChartsProps) {
   const [activeMetric, setActiveMetric] = useState<'temp' | 'noise' | 'hrv' | 'combined'>('temp');
   const [windowHours, setWindowHours] = useState<number>(24);
   const [showForecast, setShowForecast] = useState<boolean>(true);
@@ -381,7 +388,7 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               <button
                 key={hrs}
                 onClick={() => setWindowHours(hrs)}
-                className={`px-2 py-0.5 rounded transition ${
+                className={`px-2 py-0.5 rounded transition cursor-pointer ${
                   windowHours === hrs ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
@@ -389,6 +396,18 @@ export default function TelemetryCharts({ data, zoneName, streamToggles }: Telem
               </button>
             ))}
           </div>
+
+          {/* Export Health Trends Data Button */}
+          {onExportData && (
+            <button
+              onClick={onExportData}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-semibold transition cursor-pointer shadow-xs"
+              title="Export current health trends and telemetry series as CSV or PDF"
+            >
+              <Download className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Export Trends</span>
+            </button>
+          )}
         </div>
       </div>
 
