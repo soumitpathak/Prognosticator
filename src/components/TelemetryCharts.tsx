@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -33,6 +33,8 @@ interface TelemetryChartsProps {
   zoneName: string;
   streamToggles?: SensorStreamToggles;
   onExportData?: () => void;
+  showMovingAverage?: boolean;
+  onToggleMovingAverage?: (active: boolean) => void;
 }
 
 interface ChartDataWithForecastAndMA extends Partial<TelemetryDataPoint> {
@@ -54,12 +56,28 @@ export default function TelemetryCharts({
   data,
   zoneName,
   streamToggles,
-  onExportData
+  onExportData,
+  showMovingAverage: propShowMovingAverage,
+  onToggleMovingAverage
 }: TelemetryChartsProps) {
   const [activeMetric, setActiveMetric] = useState<'temp' | 'noise' | 'hrv' | 'combined'>('temp');
   const [windowHours, setWindowHours] = useState<number>(24);
   const [showForecast, setShowForecast] = useState<boolean>(true);
-  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(true);
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(
+    propShowMovingAverage !== undefined ? propShowMovingAverage : true
+  );
+
+  useEffect(() => {
+    if (propShowMovingAverage !== undefined) {
+      setShowMovingAverage(propShowMovingAverage);
+    }
+  }, [propShowMovingAverage]);
+
+  const handleToggleMA = () => {
+    const nextVal = !showMovingAverage;
+    setShowMovingAverage(nextVal);
+    if (onToggleMovingAverage) onToggleMovingAverage(nextVal);
+  };
 
   // Filter based on selected time window (data frequency is 15min, so 4 points/hour)
   const pointsToShow = Math.min(data.length, windowHours * 4);
@@ -309,7 +327,7 @@ export default function TelemetryCharts({
         <div className="flex flex-wrap items-center gap-2">
           {/* Moving Average Overlay Toggle */}
           <button
-            onClick={() => setShowMovingAverage((prev) => !prev)}
+            onClick={handleToggleMA}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
               showMovingAverage
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-xs'

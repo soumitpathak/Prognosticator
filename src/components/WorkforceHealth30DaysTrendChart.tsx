@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -44,6 +44,8 @@ interface WorkforceHealth30DaysTrendChartProps {
   dateRange?: DateRangeSelection;
   onTriggerThresholdAlert?: (pt: TelemetryDataPoint, zone: FacilityZone, force?: boolean) => void;
   className?: string;
+  showMovingAverage?: boolean;
+  onToggleMovingAverage?: (active: boolean) => void;
 }
 
 export default function WorkforceHealth30DaysTrendChart({
@@ -52,10 +54,25 @@ export default function WorkforceHealth30DaysTrendChart({
   thresholds,
   dateRange,
   onTriggerThresholdAlert,
-  className = ''
+  className = '',
+  showMovingAverage: propShowMovingAverage,
+  onToggleMovingAverage
 }: WorkforceHealth30DaysTrendChartProps) {
   // Time horizon selector: 30D (full month), 14D (bi-weekly), 7D (weekly)
   const [horizon, setHorizon] = useState<'30D' | '14D' | '7D'>('30D');
+
+  // Moving Average Overlay State (helps safety managers identify long-term signal degradation trends)
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(
+    propShowMovingAverage !== undefined ? propShowMovingAverage : true
+  );
+
+  useEffect(() => {
+    if (propShowMovingAverage !== undefined) {
+      setShowMovingAverage(propShowMovingAverage);
+    }
+  }, [propShowMovingAverage]);
+
+  const effectiveShowMA = propShowMovingAverage !== undefined ? propShowMovingAverage : showMovingAverage;
 
   // Series visibility toggles
   const [showHrv, setShowHrv] = useState<boolean>(true);
@@ -83,12 +100,33 @@ export default function WorkforceHealth30DaysTrendChart({
     return generate30DayWorkforceHealthMetrics(selectedZone, thresholds);
   }, [selectedZone, thresholds, dateRange]);
 
-  // Filter by selected horizon if no external dateRange, else use rawData directly
+  // Filter by selected horizon and calculate rolling 7-day moving averages for longitudinal trend analysis
   const displayData = useMemo(() => {
-    if (dateRange) return rawData;
-    if (horizon === '7D') return rawData.slice(-7);
-    if (horizon === '14D') return rawData.slice(-14);
-    return rawData;
+    const base = dateRange
+      ? rawData
+      : horizon === '7D'
+      ? rawData.slice(-7)
+      : horizon === '14D'
+      ? rawData.slice(-14)
+      : rawData;
+
+    return base.map((item, idx, arr) => {
+      const windowSize = 7;
+      const startIdx = Math.max(0, idx - windowSize + 1);
+      const sub = arr.slice(startIdx, idx + 1);
+      const maHrv = Number((sub.reduce((acc, p) => acc + p.avgHrv, 0) / sub.length).toFixed(1));
+      const maHeartRate = Number((sub.reduce((acc, p) => acc + p.avgHeartRate, 0) / sub.length).toFixed(1));
+      const maHealthScore = Number((sub.reduce((acc, p) => acc + p.healthSafetyScore, 0) / sub.length).toFixed(1));
+      const hrvDeltaFromMA = Number((item.avgHrv - maHrv).toFixed(1));
+
+      return {
+        ...item,
+        ma7d_hrv: maHrv,
+        ma7d_heartRate: maHeartRate,
+        ma7d_healthScore: maHealthScore,
+        hrvDeltaFromMA
+      };
+    });
   }, [rawData, horizon, dateRange]);
 
   const minHrvThreshold = thresholds?.minHrvMs ?? 40;
@@ -426,17 +464,40 @@ export default function WorkforceHealth30DaysTrendChart({
           </button>
         </div>
 
-        <button
-          onClick={() => setShowThresholdLines((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg font-medium text-xs transition cursor-pointer flex items-center gap-1.5 border ${
-            showThresholdLines
-              ? 'bg-slate-800 text-slate-200 border-slate-700'
-              : 'bg-slate-950 text-slate-500 border-slate-800'
-          }`}
-        >
-          <Sliders className="h-3 w-3 text-cyan-400" />
-          <span>Safety Threshold Floor/Ceilings</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Historical Moving Average Baseline Toggle */}
+          <button
+            onClick={() => {
+              const nextVal = !effectiveShowMA;
+              setShowMovingAverage(nextVal);
+              if (onToggleMovingAverage) onToggleMovingAverage(nextVal);
+            }}
+            className={`px-2.5 py-1 rounded-lg font-medium text-xs transition cursor-pointer flex items-center gap-1.5 border ${
+              effectiveShowMA
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-xs'
+                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+            }`}
+            title="Toggle 7-day rolling moving average baseline to detect long-term signal degradation"
+          >
+            <Activity className="h-3 w-3 text-emerald-400" />
+            <span>7D Moving Average Baseline</span>
+            <span className="text-[10px] font-mono bg-emerald-900/80 px-1 rounded text-white">
+              {effectiveShowMA ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setShowThresholdLines((v) => !v)}
+            className={`px-2.5 py-1 rounded-lg font-medium text-xs transition cursor-pointer flex items-center gap-1.5 border ${
+              showThresholdLines
+                ? 'bg-slate-800 text-slate-200 border-slate-700'
+                : 'bg-slate-950 text-slate-500 border-slate-800'
+            }`}
+          >
+            <Sliders className="h-3 w-3 text-cyan-400" />
+            <span>Safety Threshold Floor/Ceilings</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Recharts LineChart */}
@@ -651,6 +712,49 @@ export default function WorkforceHealth30DaysTrendChart({
               />
             )}
 
+            {/* 7-Day Moving Average Baseline Overlays (Signal Degradation Analysis) */}
+            {effectiveShowMA && showHrv && (
+              <Line
+                yAxisId="primary"
+                type="monotone"
+                dataKey="ma7d_hrv"
+                name="HRV 7-Day Moving Avg"
+                stroke="#22d3ee"
+                strokeWidth={2}
+                strokeDasharray="6 3"
+                dot={false}
+                activeDot={{ r: 5, fill: '#22d3ee', stroke: '#ffffff', strokeWidth: 1.5 }}
+              />
+            )}
+
+            {effectiveShowMA && showHeartRate && (
+              <Line
+                yAxisId="primary"
+                type="monotone"
+                dataKey="ma7d_heartRate"
+                name="Pulse 7-Day Moving Avg"
+                stroke="#fb7185"
+                strokeWidth={1.8}
+                strokeDasharray="6 3"
+                dot={false}
+                activeDot={{ r: 5, fill: '#fb7185', stroke: '#ffffff', strokeWidth: 1.5 }}
+              />
+            )}
+
+            {effectiveShowMA && showHealthScore && (
+              <Line
+                yAxisId="secondary"
+                type="monotone"
+                dataKey="ma7d_healthScore"
+                name="Health Index 7D Moving Avg"
+                stroke="#34d399"
+                strokeWidth={2}
+                strokeDasharray="5 3"
+                dot={false}
+                activeDot={{ r: 5, fill: '#34d399', stroke: '#ffffff', strokeWidth: 1.5 }}
+              />
+            )}
+
             {/* Timeline Range Brush */}
             <Brush
               dataKey="date"
@@ -783,6 +887,26 @@ function CustomHealthTrendTooltip({ active, payload, label, thresholds }: any) {
             {data.avgSkinTemp}°C (Amb: {data.ambientTemp}°C)
           </span>
         </div>
+
+        {/* 7D Moving Average Baseline & Longitudinal Degradation Analysis */}
+        {(data as any).ma7d_hrv !== undefined && (
+          <div className="mt-2 pt-2 border-t border-slate-800/80 bg-emerald-950/40 p-2 rounded border border-emerald-500/30">
+            <div className="flex justify-between text-emerald-300 font-semibold text-[11px]">
+              <span>7D Moving Average Baseline:</span>
+              <span className="font-mono text-white">{(data as any).ma7d_hrv} ms</span>
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+              <span>HRV Degradation Trajectory:</span>
+              <span className={`font-mono font-bold ${
+                ((data as any).hrvDeltaFromMA ?? 0) < 0 ? 'text-rose-400' : 'text-emerald-400'
+              }`}>
+                {((data as any).hrvDeltaFromMA ?? 0) < 0
+                  ? `${(data as any).hrvDeltaFromMA} ms (Degrading)`
+                  : `+${(data as any).hrvDeltaFromMA} ms (Robust)`}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {data.thresholdDropReason && (

@@ -161,12 +161,30 @@ export default function ThresholdBreachToastContainer({
 
               <button
                 onClick={onClearAllToasts}
-                className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-slate-800 transition font-mono"
-                title="Dismiss all active toasts"
+                className="flex items-center space-x-1 text-[10px] font-bold bg-rose-950/80 hover:bg-rose-900 border border-rose-600/60 text-rose-200 hover:text-white px-2 py-0.5 rounded transition font-mono cursor-pointer shadow-xs"
+                title="Dismiss all active toasts in queue"
               >
-                Clear All
+                <X className="h-3 w-3 text-rose-400" />
+                <span>Dismiss All</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Multi-Toast Queue Sticky Bar with prominent Dismiss All button */}
+        {toasts.length > 1 && (
+          <div className="pointer-events-auto bg-slate-950/95 border border-rose-500/50 rounded-lg px-3 py-1.5 shadow-xl flex items-center justify-between backdrop-blur-md">
+            <span className="text-xs font-mono text-slate-300">
+              <strong className="text-rose-400 font-bold">{toasts.length}</strong> threshold breach toasts
+            </span>
+            <button
+              onClick={onClearAllToasts}
+              className="flex items-center space-x-1 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded-md transition shadow-md shadow-rose-950/40 cursor-pointer"
+              title="Dismiss all breach toasts at once"
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>Dismiss All ({toasts.length})</span>
+            </button>
           </div>
         )}
 

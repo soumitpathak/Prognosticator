@@ -50,6 +50,8 @@ export interface AggregateRiskScoreTrend24hChartProps {
   selectedZone?: FacilityZone;
   onInspectHour?: (point: TelemetryDataPoint) => void;
   className?: string;
+  showMovingAverage?: boolean;
+  onToggleMovingAverage?: (active: boolean) => void;
 }
 
 export interface EnrichedChartPoint {
@@ -175,9 +177,25 @@ export default function AggregateRiskScoreTrend24hChart({
   telemetryStream,
   selectedZone,
   onInspectHour,
-  className = ''
+  className = '',
+  showMovingAverage: propShowMovingAverage,
+  onToggleMovingAverage
 }: AggregateRiskScoreTrend24hChartProps) {
-  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(true);
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(
+    propShowMovingAverage !== undefined ? propShowMovingAverage : true
+  );
+
+  useEffect(() => {
+    if (propShowMovingAverage !== undefined) {
+      setShowMovingAverage(propShowMovingAverage);
+    }
+  }, [propShowMovingAverage]);
+
+  const handleToggleMA = () => {
+    const nextVal = !showMovingAverage;
+    setShowMovingAverage(nextVal);
+    if (onToggleMovingAverage) onToggleMovingAverage(nextVal);
+  };
   const [showPredictiveForecast, setShowPredictiveForecast] = useState<boolean>(true);
   const [forecastHorizon, setForecastHorizon] = useState<number>(24);
   const [highlightAnomaliesOnly, setHighlightAnomaliesOnly] = useState<boolean>(false);
@@ -933,7 +951,7 @@ export default function AggregateRiskScoreTrend24hChart({
 
           {/* 3h Moving Average Toggle */}
           <button
-            onClick={() => setShowMovingAverage(!showMovingAverage)}
+            onClick={handleToggleMA}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
               showMovingAverage
                 ? 'bg-slate-800 text-cyan-300 border-cyan-500/40 shadow-xs'

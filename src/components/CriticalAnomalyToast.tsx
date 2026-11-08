@@ -32,6 +32,7 @@ interface CriticalAnomalyToastProps {
   onDismiss: (id: string) => void;
   onAcknowledge: (id: string) => void;
   onClearAll?: () => void;
+  onDismissAll?: () => void;
   onDispatchAction?: (toast: CriticalAnomalyToastData) => void;
   onInspectInChart?: (zoneId: string) => void;
   soundEnabled?: boolean;
@@ -45,6 +46,7 @@ export default function CriticalAnomalyToast({
   onDismiss,
   onAcknowledge,
   onClearAll,
+  onDismissAll,
   onDispatchAction,
   onInspectInChart,
   soundEnabled = true,
@@ -56,6 +58,8 @@ export default function CriticalAnomalyToast({
   const [expandedAttributions, setExpandedAttributions] = useState<Record<string, boolean>>({});
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
   const [historyLog, setHistoryLog] = useState<CriticalAnomalyToastData[]>([]);
+
+  const handleDismissAll = onDismissAll || onClearAll;
 
   // Accumulate past toasts into shift history log
   useEffect(() => {
@@ -157,16 +161,40 @@ export default function CriticalAnomalyToast({
                 <History className="h-3.5 w-3.5" />
               </button>
 
-              {onClearAll && (
+              {handleDismissAll && (
                 <button
-                  onClick={onClearAll}
-                  className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-slate-800 transition font-mono cursor-pointer"
-                  title="Dismiss all active alerts"
+                  onClick={handleDismissAll}
+                  className="flex items-center space-x-1 text-[10px] font-bold bg-rose-950/80 hover:bg-rose-900 border border-rose-600/60 text-rose-200 hover:text-white px-2 py-0.5 rounded transition font-mono cursor-pointer shadow-xs"
+                  title="Dismiss all active alerts in queue"
                 >
-                  Clear All
+                  <X className="h-3 w-3 text-rose-400" />
+                  <span>Dismiss All</span>
                 </button>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Multi-Anomaly Queue Sticky Bar with prominent Dismiss All button */}
+        {toasts.length > 1 && handleDismissAll && (
+          <div className="pointer-events-auto bg-slate-950/95 border border-rose-500/50 rounded-xl px-3 py-2 shadow-2xl flex items-center justify-between backdrop-blur-md animate-in slide-in-from-top-2">
+            <div className="flex items-center space-x-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+              <span className="text-xs font-mono text-slate-200">
+                <strong className="text-rose-400 font-bold">{toasts.length}</strong> active anomaly alerts
+              </span>
+            </div>
+            <button
+              onClick={handleDismissAll}
+              className="flex items-center space-x-1.5 text-xs font-bold bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white px-3 py-1 rounded-lg transition shadow-md shadow-rose-950/50 cursor-pointer"
+              title="Dismiss all anomalies currently in queue"
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>Dismiss All ({toasts.length})</span>
+            </button>
           </div>
         )}
 

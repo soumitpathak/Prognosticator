@@ -19,7 +19,11 @@ import {
   Zap,
   CloudSun,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Printer,
+  Filter,
+  Thermometer,
+  RotateCcw
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -68,6 +72,14 @@ import ActiveAlertsSection from './ActiveAlertsSection';
 import SensorCorrelationScatterPlot from './SensorCorrelationScatterPlot';
 import ReportExportModal from './ReportExportModal';
 import HealthMetricsPdfExportModal from './HealthMetricsPdfExportModal';
+import DownloadOptionsModal from './DownloadOptionsModal';
+import SignalCategoryFilterSidebar, {
+  DEFAULT_SIGNAL_CATEGORIES,
+  DEFAULT_GRANULAR_SIGNALS,
+  SignalCategoryState,
+  GranularSignalState
+} from './SignalCategoryFilterSidebar';
+import { exportDashboardDataCsv } from '../services/dashboardCsvExport';
 import WorkforceHealth30DaysTrendChart from './WorkforceHealth30DaysTrendChart';
 import DepartmentHealthComparisonSplitCard from './DepartmentHealthComparisonSplitCard';
 import D3WorkplaceZoneRiskHeatmap from './D3WorkplaceZoneRiskHeatmap';
@@ -532,6 +544,89 @@ export default function ManagerDashboard() {
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isHealthMetricsPdfModalOpen, setIsHealthMetricsPdfModalOpen] = useState<boolean>(false);
+  const [isDownloadOptionsModalOpen, setIsDownloadOptionsModalOpen] = useState<boolean>(false);
+  const [isSignalFilterSidebarOpen, setIsSignalFilterSidebarOpen] = useState<boolean>(false);
+  const [signalCategories, setSignalCategories] = useState<SignalCategoryState>(DEFAULT_SIGNAL_CATEGORIES);
+  const [granularSignals, setGranularSignals] = useState<GranularSignalState>(DEFAULT_GRANULAR_SIGNALS);
+  const [showGlobalMovingAverages, setShowGlobalMovingAverages] = useState<boolean>(true);
+  const [globalMaWindowHours, setGlobalMaWindowHours] = useState<number>(4);
+
+  const handleToggleSignalCategory = (cat: keyof SignalCategoryState) => {
+    setSignalCategories((prev) => {
+      const nextVal = !prev[cat];
+      const nextState = { ...prev, [cat]: nextVal };
+
+      // Synchronize associated granular signals
+      if (cat === 'cardiac') {
+        setGranularSignals((g) => ({
+          ...g,
+          heartRate: nextVal,
+          hrv: nextVal,
+          hrvDrop: nextVal,
+          bloodPressure: nextVal
+        }));
+      } else if (cat === 'environmental') {
+        setGranularSignals((g) => ({
+          ...g,
+          skinTemp: nextVal,
+          ambientTemp: nextVal,
+          twl: nextVal,
+          noise: nextVal,
+          aqi: nextVal
+        }));
+      } else if (cat === 'performance') {
+        setGranularSignals((g) => ({
+          ...g,
+          riskScore: nextVal,
+          stressScore: nextVal,
+          equipmentVibration: nextVal,
+          incidentProjections: nextVal
+        }));
+      }
+      return nextState;
+    });
+  };
+
+  const handleToggleGranularSignal = (sig: keyof GranularSignalState) => {
+    setGranularSignals((prev) => {
+      const nextState = { ...prev, [sig]: !prev[sig] };
+      const cardiacAny = nextState.heartRate || nextState.hrv || nextState.hrvDrop || nextState.bloodPressure;
+      const envAny = nextState.skinTemp || nextState.ambientTemp || nextState.twl || nextState.noise || nextState.aqi;
+      const perfAny = nextState.riskScore || nextState.stressScore || nextState.equipmentVibration || nextState.incidentProjections;
+      setSignalCategories({
+        cardiac: cardiacAny,
+        environmental: envAny,
+        performance: perfAny
+      });
+      return nextState;
+    });
+  };
+
+  const handleResetSignalFilters = () => {
+    setSignalCategories(DEFAULT_SIGNAL_CATEGORIES);
+    setGranularSignals(DEFAULT_GRANULAR_SIGNALS);
+    setShowGlobalMovingAverages(true);
+  };
+
+  const handleSelectAllSignals = () => {
+    setSignalCategories({ cardiac: true, environmental: true, performance: true });
+    setGranularSignals({
+      heartRate: true,
+      hrv: true,
+      hrvDrop: true,
+      bloodPressure: true,
+      skinTemp: true,
+      ambientTemp: true,
+      twl: true,
+      noise: true,
+      aqi: true,
+      riskScore: true,
+      stressScore: true,
+      equipmentVibration: true,
+      incidentProjections: true
+    });
+  };
+
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState<boolean>(false);
   const [isZoneBuilderOpen, setIsZoneBuilderOpen] = useState<boolean>(false);
@@ -1678,6 +1773,51 @@ export default function ManagerDashboard() {
     }
   };
 
+  // Export current dashboard state as CSV for reporting purposes
+  const handleExportDashboardCsv = useCallback(() => {
+    try {
+      const currentActiveZone = zones.find((z) => z.id === selectedZone) || zones[0];
+      const res = exportDashboardDataCsv({
+        zones,
+        activeAlerts,
+        telemetryStream,
+        currentZone: currentActiveZone,
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor'
+      });
+
+      const auditEntry: SystemAuditLogEntry = {
+        id: `AUD-DASH-CSV-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor',
+        category: 'REPORT_EXPORT',
+        targetModule: 'Dashboard Data CSV Export Engine',
+        parameter: 'Comprehensive Dashboard Data CSV',
+        previousValue: 'N/A',
+        newValue: `Exported full dashboard state (${res.recordCount} entries) to CSV: ${res.filename}`,
+        justification: 'Exported comprehensive current dashboard telemetry, zone KPI summaries, and active anomaly alerts to RFC 4180 CSV for site safety meetings and offline analysis.',
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `Current dashboard data exported to CSV (${res.recordCount} records): ${res.filename}`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+    } catch (err: any) {
+      console.error('Failed to export dashboard CSV:', err);
+      setProtocolActiveNotice('Dashboard CSV export failed: ' + (err?.message || 'Unknown error'));
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+    }
+  }, [zones, activeAlerts, telemetryStream, selectedZone]);
+
+  // Dispatches clean print stylesheet for site safety briefings
+  const handlePrintDashboard = useCallback(() => {
+    window.print();
+  }, []);
+
   const handleDownloadReport = async (format: 'JSON' | 'CSV' | 'PDF') => {
     try {
       if (format === 'PDF') {
@@ -1845,6 +1985,19 @@ export default function ManagerDashboard() {
       riskScore: enable
     });
   };
+
+  // Derive effective stream toggles combining local floor plan settings with global signal category filters
+  const effectiveStreamToggles = useMemo<SensorStreamToggles>(() => {
+    return {
+      ambientTemp: streamToggles.ambientTemp && signalCategories.environmental && granularSignals.ambientTemp,
+      noiseDb: streamToggles.noiseDb && signalCategories.environmental && granularSignals.noise,
+      hrvDrop: streamToggles.hrvDrop && signalCategories.cardiac && granularSignals.hrvDrop,
+      skinTemp: streamToggles.skinTemp && signalCategories.environmental && granularSignals.skinTemp,
+      twlHeatStrain: streamToggles.twlHeatStrain && signalCategories.environmental && granularSignals.twl,
+      aqiAirQuality: streamToggles.aqiAirQuality && signalCategories.environmental && granularSignals.aqi,
+      riskScore: streamToggles.riskScore && signalCategories.performance && granularSignals.riskScore
+    };
+  }, [streamToggles, signalCategories, granularSignals]);
 
   // System Audit Log State (Manual changes to thresholds & zone configs)
   const [systemAuditLogs, setSystemAuditLogs] = useState<SystemAuditLogEntry[]>(INITIAL_SYSTEM_AUDIT_LOGS);
@@ -3148,6 +3301,31 @@ export default function ManagerDashboard() {
           : 'bg-slate-950 text-slate-100'
       }`}
     >
+      {/* Print-Friendly Header Banner: Formatted for Site Safety Meetings & Physical Handouts */}
+      <div className="hidden print:block print-header-banner bg-white text-slate-900 border-b-2 border-slate-900 pb-4 mb-6">
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 uppercase font-sans">
+              PROGNOSTICATOR &bull; SITE SAFETY &amp; WORKFORCE HEALTH INTELLIGENCE
+            </h1>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Population Health Early-Warning Platform &bull; Multi-Signal Telemetry, Kalman Anomaly Detection &bull; Site Meeting Brief
+            </p>
+          </div>
+          <div className="text-right text-xs font-mono text-slate-700">
+            <div><strong>Date:</strong> {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+            <div><strong>Site Lead:</strong> Alex Mercer (EHS Safety Supervisor)</div>
+            <div><strong>Scope:</strong> {activeZoneObj.name}</div>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-4 gap-2 text-xs font-mono border-t border-slate-300 pt-2">
+          <div><strong>Total Workforce:</strong> {zones.reduce((s, z) => s + (z.count || 0), 0)} Personnel</div>
+          <div><strong>Active Anomalies:</strong> {activeAlerts.length} Events Logged</div>
+          <div><strong>Facility Zones:</strong> {zones.length} Zones Online</div>
+          <div><strong>Compliance Seal:</strong> OSHA 1910 / ISO 45001 / GDPR Art. 9</div>
+        </div>
+      </div>
+
       {/* Top Navigation Bar */}
       <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
         <div className="flex items-center space-x-3 shrink-0">
@@ -4604,6 +4782,48 @@ export default function ManagerDashboard() {
             </button>
           )}
 
+          {/* Signal Category Filter Sidebar Trigger: Select and toggle Cardiac, Environmental, and Performance signals */}
+          <button
+            onClick={() => setIsSignalFilterSidebarOpen(true)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
+              !signalCategories.cardiac || !signalCategories.environmental || !signalCategories.performance || !showGlobalMovingAverages
+                ? 'bg-amber-950/90 hover:bg-amber-900 border-amber-500/70 text-amber-200 ring-1 ring-amber-500/40'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+            }`}
+            title="Open category-based filter sidebar to toggle visibility of Cardiac, Environmental, and Performance signals and historical moving average overlays across all metric widgets"
+          >
+            <Filter className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Signal Filters</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-900/80 text-cyan-200 border border-cyan-500/30">
+              {[signalCategories.cardiac, signalCategories.environmental, signalCategories.performance].filter(Boolean).length}/3
+            </span>
+            {showGlobalMovingAverages && (
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                MA ON
+              </span>
+            )}
+          </button>
+
+          {/* Download Options Modal Trigger: Select specific metrics to include in report before downloading */}
+          <button
+            onClick={() => setIsDownloadOptionsModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-cyan-950/40 cursor-pointer border border-cyan-400/50"
+            title="Customize and select which specific metrics (heart rate, HRV, blood pressure, etc.) to include in exported reports"
+          >
+            <Sliders className="h-3.5 w-3.5 text-white" />
+            <span>Download Options</span>
+          </button>
+
+          {/* Export Current Dashboard Data as CSV */}
+          <button
+            onClick={handleExportDashboardCsv}
+            className="flex items-center space-x-1.5 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Export full current dashboard data (KPIs, facility zones, telemetry snapshot, active anomalies) as a CSV file for reporting purposes"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Export Dashboard CSV</span>
+          </button>
+
           {/* Direct Button: Serialize Current Anomaly Data to CSV for Audit Logs */}
           <button
             onClick={handleExportCurrentAnomalyCsvDirect}
@@ -4644,6 +4864,16 @@ export default function ManagerDashboard() {
             <span>Compliance CSV Export</span>
           </button>
 
+          {/* Print for Site Meeting Button */}
+          <button
+            onClick={handlePrintDashboard}
+            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs cursor-pointer"
+            title="Print clean, ink-friendly layout of Manager Dashboard for physical site safety briefings and meetings"
+          >
+            <Printer className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Print for Meeting</span>
+          </button>
+
           {/* Compliance Report Modal Trigger */}
           <button
             onClick={() => setIsReportModalOpen(true)}
@@ -4654,6 +4884,104 @@ export default function ManagerDashboard() {
           </button>
         </div>
       </header>
+
+      {/* Category-Based Signal Filter & Historical Moving Average Global Strip */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg backdrop-blur-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-slate-400 font-semibold mr-1">
+            <Filter className="h-3.5 w-3.5 text-cyan-400" />
+            <span className="uppercase tracking-wider text-[11px] font-mono">Signal Visibility:</span>
+          </div>
+
+          {/* Cardiac Signals Category Toggle */}
+          <button
+            onClick={() => handleToggleSignalCategory('cardiac')}
+            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              signalCategories.cardiac
+                ? 'bg-rose-950/80 text-rose-300 border-rose-500/50 shadow-rose-950/30'
+                : 'bg-slate-950 text-slate-500 border-slate-800 line-through opacity-70'
+            }`}
+            title="Toggle visibility of Cardiac telemetry signals (Heart Rate, Kalman HRV, HRV Drops, Blood Pressure)"
+          >
+            <Heart className={`h-3 w-3 ${signalCategories.cardiac ? 'text-rose-400' : 'text-slate-600'}`} />
+            <span>Cardiac Signals</span>
+            <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.cardiac ? 'bg-rose-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
+              {signalCategories.cardiac ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Environmental Signals Category Toggle */}
+          <button
+            onClick={() => handleToggleSignalCategory('environmental')}
+            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              signalCategories.environmental
+                ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-amber-950/30'
+                : 'bg-slate-950 text-slate-500 border-slate-800 line-through opacity-70'
+            }`}
+            title="Toggle visibility of Environmental telemetry signals (Skin Temp, Ambient Temp, TWL, Noise dB, AQI)"
+          >
+            <Thermometer className={`h-3 w-3 ${signalCategories.environmental ? 'text-amber-400' : 'text-slate-600'}`} />
+            <span>Environmental Signals</span>
+            <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.environmental ? 'bg-amber-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
+              {signalCategories.environmental ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Performance Signals Category Toggle */}
+          <button
+            onClick={() => handleToggleSignalCategory('performance')}
+            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              signalCategories.performance
+                ? 'bg-purple-950/80 text-purple-300 border-purple-500/50 shadow-purple-950/30'
+                : 'bg-slate-950 text-slate-500 border-slate-800 line-through opacity-70'
+            }`}
+            title="Toggle visibility of Performance & Operational risk metrics (Risk Score, Stress Index, Vibration, Projections)"
+          >
+            <ShieldAlert className={`h-3 w-3 ${signalCategories.performance ? 'text-purple-400' : 'text-slate-600'}`} />
+            <span>Performance Signals</span>
+            <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.performance ? 'bg-purple-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
+              {signalCategories.performance ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Historical Moving Average Baseline Master Toggle */}
+          <button
+            onClick={() => setShowGlobalMovingAverages((prev) => !prev)}
+            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              showGlobalMovingAverages
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-emerald-950/30'
+                : 'bg-slate-950 text-slate-500 border-slate-800 opacity-70'
+            }`}
+            title="Toggle historical rolling moving averages across all charts to identify long-term signal degradation trends"
+          >
+            <TrendingUp className={`h-3 w-3 ${showGlobalMovingAverages ? 'text-emerald-400' : 'text-slate-600'}`} />
+            <span>Historical Moving Averages</span>
+            <span className={`text-[10px] font-mono px-1 rounded ${showGlobalMovingAverages ? 'bg-emerald-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
+              {showGlobalMovingAverages ? 'ACTIVE' : 'OFF'}
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {(!signalCategories.cardiac || !signalCategories.environmental || !signalCategories.performance) && (
+            <button
+              onClick={handleResetSignalFilters}
+              className="px-2 py-1 rounded text-xs text-amber-300 hover:text-white bg-amber-950/60 border border-amber-600/40 cursor-pointer flex items-center gap-1 font-mono"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Reset Filters</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsSignalFilterSidebarOpen(true)}
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-cyan-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-700 cursor-pointer flex items-center gap-1.5"
+          >
+            <Sliders className="h-3 w-3 text-cyan-400" />
+            <span>Configure Signals &rarr;</span>
+          </button>
+        </div>
+      </div>
 
       {/* Role Restriction Banner: Highlighted when Maintenance Crew view is active */}
       {activeRole === 'MAINTENANCE_CREW' && (
@@ -5294,9 +5622,10 @@ export default function ManagerDashboard() {
             {activeToasts.length > 0 && (
               <button
                 onClick={handleClearAllToasts}
-                className="text-slate-500 hover:text-rose-400 underline cursor-pointer ml-1"
+                className="flex items-center space-x-1 text-xs font-semibold text-rose-300 hover:text-white bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 px-2 py-0.5 rounded cursor-pointer ml-1 transition"
+                title="Dismiss all active warning toasts at once"
               >
-                Clear Toasts
+                <span>Dismiss All ({activeToasts.length})</span>
               </button>
             )}
           </div>
@@ -5323,6 +5652,8 @@ export default function ManagerDashboard() {
         theme={dashboardTheme}
         isWhatIfOpen={isWhatIfSimulatorOpen}
         onToggleWhatIfOpen={() => setIsWhatIfSimulatorOpen((prev) => !prev)}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
         onSelectDay={(day) => {
           if (day.isSpike) {
             setProtocolActiveNotice(
@@ -5992,6 +6323,8 @@ export default function ManagerDashboard() {
       <AggregateRiskScoreTrend24hChart
         telemetryStream={telemetryStream}
         selectedZone={activeZoneObj}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
         onInspectHour={(pt) => {
           setIsolatedHealthSignal('riskScore');
           const el = document.getElementById('historical-health-chart-card');
@@ -6155,7 +6488,7 @@ export default function ManagerDashboard() {
           setTelemetryAlert(res);
         }}
         activeAlerts={activeAlerts}
-        streamToggles={streamToggles}
+        streamToggles={effectiveStreamToggles}
         onToggleStream={handleToggleStream}
         onSetAllStreams={handleSetAllStreams}
         recentTelemetryPoint={telemetryStream[telemetryStream.length - 1]}
@@ -6470,6 +6803,8 @@ export default function ManagerDashboard() {
         thresholds={healthThresholds}
         dateRange={healthDateRange}
         onTriggerThresholdAlert={checkReadingForThresholdBreaches}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
         className="mb-6"
       />
 
@@ -6502,6 +6837,9 @@ export default function ManagerDashboard() {
         externalIsolatedSignal={isolatedHealthSignal}
         onSignalIsolationChange={setIsolatedHealthSignal}
         correlationPair={activeCorrelationPair}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
+        maWindowHours={globalMaWindowHours}
       />
 
       {/* Dedicated Historical Anomaly Events Log Component with Severity Scores & Timestamp Details */}
@@ -6606,7 +6944,9 @@ export default function ManagerDashboard() {
       <TelemetryCharts
         data={telemetryStream}
         zoneName={activeZoneObj.name}
-        streamToggles={streamToggles}
+        streamToggles={effectiveStreamToggles}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
         onExportData={() => setIsReportModalOpen(true)}
       />
 
@@ -7194,12 +7534,45 @@ export default function ManagerDashboard() {
         }}
       />
 
+      {/* Download Options Modal: Select specific metrics to include in report before downloading */}
+      <DownloadOptionsModal
+        isOpen={isDownloadOptionsModalOpen}
+        onClose={() => setIsDownloadOptionsModalOpen(false)}
+        zones={zones}
+        activeAlerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        currentZone={activeZoneObj}
+        onExportSuccess={(filename, exportFormat, metricCount) => {
+          setProtocolActiveNotice(
+            `Custom report downloaded (${metricCount} metrics, ${exportFormat}): ${filename}`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+      />
+
+      {/* Category-based Signal Filter Sidebar: Allows toggling Cardiac, Environmental, and Performance signals and Historical Moving Averages */}
+      <SignalCategoryFilterSidebar
+        isOpen={isSignalFilterSidebarOpen}
+        onClose={() => setIsSignalFilterSidebarOpen(false)}
+        categories={signalCategories}
+        onToggleCategory={handleToggleSignalCategory}
+        granularSignals={granularSignals}
+        onToggleSignal={handleToggleGranularSignal}
+        onResetFilters={handleResetSignalFilters}
+        onSelectAllSignals={handleSelectAllSignals}
+        showMovingAverages={showGlobalMovingAverages}
+        onToggleMovingAverages={() => setShowGlobalMovingAverages((prev) => !prev)}
+        maWindowHours={globalMaWindowHours}
+        onChangeMaWindow={setGlobalMaWindowHours}
+      />
+
       {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}
       <CriticalAnomalyToast
         toasts={criticalAnomalyToasts}
         onDismiss={handleDismissCriticalToast}
         onAcknowledge={handleAcknowledgeCriticalToast}
         onClearAll={handleClearAllCriticalToasts}
+        onDismissAll={handleClearAllCriticalToasts}
         onDispatchAction={handleDispatchActionForCriticalToast}
         onInspectInChart={handleInspectCriticalToastInChart}
         soundEnabled={toastSoundEnabled && !isAlertsMuted}

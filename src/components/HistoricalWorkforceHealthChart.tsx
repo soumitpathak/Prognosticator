@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -62,6 +62,9 @@ interface HistoricalWorkforceHealthChartProps {
   onSignalIsolationChange?: (signalKey: string | null) => void;
   initialMode?: 'MULTI_STREAM' | 'CORRELATION_OVERLAY';
   correlationPair?: { signalA: string; signalB: string } | null;
+  showMovingAverage?: boolean;
+  onToggleMovingAverage?: (active: boolean) => void;
+  maWindowHours?: number;
 }
 
 export interface IdentifiedAnomalyEvent {
@@ -139,7 +142,10 @@ export default function HistoricalWorkforceHealthChart({
   externalIsolatedSignal,
   onSignalIsolationChange,
   initialMode,
-  correlationPair
+  correlationPair,
+  showMovingAverage: propShowMovingAverage,
+  onToggleMovingAverage,
+  maWindowHours: propMaWindowHours
 }: HistoricalWorkforceHealthChartProps) {
   // Chart Visualization Mode: 'MULTI_STREAM' (all signals) or 'CORRELATION_OVERLAY' (overlay 2 signals)
   const [chartMode, setChartMode] = useState<'MULTI_STREAM' | 'CORRELATION_OVERLAY'>(
@@ -154,8 +160,24 @@ export default function HistoricalWorkforceHealthChart({
   const [selectedHours, setSelectedHours] = useState<number>(24);
 
   // Moving Average Overlay Settings
-  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(true);
-  const [maWindowHours, setMaWindowHours] = useState<number>(4); // 2h, 4h, 8h
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(
+    propShowMovingAverage !== undefined ? propShowMovingAverage : true
+  );
+  const [maWindowHours, setMaWindowHours] = useState<number>(
+    propMaWindowHours !== undefined ? propMaWindowHours : 4
+  ); // 2h, 4h, 8h
+
+  useEffect(() => {
+    if (propShowMovingAverage !== undefined) {
+      setShowMovingAverage(propShowMovingAverage);
+    }
+  }, [propShowMovingAverage]);
+
+  useEffect(() => {
+    if (propMaWindowHours !== undefined) {
+      setMaWindowHours(propMaWindowHours);
+    }
+  }, [propMaWindowHours]);
 
   // Feature: Prognostic Trend Projection (4-Hour forward prediction)
   const [showPrognosticTrend, setShowPrognosticTrend] = useState<boolean>(true);
@@ -1483,7 +1505,11 @@ export default function HistoricalWorkforceHealthChart({
           {/* Moving Average Overlay Toggle & Window Selector */}
           <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
             <button
-              onClick={() => setShowMovingAverage((prev) => !prev)}
+              onClick={() => {
+                const nextVal = !showMovingAverage;
+                setShowMovingAverage(nextVal);
+                if (onToggleMovingAverage) onToggleMovingAverage(nextVal);
+              }}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-semibold transition ${
                 showMovingAverage
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'

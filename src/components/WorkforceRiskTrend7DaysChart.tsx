@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -253,6 +253,8 @@ export interface WorkforceRiskTrend7DaysChartProps {
   isWhatIfOpen?: boolean;
   onToggleWhatIfOpen?: () => void;
   theme?: 'dark' | 'high-contrast-light';
+  showMovingAverage?: boolean;
+  onToggleMovingAverage?: (active?: boolean) => void;
 }
 
 export interface EnrichedRiskPoint extends DayRiskPoint {
@@ -270,6 +272,10 @@ export interface EnrichedRiskPoint extends DayRiskPoint {
   simulatedAnomalyCount?: number;
   simulatedCriticalCount?: number;
   riskDelta?: number;
+  // Historical Moving Average fields
+  ma3d_avgRisk?: number;
+  ma3d_peakRisk?: number;
+  maDegradationDelta?: number;
 }
 
 export default function WorkforceRiskTrend7DaysChart({
@@ -279,7 +285,9 @@ export default function WorkforceRiskTrend7DaysChart({
   onUpdateWhatIfParams,
   isWhatIfOpen: propIsWhatIfOpen,
   onToggleWhatIfOpen,
-  theme = 'dark'
+  theme = 'dark',
+  showMovingAverage: propShowMovingAverage,
+  onToggleMovingAverage
 }: WorkforceRiskTrend7DaysChartProps) {
   // Date Range Filtering State (Default: Last 7 Days: 2026-10-31 to 2026-11-06)
   const [startDate, setStartDate] = useState<string>('2026-10-31');
@@ -330,14 +338,43 @@ export default function WorkforceRiskTrend7DaysChart({
     return list.length > 0 ? list : EXTENDED_RISK_DATA.slice(-7);
   }, [startDate, endDate]);
 
+  // Moving Average Overlay State (helps safety managers identify long-term degradation trajectories)
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(
+    propShowMovingAverage !== undefined ? propShowMovingAverage : true
+  );
+
+  useEffect(() => {
+    if (propShowMovingAverage !== undefined) {
+      setShowMovingAverage(propShowMovingAverage);
+    }
+  }, [propShowMovingAverage]);
+
+  const effectiveShowMA = propShowMovingAverage !== undefined ? propShowMovingAverage : showMovingAverage;
+
   // Combined Dataset: Historical Points + Dynamic 72h Forward Forecast with 95% Confidence Interval Band & Real-Time What-If Recalculations
   const chartData: EnrichedRiskPoint[] = useMemo(() => {
-    return recalculateTrendWithWhatIf(
+    const raw = recalculateTrendWithWhatIf(
       filteredData,
       activeWhatIfParams,
       confidenceLevel,
       showForecastHorizon
     );
+
+    // Compute 3-day rolling moving averages to expose degradation trends
+    return raw.map((d, idx, arr) => {
+      const windowPoints = 3;
+      const startIdx = Math.max(0, idx - windowPoints + 1);
+      const sub = arr.slice(startIdx, idx + 1);
+      const maAvg = Number((sub.reduce((acc, p) => acc + (p.simulatedAvgRiskScore ?? p.avgRiskScore), 0) / sub.length).toFixed(1));
+      const maPeak = Number((sub.reduce((acc, p) => acc + (p.simulatedPeakRiskScore ?? p.peakRiskScore), 0) / sub.length).toFixed(1));
+      const delta = Number(((d.simulatedAvgRiskScore ?? d.avgRiskScore) - maAvg).toFixed(1));
+      return {
+        ...d,
+        ma3d_avgRisk: maAvg,
+        ma3d_peakRisk: maPeak,
+        maDegradationDelta: delta
+      };
+    });
   }, [filteredData, activeWhatIfParams, confidenceLevel, showForecastHorizon]);
 
   const spikesCount = useMemo(() => {
@@ -473,6 +510,27 @@ export default function WorkforceRiskTrend7DaysChart({
             <span>+72h Forecast</span>
             <span className="text-[10px] font-mono bg-amber-900/80 px-1 rounded text-white">
               {showForecastHorizon ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Historical Moving Average Toggle */}
+          <button
+            onClick={() => {
+              const nextVal = !effectiveShowMA;
+              setShowMovingAverage(nextVal);
+              if (onToggleMovingAverage) onToggleMovingAverage(nextVal);
+            }}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+              effectiveShowMA
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60 shadow-emerald-950/20'
+                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+            }`}
+            title="Toggle 3-day rolling moving average baseline to detect long-term signal degradation"
+          >
+            <Activity className="h-3.5 w-3.5 text-emerald-400" />
+            <span>3D Moving Avg</span>
+            <span className="text-[10px] font-mono bg-emerald-900/80 px-1 rounded text-white">
+              {effectiveShowMA ? 'ON' : 'OFF'}
             </span>
           </button>
 
@@ -802,6 +860,24 @@ export default function WorkforceRiskTrend7DaysChart({
                             </div>
                           )}
 
+                          {/* Historical Moving Average & Degradation Trajectory in Tooltip */}
+                          {effectiveShowMA && data.ma3d_avgRisk !== undefined && (
+                            <div className="mt-1 pt-1 border-t border-slate-800/80 bg-emerald-950/40 p-1.5 rounded border border-emerald-500/30">
+                              <div className="flex justify-between text-emerald-300 font-semibold text-[11px]">
+                                <span>3D Moving Average:</span>
+                                <span className="font-mono text-white">{data.ma3d_avgRisk}%</span>
+                              </div>
+                              <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                                <span>Degradation Trend:</span>
+                                <span className={`font-mono font-bold ${
+                                  (data.maDegradationDelta ?? 0) > 0 ? 'text-rose-400' : 'text-emerald-400'
+                                }`}>
+                                  {(data.maDegradationDelta ?? 0) > 0 ? `+${data.maDegradationDelta}% (Elevating)` : `${data.maDegradationDelta}% (Stable)`}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="flex justify-between gap-4 text-slate-400 pt-1">
                             <span>Anomalies {isSimActive ? 'Simulated:' : data.isForecast ? 'Projected:' : 'Detected:'}</span>
                             <span className="font-bold text-white tabular-nums">
@@ -986,6 +1062,20 @@ export default function WorkforceRiskTrend7DaysChart({
                     activeDot={{ r: 6, stroke: '#ffffff', strokeWidth: 2 }}
                   />
                 )
+              )}
+
+              {/* Historical Moving Average Baseline Line (identifies long-term signal degradation trends) */}
+              {effectiveShowMA && (
+                <Line
+                  type="monotone"
+                  dataKey="ma3d_avgRisk"
+                  name="3-Day Historical Moving Avg"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                  dot={false}
+                  activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 1.5 }}
+                />
               )}
             </ComposedChart>
           </ResponsiveContainer>
