@@ -14,14 +14,13 @@ export class PrivacyShieldLayer {
     this.epsilon = epsilon;
   }
 
-  /**
-   * Sample from Laplace distribution with mean 0 and scale beta
-   * beta = sensitivity / epsilon. (Here sensitivity = 0.5)
-   */
   sampleLaplace(beta: number): number {
+    const safeBeta = Math.max(1e-6, Number.isFinite(beta) ? beta : 0.5);
     const u = Math.random() - 0.5;
     const sgn = u < 0 ? -1 : 1;
-    return -beta * sgn * Math.log(1 - 2 * Math.abs(u));
+    // Clamp to avoid Math.log(0) resulting in -Infinity
+    const clampedAbsU = Math.min(0.4999999999, Math.abs(u));
+    return -safeBeta * sgn * Math.log(1 - 2 * clampedAbsU);
   }
 
   /**

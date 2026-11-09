@@ -21,10 +21,14 @@ export class KalmanFilterSimulator {
     }
 
     const smoothed: number[] = [];
-    let estimate = data[0];
+    let estimate = Number.isFinite(data[0]) ? data[0] : 0;
     let errorCovariance = 1.0;
 
     for (const measurement of data) {
+      if (!Number.isFinite(measurement)) {
+        smoothed.push(Number(estimate.toFixed(2)));
+        continue;
+      }
       // Prediction update: variance grows with process noise
       errorCovariance += this.processVariance;
 

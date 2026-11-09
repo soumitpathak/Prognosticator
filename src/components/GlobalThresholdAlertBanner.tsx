@@ -74,7 +74,7 @@ export default function GlobalThresholdAlertBanner({
   onToggleMute,
   className = ''
 }: GlobalThresholdAlertBannerProps) {
-  const [isExpanded, setIsExpanded] = useState<boolean>(true);
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [isDismissed, setIsDismissed] = useState<boolean>(false);
 
   const unacknowledgedBreaches = activeBreaches.filter((b) => !b.acknowledged);
@@ -113,25 +113,18 @@ export default function GlobalThresholdAlertBanner({
     <section
       role="alert"
       aria-live="assertive"
-      className={`rounded-2xl border p-4 shadow-xl backdrop-blur-xl transition-all duration-300 font-sans ${bannerTheme} ${className}`}
+      className={`rounded-xl border px-4 py-2.5 shadow-lg backdrop-blur-xl transition-all duration-300 font-sans ${bannerTheme} ${className}`}
     >
       {/* Top Banner Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         {/* Left: Indicator & Headline */}
         <div className="flex items-start sm:items-center space-x-3">
-          <div className="relative shrink-0 mt-0.5 sm:mt-0">
-            <span className="flex h-3.5 w-3.5">
-              <span
-                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  hasCritical ? 'bg-rose-400' : 'bg-amber-400'
-                }`}
-              />
-              <span
-                className={`relative inline-flex rounded-full h-3.5 w-3.5 ${
-                  hasCritical ? 'bg-rose-500' : 'bg-amber-500'
-                }`}
-              />
-            </span>
+          <div className="shrink-0 mt-0.5 sm:mt-0">
+            <span
+              className={`inline-block rounded-full h-2.5 w-2.5 ${
+                hasCritical ? 'bg-rose-500' : 'bg-amber-500'
+              }`}
+            />
           </div>
 
           <div className="space-y-0.5">
@@ -204,7 +197,11 @@ export default function GlobalThresholdAlertBanner({
 
           <button
             type="button"
-            onClick={() => setIsDismissed(true)}
+            onClick={() => {
+              setIsDismissed(true);
+              if (onDismissBanner) onDismissBanner();
+              onAcknowledgeAll();
+            }}
             className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-700 transition cursor-pointer"
             title="Dismiss notification banner"
           >

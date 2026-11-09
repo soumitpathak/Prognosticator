@@ -109,6 +109,7 @@ import AlertHistoryTable from './AlertHistoryTable';
 import RecentAnomaliesAuditList from './RecentAnomaliesAuditList';
 import ThresholdBreachToastContainer from './ThresholdBreachToastContainer';
 import CriticalAnomalyToast from './CriticalAnomalyToast';
+import UnifiedNotificationToaster from './UnifiedNotificationToaster';
 import HealthThresholdsConfigModal, { DEFAULT_HEALTH_THRESHOLDS } from './HealthThresholdsConfigModal';
 import SensorThresholdsConfigPanel from './SensorThresholdsConfigPanel';
 import { exportWorkforceHealthCsv } from '../services/workforceCsvExport';
@@ -1106,6 +1107,8 @@ export default function ManagerDashboard({
   const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
   const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
   const [criticalAnomalyToasts, setCriticalAnomalyToasts] = useState<CriticalAnomalyToastData[]>([]);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
+  const [isToolsMenuOpen, setIsToolsMenuOpen] = useState<boolean>(false);
   const lastCriticalToastTimestampsRef = useRef<Record<string, number>>({});
 
   const handleDismissCriticalToast = useCallback((id: string) => {
@@ -1176,7 +1179,7 @@ export default function ManagerDashboard({
       const now = Date.now();
       const zoneKey = params.locationZone || 'default';
       const lastTrigger = lastCriticalToastTimestampsRef.current[zoneKey] || 0;
-      if (!params.force && now - lastTrigger < 6000) return; // 6-second debounce per zone
+      if (!params.force && now - lastTrigger < 60000) return; // 60-second cooldown for background stream
       lastCriticalToastTimestampsRef.current[zoneKey] = now;
 
       const confScore = params.confidenceLevel > 1 ? params.confidenceLevel / 100 : params.confidenceLevel;
@@ -1974,7 +1977,7 @@ export default function ManagerDashboard({
       const now = Date.now();
       const cooldownKey = `anomaly-${alert.zoneId}-${alert.metric}`;
       const lastTriggered = lastBreachTimestampsRef.current[cooldownKey] || 0;
-      if (!force && now - lastTriggered < 10000) return; // 10-second cooldown
+      if (!force && now - lastTriggered < 60000) return; // 60-second cooldown for background stream
       lastBreachTimestampsRef.current[cooldownKey] = now;
 
       const timeFormatted = new Date().toLocaleTimeString([], {
@@ -2018,22 +2021,28 @@ export default function ManagerDashboard({
 
   // Auto-dismiss countdown for non-acknowledged toasts
   useEffect(() => {
-    if (activeToasts.length === 0) return;
+    if (activeToasts.length === 0 && criticalAnomalyToasts.length === 0) return;
     const timer = setInterval(() => {
       const now = Date.now();
       setActiveToasts((prev) =>
         prev.filter((t) => {
           if (t.acknowledged) return false;
-          return now - t.createdAt < t.autoDismissMs;
+          return now - t.createdAt < 6500;
+        })
+      );
+      setCriticalAnomalyToasts((prev) =>
+        prev.filter((t) => {
+          if (t.acknowledged) return false;
+          return now - t.createdAt < 6500;
         })
       );
     }, 1000);
     return () => clearInterval(timer);
-  }, [activeToasts.length]);
+  }, [activeToasts.length, criticalAnomalyToasts.length]);
 
-  const handleDismissToast = (id: string) => {
+  const handleDismissToast = useCallback((id: string) => {
     setActiveToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
   const handleAcknowledgeToast = (id: string) => {
     setActiveToasts((prev) =>
@@ -4120,7 +4129,7 @@ export default function ManagerDashboard({
       </div>
 
       {/* Top Navigation Bar */}
-      <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
         <div className="flex items-center space-x-3 shrink-0">
           <div className="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded-lg">
             <Activity className="text-cyan-400 h-6 w-6 animate-pulse" />
@@ -4133,9 +4142,11 @@ export default function ManagerDashboard({
           </div>
         </div>
 
-        {/* Global Search Bar: Queries specific alert logs (e.g. ALR-8842, INC-2026), worker IDs (e.g. W-9921), telemetry categories, or facility zones */}
-        <div className="w-full xl:w-[460px] xl:mx-3">
-          <GlobalSearchBar
+        {/* Right Header Controls Group: Aligned together on the right */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto lg:ml-auto justify-start lg:justify-end">
+          {/* Global Search Bar: Queries specific alert logs, worker IDs, telemetry, or facility zones */}
+          <div className="w-full sm:w-64 md:w-72 lg:w-80">
+            <GlobalSearchBar
             zones={zones}
             alerts={activeAlerts}
             theme={dashboardTheme}
@@ -4239,7 +4250,7 @@ export default function ManagerDashboard({
         </div>
 
         {/* Team Member View Role Toggle: Filters visible data and controls based on specific user role, restricting sensitive forecast data */}
-        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0">
+        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0 h-9">
           <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 flex items-center gap-1">
             <Users className="h-3 w-3 text-cyan-400" />
             <span className="hidden sm:inline">Role View:</span>
@@ -4283,51 +4294,12 @@ export default function ManagerDashboard({
           </button>
         </div>
 
-        {/* Global Accessibility Mode Toggle & Dashboard Theme Switcher */}
-        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0 gap-1" role="group" aria-label="Dashboard theme and accessibility mode switcher">
-          {/* Global Accessibility Mode Toggle Button */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isAccessibilityMode}
-            onClick={handleToggleAccessibilityMode}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-              isAccessibilityMode
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs border border-amber-300 ring-2 ring-amber-400/50'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Global Accessibility Mode: Applies .manager-high-contrast-light to the root element for visually impaired users"
-          >
-            <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
-            <span>Accessibility Mode</span>
-            <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold ${
-              isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-900 text-slate-400 border border-slate-800'
-            }`}>
-              {isAccessibilityMode ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleToggleTheme('dark')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-              !isAccessibilityMode && dashboardTheme === 'dark'
-                ? 'bg-slate-800 text-cyan-400 shadow-xs border border-slate-700 font-bold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Default Dark Mode (Standard control room tactical monitoring display)"
-          >
-            <Moon className="h-3.5 w-3.5" />
-            <span>Dark</span>
-          </button>
-        </div>
-
-        {/* Global Toolbar */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Top Right Quick Actions */}
+        <div className="flex items-center gap-2 shrink-0">
           {/* Mute Alerts Quick Toggle */}
           <button
             onClick={handleToggleMuteAlerts}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
+            className={`h-9 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-xs font-medium transition border cursor-pointer ${
               isAlertsMuted
                 ? 'bg-amber-950 text-amber-300 border-amber-500 animate-pulse'
                 : 'bg-slate-950 text-slate-300 border-slate-700 hover:text-white'
@@ -4335,11 +4307,11 @@ export default function ManagerDashboard({
             title={isAlertsMuted ? 'Health anomaly alerts are MUTED — Click to unmute' : 'Mute health anomaly alert notifications'}
           >
             {isAlertsMuted ? (
-              <VolumeX className="h-3.5 w-3.5 text-amber-400" />
+              <VolumeX className="h-3.5 w-3.5 text-amber-400 shrink-0" />
             ) : (
-              <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
+              <Volume2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
             )}
-            <span>{isAlertsMuted ? 'Alerts Muted' : 'Mute Alerts'}</span>
+            <span>{isAlertsMuted ? 'Alerts Muted' : 'Mute'}</span>
           </button>
 
           {/* Top-Right Notification Center anchored in top right */}
@@ -4410,235 +4382,14 @@ export default function ManagerDashboard({
               setTimeout(() => setProtocolActiveNotice(null), 5000);
             }}
           />
+        </div>
+        </div>
+      </header>
 
-          {/* Export Data Button: Opens the Export Data modal allowing safety managers to download current health trends and anomaly reports as CSV or PDF */}
-          <button
-            onClick={() => setIsReportModalOpen(true)}
-            id="export-data-feature-btn"
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white border border-cyan-400 cursor-pointer"
-            title="Export Data: Download current health trends and anomaly reports as a CSV or PDF file"
-          >
-            <Download className="h-3.5 w-3.5 text-white" />
-            <span>Export Data</span>
-          </button>
-
-          {/* Download Dashboard Summary PDF Report Button: Direct download of 2-page metrics and anomalies documentation */}
-          <button
-            onClick={handleDownloadDashboardSummaryPdf}
-            disabled={isGeneratingSummaryPdf}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md border cursor-pointer ${
-              isGeneratingSummaryPdf
-                ? 'bg-cyan-950 text-cyan-300 border-cyan-500/50 cursor-wait'
-                : 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-400'
-            }`}
-            title="Generate and download a comprehensive 2-page PDF summary report of current dashboard metrics, active anomalies, and zone risk indicators for documentation"
-          >
-            {isGeneratingSummaryPdf ? (
-              <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5 text-white" />
-            )}
-            <span>{isGeneratingSummaryPdf ? 'Generating PDF...' : 'Download PDF Summary'}</span>
-          </button>
-
-          {/* Quick Snapshot Button: Instantly generates a summary report of current anomaly counts and high-risk zones in a modal */}
-          <button
-            onClick={() => setIsQuickSnapshotModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400 cursor-pointer"
-            title="Instantly generate an operational summary report of current anomaly counts and high-risk zones in a modal"
-          >
-            <Camera className="h-3.5 w-3.5 text-white" />
-            <span>Quick Snapshot</span>
-          </button>
-
-          {/* What-If Simulator Button: Jump to Workforce Risk Trend Chart and Open What-If Simulation Tool */}
-          <button
-            onClick={handleOpenWhatIfSimulator}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border border-purple-400 cursor-pointer"
-            title="Open What-If Simulator: Adjust vaccination rates, seasonal humidity, ambient heat, and observe real-time health risk trend recalculations"
-          >
-            <Sliders className="h-3.5 w-3.5 text-white" />
-            <span>What-If Simulator</span>
-            <span className="text-[10px] font-mono bg-purple-950/80 px-1 rounded text-purple-200 ml-0.5">
-              Live
-            </span>
-          </button>
-
-          {/* Signed Quarterly Compliance Report PDF Button */}
-          <button
-            onClick={() => setIsSignedCompliancePdfModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400 cursor-pointer"
-            title="Compile the Security Audit Log and recent anomaly insights into a signed PDF report for quarterly compliance reporting"
-          >
-            <FileText className="h-3.5 w-3.5 text-white" />
-            <span>Signed Quarterly PDF</span>
-          </button>
-
-          {/* Settings Menu Button: Kalman sensitivity and SpeechSynthesis accessibility audio alerts */}
-          <button
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Open Settings Menu to configure Kalman sensitivity and SpeechSynthesis audio alerts"
-          >
-            <Settings className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Settings</span>
-            {voiceSettings.enabled && (
-              <span className="flex h-1.5 w-1.5 relative" title="Speech audio alerts enabled">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-500"></span>
-              </span>
-            )}
-          </button>
-
-          {/* Export All Analytics Button: Triggers simulated CSV download of current anomaly log and historical trend data for offline auditing */}
-          <button
-            onClick={handleExportAnomalyLogsAndTrendDataCsv}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 cursor-pointer"
-            title="Trigger a simulated CSV download of the current anomaly log and historical trend data for offline auditing (ISO 45001 / OSHA 1910)"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
-            <span>Export All Analytics</span>
-            <span className="text-[10px] font-mono bg-emerald-950/80 px-1 rounded text-emerald-200 ml-0.5">
-              CSV
-            </span>
-          </button>
-
-          {/* Quick Trigger: Automated Response Module (HVAC/Ventilation) */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('automated-response-module');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Automated Response Module for corrective HVAC and ventilation closed-loop remediation"
-          >
-            <Wind className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Automated HVAC Response</span>
-          </button>
-
-          {/* Quick Trigger: Anomaly Algorithm Sensitivity Settings */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('algorithm-sensitivity-config-panel');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
-                setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
-              }
-            }}
-            className="flex items-center space-x-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Dynamically adjust sensitivity thresholds for anomaly detection algorithms"
-          >
-            <Settings className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Sensitivity Settings</span>
-          </button>
-
-          {/* Quick Trigger: Security Audit Log */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('security-audit-log-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Security Audit Log panel listing recent anomaly detection events"
-          >
-            <Lock className="h-3.5 w-3.5 text-rose-400" />
-            <span>Security Audit Log</span>
-          </button>
-
-          {/* Quick Trigger: Proactive Maintenance Scheduler (LSTM-Kalman < 72h) */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('proactive-maintenance-scheduler-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-500/50 text-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Proactive Maintenance Scheduler card for LSTM-Kalman sensor failure tasks (< 72h)"
-          >
-            <Wrench className="h-3.5 w-3.5 text-amber-400" />
-            <span>Proactive Maintenance (72h)</span>
-          </button>
-
-          {/* Quick Trigger: Anomaly Density Floor Plan Heatmap */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('anomaly-density-floor-plan-heatmap');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Anomaly Density Heatmap overlaying sensor anomaly counts onto schematic floor plan"
-          >
-            <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-            <span>Anomaly Density Heatmap</span>
-          </button>
-
-          {/* Quick Trigger: Zone Anomaly Concentration Heatmap */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('zone-anomaly-concentration-heatmap');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Visual Heatmap representing geographic or zone-based health anomaly concentration levels"
-          >
-            <Flame className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-            <span>Concentration Heatmap</span>
-          </button>
-
-          {/* Quick Trigger: 24-48h Prognostic Forecast */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('prognostic-forecast-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Prognostic Forecast panel projecting potential workforce health risks 24-48 hours ahead"
-          >
-            <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
-            <span>24-48h Prognostic Forecast</span>
-          </button>
-
-          {/* Quick Trigger: Predictive Trend Alerts (Kalman Drift) */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('predictive-trend-alerts-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-500/50 text-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Predictive Trend Alerts panel using Kalman-filtered data to surface long-term negative health trends"
-          >
-            <TrendingDown className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
-            <span>Predictive Trend Alerts</span>
-          </button>
-
-          {/* Quick Trigger: What-If Risk Trend Simulator */}
-          <button
-            onClick={handleOpenWhatIfSimulator}
-            className="flex items-center space-x-1.5 bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/50 text-purple-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Workforce Risk Level Trend chart and open the What-If Simulator panel"
-          >
-            <Sliders className="h-3.5 w-3.5 text-purple-400 animate-pulse" />
-            <span>What-If Simulator</span>
-          </button>
-
-          {/* Quick Trigger: Notification Center (Threshold & Alerts) */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('notification-center-section') || document.getElementById('high-risk-notification-center');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                el.classList.add('ring-2', 'ring-rose-500', 'transition-all');
-                setTimeout(() => el.classList.remove('ring-2', 'ring-rose-500'), 2500);
-              }
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Notification Center with User-Defined Health Telemetry Risk Threshold and Browser Alert Sentinel"
-          >
-            <BellRing className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-            <span>Notification Center</span>
-          </button>
-
-          {/* Longitudinal Timeframe / Date Range Filter in Top Navigation */}
+      {/* Executive Action & Filter Strip */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg backdrop-blur-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+        {/* Left: Longitudinal Timeframe / Date Range Filter */}
+        <div className="flex items-center gap-2">
           <DateRangePicker
             value={healthDateRange}
             onChange={(newRange) => {
@@ -4649,1127 +4400,235 @@ export default function ManagerDashboard({
               setTimeout(() => setProtocolActiveNotice(null), 6000);
             }}
           />
-          {/* Team Mobile Alerts & Read Receipts Button */}
-          <button
-            onClick={() => setIsTeamAlertModalOpen(true)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              unreadTeamAlertCount > 0
-                ? 'bg-gradient-to-r from-cyan-900 to-indigo-900 border-cyan-400 text-white animate-pulse shadow-cyan-900/40 ring-1 ring-cyan-400/50'
-                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
-            }`}
-            title="Real-Time Team Mobile Alerts & Engineer Read Receipts (Tracks Delivered, Read, En Route, Resolved)"
-          >
-            <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Team Mobile Alerts</span>
-            {unreadTeamAlertCount > 0 ? (
-              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px]">
-                {unreadTeamAlertCount} NEW
-              </span>
-            ) : (
-              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">
-                Synced
-              </span>
-            )}
-          </button>
+        </div>
 
-          {/* Resource Utilization (Heatmap) Quick Toggle Button */}
+        {/* Right: Consolidated Executive Actions & Menus */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* What-If Simulator Trigger */}
           <button
-            onClick={() => setManagerTab((prev) => (prev === 'resourceUtilization' ? 'live' : 'resourceUtilization'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              managerTab === 'resourceUtilization'
-                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white border-orange-300 shadow-md shadow-orange-500/30'
-                : 'bg-amber-950/70 hover:bg-amber-900/80 border-amber-500/50 text-amber-200'
-            }`}
-            title="Switch to Resource Utilization & Worker Distribution Heatmap Panel"
-          >
-            <Users className="h-3.5 w-3.5 text-amber-400" />
-            <span>{managerTab === 'resourceUtilization' ? '← Live Operations' : 'Resource Utilization'}</span>
-          </button>
-
-          {/* Compliance Audit (HIPAA) Quick Toggle Button */}
-          <button
-            onClick={() => setManagerTab((prev) => (prev === 'compliance' ? 'live' : 'compliance'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              managerTab === 'compliance'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-300 shadow-md shadow-emerald-500/30'
-                : 'bg-emerald-950/70 hover:bg-emerald-900/80 border-emerald-500/50 text-emerald-200'
-            }`}
-            title="Switch to HIPAA System Compliance Audit and Searchable Access History"
-          >
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span>{managerTab === 'compliance' ? '← Live Operations' : 'Compliance Audit (HIPAA)'}</span>
-          </button>
-
-          {/* Predictive Maintenance (IoT Forecast) Quick Toggle Button */}
-          <button
-            onClick={() => setManagerTab((prev) => (prev === 'predictiveMaintenance' ? 'live' : 'predictiveMaintenance'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              managerTab === 'predictiveMaintenance'
-                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white border-cyan-300 shadow-md shadow-cyan-500/30'
-                : 'bg-cyan-950/70 hover:bg-cyan-900/80 border-cyan-500/50 text-cyan-200'
-            }`}
-            title="Switch to IoT Endpoint Predictive Failure Forecasting and Degradation Rate Analysis"
-          >
-            <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-            <span>{managerTab === 'predictiveMaintenance' ? '← Live Operations' : 'Predictive IoT'}</span>
-          </button>
-
-          {/* Inter-Zone Causal Correlation Engine Quick Toggle Button */}
-          <button
-            onClick={() => setManagerTab((prev) => (prev === 'correlationEngine' ? 'live' : 'correlationEngine'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              managerTab === 'correlationEngine'
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white border-indigo-300 shadow-md shadow-indigo-500/30'
-                : 'bg-indigo-950/70 hover:bg-indigo-900/80 border-indigo-500/50 text-indigo-200'
-            }`}
-            title="Switch to Inter-Zone Spatio-Temporal Causal Correlation Engine & Link Map"
-          >
-            <GitMerge className="h-3.5 w-3.5 text-indigo-400" />
-            <span>{managerTab === 'correlationEngine' ? '← Live Operations' : 'Causal Links'}</span>
-          </button>
-
-          {/* Worker Density Trends & D3 Heatmap Toggle Button */}
-          <button
-            onClick={() => setManagerTab((prev) => (prev === 'density' ? 'live' : 'density'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              managerTab === 'density'
-                ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 border-amber-300 shadow-md shadow-amber-500/30'
-                : 'bg-amber-950/70 hover:bg-amber-900/80 border-amber-500/50 text-amber-200'
-            }`}
-            title="Switch to 7-Day Worker Density Trends & D3 Heatmap Correlation Tab"
-          >
-            <Users className="h-3.5 w-3.5" />
-            <span>{managerTab === 'density' ? '← Live Dashboard' : 'Worker Density (D3)'}</span>
-          </button>
-
-          {/* Pattern Library Tab Direct Toggle Button */}
-          <button
-            onClick={() => setManagerTab((prev) => (prev === 'patterns' ? 'live' : 'patterns'))}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              managerTab === 'patterns'
-                ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/30'
-                : 'bg-indigo-950/70 hover:bg-indigo-900/80 border-indigo-500/50 text-indigo-200'
-            }`}
-            title="Switch between Live Operations Dashboard and Historical Anomaly Pattern Library (D3.js)"
-          >
-            <Layers className="h-3.5 w-3.5" />
-            <span>{managerTab === 'patterns' ? '← Live Dashboard' : 'Pattern Library (D3.js)'}</span>
-          </button>
-
-          {/* Automated Daily Email Digest (Top 5 Critical) Button */}
-          <button
-            onClick={() => setIsDailySummaryReportOpen(true)}
-            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Open Automated Daily Email Digest summarizing the Top 5 most critical anomalies detected over the last 24 hours"
-          >
-            <Mail className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Daily Email Digest</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/25 text-rose-300 border border-rose-500/40">
-              Top 5 Critical
-            </span>
-          </button>
-
-          {/* Quick Jump: Cohort Comparison View */}
-          <button
-            onClick={() => {
-              if (managerTab !== 'live') setManagerTab('live');
-              setTimeout(() => {
-                const el = document.getElementById('cohort-health-comparison-line-view');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              }, 50);
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-cyan-500/40 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Population Cohort & Site Side-by-Side Health Telemetry Line Chart"
-          >
-            <GitCompare className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Cohort Comparison</span>
-          </button>
-
-          {/* Quick Jump: 30-Day Kalman Predictive Model */}
-          <button
-            onClick={() => {
-              if (managerTab !== 'live') setManagerTab('live');
-              setTimeout(() => {
-                const el = document.getElementById('kalman-predictive-model-30days-chart');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              }, 50);
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-indigo-500/40 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to 30-Day Forward Predictive Health Modeling Chart using Kalman Filter Extrapolation"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-            <span>30D Kalman Model</span>
-          </button>
-
-          {/* Quick Jump: Incident Log */}
-          <button
-            onClick={() => {
-              if (managerTab !== 'live') setManagerTab('live');
-              setTimeout(() => {
-                const el = document.getElementById('incident-log-section');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              }, 50);
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-rose-500/40 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Historical Incident Log & Anomaly Records"
-          >
-            <AlertOctagon className="h-3.5 w-3.5 text-rose-400" />
-            <span>Incident Log</span>
-          </button>
-
-          {/* Test Anomaly Injection Button */}
-          <button
-            onClick={handleInjectTestAnomaly}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-md shadow-rose-950/60 border border-rose-400/50 cursor-pointer animate-pulse"
-            title="Randomly inject a simulated high-risk event into the notification center for testing response workflows"
-          >
-            <Zap className="h-3.5 w-3.5 text-white" />
-            <span>Test Anomaly</span>
-          </button>
-
-          {/* High-Priority Active Anomalies Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('active-anomalies-widget');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/50 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs animate-pulse"
-            title="Jump to High-Priority Active Anomalies & Urgent Triage Widget"
-          >
-            <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
-            <span>Active Anomalies ({pendingCriticalCount} Critical)</span>
-          </button>
-
-          {/* Last 10 Detected Anomalies Quick Audit Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('recent-anomalies-audit-list');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
-            title="Jump to Last 10 Detected Anomalies Scrollable Quick Audit List"
-          >
-            <Clock className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Last 10 Anomalies</span>
-          </button>
-
-          {/* Sensor Signal Alert Thresholds Config Panel Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('sensor-thresholds-config-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-500/50 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Jump to Custom Sensor Signals Alert Thresholds Configuration Panel"
-          >
-            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Alert Thresholds</span>
-          </button>
-
-          {/* Anomaly Detection Sensitivity Thresholds Config Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('anomaly-threshold-config-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-500/60 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-            title="Jump to Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel"
-          >
-            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Sensitivity Config ({dailyFrequencyThreshold}/day)</span>
-          </button>
-
-          {/* Algorithm Sensitivity Configuration Panel Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('algorithm-sensitivity-config-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-indigo-900/90 hover:bg-indigo-800/90 border border-indigo-400/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Algorithm Sensitivity Thresholds Configuration Panel (LSTM & Kalman Filter)"
-          >
-            <Sliders className="h-3.5 w-3.5 text-cyan-300" />
-            <span>Algorithm Sensitivity</span>
-          </button>
-
-          {/* 30-Day Anomaly Trend Frequency Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('anomaly-trend-30d-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-cyan-950/70 hover:bg-cyan-900/70 border border-cyan-500/50 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Jump to 30-Day Anomaly Trend Frequency Recharts Analytics"
-          >
-            <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
-            <span>30d Trend Frequency</span>
-          </button>
-
-          {/* Organization-Wide Geographical & Department Heatmap Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('org-anomaly-heatmap-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/50 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-            title="Jump to Organization-Wide Geographical & Department Anomaly Frequency Heatmap"
-          >
-            <Flame className="h-3.5 w-3.5 text-rose-400" />
-            <span>Org Heatmap (6 Facilities)</span>
-          </button>
-
-          {/* Department Anomaly Severity Stacked Bar Chart Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('department-severity-stacked-bar-chart');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-500/60 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart"
-          >
-            <BarChart3 className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Severity Distribution (Stacked Bar)</span>
-          </button>
-
-          {/* Telemetry Precursor Pattern Recognition Engine Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('pattern-recognition-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/60 text-purple-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Telemetry Precursor Pattern Recognition Engine (String-Matching Algorithm)"
-          >
-            <GitMerge className="h-3.5 w-3.5 text-purple-400" />
-            <span>Pattern Recognition</span>
-          </button>
-
-          {/* 24-Hour Workforce Health Chart Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('historical-health-chart-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/40 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Jump to Historical Workforce Health Signals 24h Chart"
-          >
-            <LineChart className="h-3.5 w-3.5 text-cyan-400" />
-            <span>24h Health Signals</span>
-          </button>
-
-          {/* 48-Hour Incident Volume Projection Forecast Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('incident-projection-chart-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Jump to 48-Hour Potential Incident Volume Projection Trend Analysis Graph (Recharts)"
-          >
-            <TrendingUp className="h-3.5 w-3.5 text-amber-400" />
-            <span>48h Forecast</span>
-          </button>
-
-          {/* 48-Hour Forecast Staffing & Resource Distribution Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('forecasted-resource-widget');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-500/50 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Jump to Forecasted Risk Staffing & Resource Distribution Widget"
-          >
-            <Users className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Forecast Staffing</span>
-          </button>
-
-          {/* Anomaly Audit Log Modal Trigger Button */}
-          <button
-            onClick={() => setIsAnomalyAuditModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-            title="Open Anomaly Audit Log Modal: Timestamp, Model Confidence Score, and Corrective Action Taken for Every Flagged Anomaly"
-          >
-            <History className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Anomaly Audit Log</span>
-          </button>
-          {/* Incident Hotspots NLG Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('incident-hotspots-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
-            title="Incident Hotspots & Top 3 Contributing Factors Natural Language Generation"
+            onClick={handleOpenWhatIfSimulator}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-700/50 transition cursor-pointer shadow-xs"
+            title="Launch What-If Environmental & Physical Stress Simulation"
           >
             <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Hotspots NLG</span>
+            <span>What-If Simulator</span>
           </button>
 
-          {/* Real-Time Wearable Biometric Synchronization Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('biometric-sync-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/50 hover:bg-rose-900/50 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Real-Time Wearable Biometric Synchronization & Worker HRV Stress Monitoring"
-          >
-            <Heart className="h-3.5 w-3.5 text-rose-400" />
-            <span>Biometrics HRV</span>
-          </button>
-
-          {/* Chronological Anomaly Log Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('chronological-anomaly-log-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Chronological list-view summary of all recent high-priority health and safety alerts"
-          >
-            <Clock className="h-3.5 w-3.5 text-rose-400" />
-            <span>Anomaly Log</span>
-          </button>
-
-          {/* Alert History Table Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('alert-history-table-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Jump to Sensor Signal Threshold Exceedance & Incident Alert History Table"
-          >
-            <History className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Alert History</span>
-          </button>
-
-          {/* Historical Anomaly Events Log (Severity Scores & Timestamps) Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('historical-anomaly-event-log-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Jump to Historical Anomaly Events Log (Severity Scores & Timestamp Details)"
-          >
-            <History className="h-3.5 w-3.5 text-rose-400" />
-            <span>Historical Events Log</span>
-          </button>
-
-          {/* Audio Alert Severity Toggles Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('audio-notification-severity-toggle-panel');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Mute or enable real-time audio alerts for specific severity levels"
-          >
-            <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Audio Alert Toggles</span>
-          </button>
-
-          {/* Export Historical Anomaly Formatted PDF Button */}
-          <button
-            onClick={() => setIsCompliancePdfExportModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-900/90 to-blue-900/90 hover:from-cyan-800 hover:to-blue-800 border border-cyan-500/60 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Export historical anomaly event log as a formatted PDF document with executive KPI summary"
-          >
-            <FileText className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Export Formatted PDF</span>
-          </button>
-
-          {/* Export Historical Anomaly Compliance CSV Button */}
-          <button
-            onClick={() => setIsComplianceCsvExportModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Export historical anomaly event log to CSV for ISO 45001 / OSHA compliance reporting"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Export Compliance CSV</span>
-          </button>
-
-          {/* Automated Predictive Maintenance Scheduler Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('maintenance-scheduler-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-amber-950/50 hover:bg-amber-900/50 border border-amber-500/40 text-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Automated Predictive Maintenance Work Order Scheduler & Technician Dispatch"
-          >
-            <Wrench className="h-3.5 w-3.5 text-amber-400" />
-            <span>Maintenance Dispatch</span>
-          </button>
-
-          {/* Medical Dispatch Queue Trigger */}
-          <button
-            onClick={() => setIsDispatchModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
-            title="Open Automated Medical Protocol Dispatch Queue"
-          >
-            <Radio className="h-3.5 w-3.5 text-rose-400" />
-            <span>
-              Medical Dispatch{' '}
-              {stagedDispatchCount > 0 && (
-                <span className="bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full text-[10px] ml-1">
-                  {stagedDispatchCount} Staged
-                </span>
-              )}
-            </span>
-          </button>
-
-          {/* Continuous IoT Stream State Indicator */}
-          <button
-            onClick={() => setIsStreamingActive((s) => !s)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
-              isStreamingActive
-                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-            }`}
-            title="Toggle Live Continuous IoT Streaming Engine"
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                isStreamingActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'
-              }`}
-            ></span>
-            <span>{isStreamingActive ? 'Streaming Hub: LIVE' : 'Streaming Hub: PAUSED'}</span>
-          </button>
-
-          {/* Audible Voice Dispatch Modal Trigger */}
-          <button
-            onClick={() => setIsVoiceModalOpen(true)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border shadow-xs ${
-              isSpeaking
-                ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 animate-pulse'
-                : voiceSettings.enabled
-                ? 'bg-cyan-950/60 hover:bg-cyan-900/60 border-cyan-500/40 text-cyan-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-            }`}
-            title="Configure audible synthesized voice alerts for on-site supervisors"
-          >
-            {voiceSettings.enabled ? (
-              <Volume2 className={`h-3.5 w-3.5 ${isSpeaking ? 'text-cyan-300 animate-ping' : 'text-cyan-400'}`} />
-            ) : (
-              <VolumeX className="h-3.5 w-3.5 text-slate-500" />
-            )}
-            <span>
-              Voice Dispatch:{' '}
-              <strong className="text-white ml-0.5">
-                {isSpeaking ? 'SPEAKING' : voiceSettings.enabled ? 'ON' : 'MUTED'}
-              </strong>
-            </span>
-          </button>
-
-          {/* Safety Resources Allocation Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('resource-allocation-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
-            title="Dynamic On-Site Safety Resource Allocation & Personnel Redistribution"
-          >
-            <UserCheck className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Safety Resources</span>
-          </button>
-
-          {/* Sensitivity Settings */}
-          <button
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
-            title="Adjust Kalman filter sensitivity and anomaly detection thresholds"
-          >
-            <Settings className="h-3.5 w-3.5 text-indigo-400" />
-            <span>
-              Sensitivity: <strong className="font-bold text-white ml-0.5">{kalmanConfig.preset}</strong>
-            </span>
-          </button>
-
-          {/* System Audit Trail Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('system-audit-log-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
-            title="View System Audit Log tracking manual sensitivity and zone changes"
-          >
-            <ShieldCheck className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Audit Trail ({systemAuditLogs.length})</span>
-          </button>
-
-          {/* Sensor Correlation Scatter Jump Button */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('sensor-correlation-scatter-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs"
-            title="Explore multi-variable sensor correlations & root causes"
-          >
-            <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Correlations ({correlationData.length})</span>
-          </button>
-
-          {/* Simulator & Jitter Drawer */}
-          <button
-            onClick={() => setIsSimulatorOpen(true)}
-            className="flex items-center space-x-1.5 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 px-3 py-1.5 rounded-lg text-xs font-medium transition"
-          >
-            <Sliders className="h-3.5 w-3.5 text-cyan-400" />
-            <span>IoT Hub &amp; Bursts</span>
-          </button>
-
-          {/* Executive Safety PDF Report (Client-Side) */}
-          <button
-            onClick={handleDirectPdfExport}
-            disabled={isDirectPdfExporting}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs border ${
-              isDirectPdfExporting
-                ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 animate-pulse'
-                : 'bg-cyan-950/70 hover:bg-cyan-900/70 border-cyan-500/40 text-cyan-300'
-            }`}
-            title="Directly compile & download printable Executive Safety PDF report capturing telemetry charts and active alerts"
-          >
-            {isDirectPdfExporting ? (
-              <Loader2 className="h-3.5 w-3.5 text-cyan-400 animate-spin" />
-            ) : (
-              <FileText className="h-3.5 w-3.5 text-cyan-400" />
-            )}
-            <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
-          </button>
-
-          {/* Custom Health Signal Notification Thresholds Configuration Button */}
-          <button
-            onClick={() => setIsHealthThresholdsModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-indigo-950/70 hover:bg-indigo-900/70 border border-indigo-500/50 text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
-            title="Configure custom notification thresholds for specific workforce health signals"
-          >
-            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Health Thresholds</span>
-          </button>
-
-          {/* Jump to Historical Population Health Log */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('historical-population-health-log-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
-            title="Scroll directly to the historical log of the last 5 detected population health anomalies"
-          >
-            <History className="h-3.5 w-3.5 text-rose-400" />
-            <span>Last 5 Anomalies Log</span>
-          </button>
-
-          {/* Jump to 24-Hour Temporal Heat-Map */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('temporal-anomaly-heatmap-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
-            title="Scroll directly to the 24-Hour Temporal Health Anomaly Heat-Map"
-          >
-            <Clock className="h-3.5 w-3.5 text-orange-400" />
-            <span>24h Heat-Map</span>
-          </button>
-
-          {/* Jump to Population Health Risk Heatmap Radar Widget */}
-          <button
-            onClick={() => {
-              const el = document.getElementById('risk-heatmap-radar-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
-            title="Scroll directly to the Population Health Risk Heatmap and 4-tier Radar Chart"
-          >
-            <Compass className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Risk Heatmap (Radar)</span>
-          </button>
-
-          {/* Test Real-Time Breach Notification Toast Button */}
-          <button
-            onClick={handleSimulateBreachToast}
-            className="flex items-center space-x-1.5 bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/50 text-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer animate-pulse"
-            title="Simulate live sensor reading exceeding custom thresholds to trigger real-time notification toast alert"
-          >
-            <BellRing className="h-3.5 w-3.5 text-rose-400" />
-            <span>Test Breach Alert</span>
-          </button>
-
-          {/* Test Real-Time Critical & High-Risk Population Health Anomaly Notification Buttons */}
-          <button
-            onClick={() => {
-              triggerCriticalAnomalyNotification({
-                department: 'Civil & Structural Construction',
-                confidenceLevel: 0.948,
-                riskProbability: 0.892,
-                riskTier: 'CRITICAL_RISK',
-                locationZone: activeZoneObj.name,
-                zoneId: activeZoneObj.id,
-                cohortCount: activeZoneObj.count,
-                workerPseudonym: 'W-9921',
-                anomalyMetric: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
-                measuredValue: 'Heart Rate 142 BPM, Skin Temp 38.8°C, TWL 92.4 W/m²',
-                thresholdLimit: 'HR Max 115 BPM, Skin 37.8°C',
-                reconstructionMse: 0.428,
-                recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
-                attributions: {
-                  'Heart Rate Variability (HRV) Drop': 0.42,
-                  'Ambient Heat Index Load': 0.31,
-                  'Skin Temperature Elevation': 0.18,
-                  'Cumulative Sleep Deficit': 0.09
-                },
-                force: true
-              });
-            }}
-            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-rose-950/60 cursor-pointer border border-rose-400/60"
-            title="Simulate detection of a new critical population anomaly to test real-time notification toast displaying Department, Cohort, and Confidence Level"
-          >
-            <ShieldAlert className="h-3.5 w-3.5 text-white animate-pulse" />
-            <span>Simulate Critical Anomaly</span>
-          </button>
-
-          <button
-            onClick={() => {
-              triggerCriticalAnomalyNotification({
-                department: 'Smelting & Metal Fabrication',
-                confidenceLevel: 0.864,
-                riskProbability: 0.785,
-                riskTier: 'HIGH_RISK',
-                locationZone: 'Smelting-Foundry-Line-A',
-                zoneId: 'Smelting-Foundry-Line-A',
-                cohortCount: 22,
-                workerPseudonym: 'W-4412',
-                anomalyMetric: 'Blast Furnace Thermal Strain Creep & Elevated Core Load',
-                measuredValue: 'Skin Temp 38.2°C, Heart Rate 128 BPM, Ambient 45.1°C',
-                thresholdLimit: 'Skin Max 37.8°C, Ambient 40.0°C',
-                reconstructionMse: 0.322,
-                recommendedAction: 'Rotate cohort out of smelting pit; provide mandatory 250ml electrolyte oral fluid.',
-                attributions: {
-                  'Ambient Heat Index Load': 0.44,
-                  'Skin Temperature Elevation': 0.28,
-                  'Heart Rate Variability (HRV) Drop': 0.20,
-                  'Cumulative Sleep Deficit': 0.08
-                },
-                force: true
-              });
-            }}
-            className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md shadow-amber-950/50 cursor-pointer border border-amber-400"
-            title="Simulate detection of a high-risk population heat anomaly"
-          >
-            <Flame className="h-3.5 w-3.5 text-slate-950" />
-            <span>Simulate High-Risk Heat</span>
-          </button>
-
-          {/* Test Real-Time Pre-Emptive Proactive Alert Button */}
-          <button
-            onClick={() => triggerPreemptiveProactiveAlert()}
-            className="flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md shadow-amber-950/50 cursor-pointer border border-amber-400"
-            title="Trigger pre-emptive proactive notification when 7-day moving average projection exceeds safe levels before a critical anomaly occurs"
-          >
-            <Zap className="h-3.5 w-3.5 text-slate-950 animate-bounce" />
-            <span>Simulate Pre-Emptive Alert</span>
-          </button>
-
-          {/* Dedicated Simulated Compliance CSV & Enterprise PDF Report Export Controls */}
-          <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 shadow-sm">
+          {/* Reports & Export Dropdown */}
+          <div className="relative">
             <button
-              onClick={handleSimulatedComplianceCsvExport}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-emerald-300 hover:text-white hover:bg-slate-800 text-xs font-bold transition cursor-pointer"
-              title="Trigger a simulated CSV export of current anomaly telemetry data formatted for enterprise reporting compliance (ISO 45001 / OSHA 1910)"
+              onClick={() => {
+                setIsExportMenuOpen((prev) => !prev);
+                setIsToolsMenuOpen(false);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer shadow-xs"
             >
               <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Export Compliance CSV</span>
+              <span>Reports &amp; Export</span>
+              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-            <button
-              onClick={handleDirectPdfExport}
-              disabled={isDirectPdfExporting}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
-                isDirectPdfExporting
-                  ? 'bg-cyan-950/80 text-cyan-200 animate-pulse'
-                  : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-xs'
-              }`}
-              title="Compile current dashboard state, active incident logs, and predictive forecast chart into a downloadable enterprise-grade PDF report"
-            >
-              {isDirectPdfExporting ? (
-                <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
-              ) : (
-                <FileText className="h-3.5 w-3.5 text-white" />
-              )}
-              <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Generate PDF Report'}</span>
-            </button>
+
+            {isExportMenuOpen && (
+              <div
+                className="absolute right-0 mt-1.5 w-64 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+                onClick={() => setIsExportMenuOpen(false)}
+              >
+                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+                  Executive PDF Reports
+                </div>
+                <button
+                  onClick={handleDownloadDashboardSummaryPdf}
+                  disabled={isGeneratingSummaryPdf}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition disabled:opacity-50"
+                >
+                  <FileText className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span className="truncate">Executive PDF Summary</span>
+                </button>
+                <button
+                  onClick={() => setIsSignedCompliancePdfModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                  <span className="truncate">Signed Compliance PDF</span>
+                </button>
+                <button
+                  onClick={() => setIsHealthMetricsPdfModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Activity className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                  <span className="truncate">Health Metrics Audit PDF</span>
+                </button>
+                <button
+                  onClick={() => setIsSafetyCommitteePdfModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Users className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <span className="truncate">Safety Committee Report</span>
+                </button>
+                <button
+                  onClick={() => setIsCompliancePdfExportModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span className="truncate">OSHA/ISO Compliance PDF</span>
+                </button>
+
+                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
+                  CSV Data Exports
+                </div>
+                <button
+                  onClick={handleExportDashboardCsv}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">Telemetry &amp; Dashboard CSV</span>
+                </button>
+                <button
+                  onClick={handleExportCurrentAnomalyCsvDirect}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">Anomaly Event Log CSV</span>
+                </button>
+                <button
+                  onClick={handleExportWorkforceCsv}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">Workforce Cohort CSV</span>
+                </button>
+                <button
+                  onClick={() => setIsComplianceCsvExportModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">Compliance Audit CSV</span>
+                </button>
+
+                <div className="border-t border-slate-800 mt-1 pt-1">
+                  <button
+                    onClick={() => setIsReportModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-cyan-400 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
+                  >
+                    <Sliders className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span>Custom Export Wizard...</span>
+                  </button>
+                  <button
+                    onClick={handlePrintDashboard}
+                    className="w-full text-left px-3 py-2 text-slate-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span>Print for Site Safety Meeting</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Download Report Button (Converts current 24h anomaly trends & threshold settings to JSON or CSV) */}
+          {/* Tools & Operations Dropdown */}
           <div className="relative">
             <button
-              onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
-              className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-cyan-400/40"
-              title="Download current 24-hour anomaly trend data and threshold settings as JSON or CSV file"
+              onClick={() => {
+                setIsToolsMenuOpen((prev) => !prev);
+                setIsExportMenuOpen(false);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer shadow-xs"
             >
-              <Download className="h-3.5 w-3.5 text-white" />
-              <span>Download Report</span>
-              <ChevronDown className={`h-3 w-3 text-white/80 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
+              <Wrench className="h-3.5 w-3.5 text-amber-400" />
+              <span>Tools &amp; Ops</span>
+              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isToolsMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-            {isDownloadMenuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsDownloadMenuOpen(false)}
-                />
-                <div className="absolute right-0 mt-1.5 w-68 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 text-xs">
-                  <div className="px-2.5 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 font-medium flex items-center justify-between">
-                    <span>Export 24h Trends &amp; Thresholds</span>
-                    <span className="text-[10px] text-cyan-400 font-mono">RFC 4180</span>
-                  </div>
-                  <div className="py-1 space-y-1">
-                    <button
-                      onClick={() => handleDownloadReport('CSV')}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-emerald-950/70 hover:text-emerald-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <FileSpreadsheet className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">Compliance CSV</div>
-                          <div className="text-[10px] text-slate-400">RFC 4180 with Privacy Shield preambles</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
-                    </button>
-                    <button
-                      onClick={() => handleDownloadReport('PDF')}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-cyan-950/70 hover:text-cyan-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <FileText className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">Executive Safety PDF</div>
-                          <div className="text-[10px] text-slate-400">Charts capture, anomaly logs &amp; legal audit</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono font-bold">.pdf</span>
-                    </button>
-                    <button
-                      onClick={() => handleDownloadReport('JSON')}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-indigo-950/70 hover:text-indigo-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <FileCode className="h-4 w-4 text-indigo-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">JSON Data Dump</div>
-                          <div className="text-[10px] text-slate-400">Raw telemetry, thresholds &amp; alert history</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-1.5 py-0.5 rounded font-mono font-bold">.json</span>
-                    </button>
-                  </div>
-                  <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-400 flex items-center justify-between font-mono">
-                    <span>Privacy Shield Enforced</span>
-                    <span className="text-emerald-400">&epsilon;=0.5 / N&ge;12</span>
-                  </div>
+
+            {isToolsMenuOpen && (
+              <div
+                className="absolute right-0 mt-1.5 w-64 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+                onClick={() => setIsToolsMenuOpen(false)}
+              >
+                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+                  Operations &amp; Dispatch
                 </div>
-              </>
+                <button
+                  onClick={() => setIsDispatchModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-rose-300 hover:bg-rose-950/30 flex items-center gap-2 cursor-pointer transition font-medium"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                  <span>Medical Dispatch Liaison</span>
+                </button>
+                <button
+                  onClick={() => setIsTeamAlertModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span>Team Mobile Alerts</span>
+                  </div>
+                  {unreadTeamAlertCount > 0 && (
+                    <span className="text-[10px] font-bold bg-cyan-600 text-white px-1.5 py-0.5 rounded-full">
+                      {unreadTeamAlertCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setIsVoiceModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Volume2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                  <span>Audio &amp; Voice Config</span>
+                </button>
+
+                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
+                  Configuration &amp; Audit
+                </div>
+                <button
+                  onClick={() => setIsQuickSnapshotModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Camera className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span>Executive Quick Snapshot</span>
+                </button>
+                <button
+                  onClick={() => setIsAnomalyAuditModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+                  <span>HIPAA Anomaly Audit Log</span>
+                </button>
+                <button
+                  onClick={() => setIsHealthThresholdsModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Sliders className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <span>Health &amp; Vital Thresholds</span>
+                </button>
+                <button
+                  onClick={() => setIsGlobalThresholdModalOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <AlertOctagon className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                  <span>Global Risk Thresholds</span>
+                </button>
+                <button
+                  onClick={() => setIsZoneBuilderOpen(true)}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                >
+                  <MapPin className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span>Custom Zone Builder</span>
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Export Current View Anomaly Report Button (Simulated PDF/CSV with System Audit Logging) */}
-          <div className="relative">
-            <button
-              onClick={() => setIsViewAuditMenuOpen((prev) => !prev)}
-              disabled={isExportingAuditReport}
-              className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md border border-cyan-400/40 cursor-pointer disabled:opacity-50"
-              title="Export current anomaly report as a simulated PDF or CSV file for audit logging purposes"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-white" />
-              <span>Export Current Anomaly Report</span>
-              <ChevronDown className={`h-3 w-3 text-white/80 transition-transform ${isViewAuditMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isViewAuditMenuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsViewAuditMenuOpen(false)}
-                />
-                <div className="absolute right-0 mt-1.5 w-76 bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 text-xs">
-                  <div className="px-2.5 py-1.5 border-b border-slate-800 text-[11px] text-slate-400 font-medium flex items-center justify-between">
-                    <span>Export Anomaly Report for Audit Logging</span>
-                    <span className="text-[10px] text-cyan-400 font-mono">ISO 45001</span>
-                  </div>
-                  <div className="py-1 space-y-1">
-                    <button
-                      onClick={() => handleExportViewAuditReport('PDF')}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-cyan-950/70 hover:text-cyan-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <FileText className="h-4 w-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">Simulated PDF Report</div>
-                          <div className="text-[10px] text-slate-400">Executive anomaly audit with 30d trend</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono font-bold">.pdf</span>
-                    </button>
-                    <button
-                      onClick={() => handleExportViewAuditReport('CSV')}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-emerald-950/70 hover:text-emerald-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <FileSpreadsheet className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">Simulated CSV File</div>
-                          <div className="text-[10px] text-slate-400">RFC 4180 raw tabular dataset for audit logs</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
-                    </button>
-                    <button
-                      onClick={handleExportCurrentAnomalyCsvDirect}
-                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-teal-950/70 hover:text-teal-200 text-slate-200 rounded-lg transition group cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <Download className="h-4 w-4 text-teal-400 group-hover:scale-110 transition-transform" />
-                        <div>
-                          <div className="font-semibold text-white">Current Anomaly State CSV</div>
-                          <div className="text-[10px] text-slate-400">Serialize live active anomalies in state</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] bg-teal-950 text-teal-300 border border-teal-800 px-1.5 py-0.5 rounded font-mono font-bold">.csv</span>
-                    </button>
-                  </div>
-                  <div className="mt-1 pt-1.5 border-t border-slate-800/80 px-2 text-[10px] text-slate-400 flex items-center justify-between font-mono">
-                    <span>System Audit Trail</span>
-                    <span className="text-emerald-400">Auto-Registered &amp; Logged</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* 48-Hour Predictive Surge Simulation Controller */}
+          {/* Kalman & Algorithm Settings */}
           <button
-            onClick={() => {
-              setIsSimulated48hSurgeActive((prev) => !prev);
-              setIsPredictiveSurgeBannerDismissed(false);
-            }}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              predictive48hAnalysis.increasePct >= 20.0 && !isPredictiveSurgeBannerDismissed
-                ? 'bg-rose-950/80 hover:bg-rose-900/90 text-rose-300 border-rose-500/60 ring-1 ring-rose-500/30'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
-            }`}
-            title="Toggle or simulate a >=20% 48-hour forward incident likelihood surge to test the predictive early-warning banner"
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 transition cursor-pointer shadow-xs"
+            title="Algorithm Sensitivity &amp; Kalman Filter Parameters"
           >
-            <TrendingUp className={`h-3.5 w-3.5 ${predictive48hAnalysis.increasePct >= 20.0 ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`} />
-            <span>
-              {isSimulated48hSurgeActive
-                ? `48h Surge Active (+${predictive48hAnalysis.increasePct}%)`
-                : 'Simulate 48h Surge (+26.4%)'}
-            </span>
-          </button>
-
-          {/* Re-open Banner if dismissed but surge threshold >= 20% */}
-          {isPredictiveSurgeBannerDismissed && predictive48hAnalysis.increasePct >= 20.0 && (
-            <button
-              onClick={() => setIsPredictiveSurgeBannerDismissed(false)}
-              className="flex items-center space-x-1.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-500/70 text-rose-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer animate-pulse"
-              title="Show dismissed 48h predictive analysis alert banner"
-            >
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
-              <span>Show 48h Alert (+{predictive48hAnalysis.increasePct}%)</span>
-            </button>
-          )}
-
-          {/* Signal Category Filter Sidebar Trigger: Select and toggle Cardiac, Environmental, and Performance signals */}
-          <button
-            onClick={() => setIsSignalFilterSidebarOpen(true)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              !signalCategories.cardiac || !signalCategories.environmental || !signalCategories.performance || !showGlobalMovingAverages
-                ? 'bg-amber-950/90 hover:bg-amber-900 border-amber-500/70 text-amber-200 ring-1 ring-amber-500/40'
-                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-            }`}
-            title="Open category-based filter sidebar to toggle visibility of Cardiac, Environmental, and Performance signals and historical moving average overlays across all metric widgets"
-          >
-            <Filter className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Signal Filters</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-900/80 text-cyan-200 border border-cyan-500/30">
-              {[signalCategories.cardiac, signalCategories.environmental, signalCategories.performance].filter(Boolean).length}/3
-            </span>
-            {showGlobalMovingAverages && (
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">
-                MA ON
-              </span>
-            )}
-          </button>
-
-          {/* Global Accessibility Mode Toggle Button */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isAccessibilityMode}
-            onClick={handleToggleAccessibilityMode}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer border ${
-              isAccessibilityMode
-                ? 'bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 font-bold'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
-            }`}
-            title="Toggle Accessibility Mode: High-contrast light presentation for visually impaired users (applies .manager-high-contrast-light to root element)"
-          >
-            <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
-            <span>Accessibility Mode</span>
-            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
-              isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400 border border-slate-700'
-            }`}>
-              {isAccessibilityMode ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          {/* Alert History Side Panel Trigger: Chronological list of past anomalies with timestamps, severity levels, and resolution notes */}
-          <button
-            type="button"
-            onClick={() => setIsAlertHistoryOpen(true)}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-indigo-500/60 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer hover:border-indigo-400"
-            title="Open chronological alert history side panel with timestamps, severity levels, and resolution notes"
-          >
-            <History className="h-3.5 w-3.5 text-indigo-400" />
-            <span>Alert History</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">
-              {pastAnomalies.length}
-            </span>
-          </button>
-
-          {/* Global Threshold Settings Modal Trigger: Customize sensitivity levels (Standard, High, Extreme) across health signals */}
-          <button
-            type="button"
-            onClick={() => setIsGlobalThresholdModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-cyan-500/60 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer hover:border-cyan-400"
-            title="Open Global Threshold Settings to customize sensitivity levels (Standard, High, Extreme, Custom) for anomaly detection across health signals"
-          >
-            <Sliders className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Global Thresholds</span>
-            <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold uppercase ${
-              globalSensitivity === 'EXTREME'
-                ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
-                : globalSensitivity === 'HIGH'
-                ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
-                : 'bg-cyan-950 text-cyan-300 border border-cyan-500/40'
-            }`}>
-              {globalSensitivity}
-            </span>
-            {activeBreachSignalKeys.length > 0 && (
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-500/50 font-bold animate-pulse flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
-                {activeBreachSignalKeys.length} BREACH
-              </span>
-            )}
-          </button>
-
-          {/* Download Options Modal Trigger: Select specific metrics to include in report before downloading */}
-          <button
-            onClick={() => setIsDownloadOptionsModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-cyan-950/40 cursor-pointer border border-cyan-400/50"
-            title="Customize and select which specific metrics (heart rate, HRV, blood pressure, etc.) to include in exported reports"
-          >
-            <Sliders className="h-3.5 w-3.5 text-white" />
-            <span>Download Options</span>
-          </button>
-
-          {/* Safety Committee PDF Report Button: Export Current Dashboard Statistics as a PDF Report for Offline Review */}
-          <button
-            onClick={() => setIsSafetyCommitteePdfModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-indigo-950/40 cursor-pointer"
-            title="Export current dashboard statistics as a PDF report for offline review by the safety committee (OSHA 1910 / ISO 45001 format)"
-          >
-            <Users className="h-3.5 w-3.5 text-white" />
-            <span>Safety Committee PDF</span>
-            <span className="text-[9px] bg-indigo-950/80 text-indigo-200 border border-indigo-400/40 px-1 py-0.2 rounded font-mono">
-              Offline
-            </span>
-          </button>
-
-          {/* Export Current Dashboard Data as CSV */}
-          <button
-            onClick={handleExportDashboardCsv}
-            className="flex items-center space-x-1.5 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Export full current dashboard data (KPIs, facility zones, telemetry snapshot, active anomalies) as a CSV file for reporting purposes"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Export Dashboard CSV</span>
-          </button>
-
-          {/* Direct Button: Serialize Current Anomaly Data to CSV for Audit Logs */}
-          <button
-            onClick={handleExportCurrentAnomalyCsvDirect}
-            className="flex items-center space-x-1.5 bg-teal-950/80 hover:bg-teal-900/80 border border-teal-500/60 text-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Serialize current anomaly data in the React state into CSV format and trigger browser download for audit logs"
-          >
-            <Download className="h-3.5 w-3.5 text-teal-400" />
-            <span>Export Anomaly State CSV</span>
-          </button>
-
-          {/* Export Health Metrics Report PDF Button */}
-          <button
-            onClick={() => setIsHealthMetricsPdfModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-400/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-cyan-950/40 cursor-pointer"
-            title="Trigger mock PDF generation process for current health metrics display"
-          >
-            <FileText className="h-3.5 w-3.5 text-white" />
-            <span>Export Report</span>
-          </button>
-
-          {/* Export Historical Workforce Health Data CSV Button */}
-          <button
-            onClick={handleExportWorkforceCsv}
-            className="flex items-center space-x-1.5 bg-emerald-950/80 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Export current 24-hour historical workforce health data as a CSV file for offline reporting"
-          >
-            <Download className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Export Health CSV</span>
-          </button>
-
-          {/* Export Historical Anomaly Compliance CSV Button */}
-          <button
-            onClick={() => setIsComplianceCsvExportModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Export historical anomaly log into a certified CSV file for OSHA 1910 and ISO 45001 compliance reporting"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Compliance CSV Export</span>
-          </button>
-
-          {/* Export to PDF Button utilizing existing print-friendly styles to generate a formal report document */}
-          <button
-            onClick={handleExportToPdfWithPrintStyles}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-500/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-rose-950/40 cursor-pointer"
-            title="Export formal report document as a PDF using the existing print-friendly styles (A4 formatted executive layout with meeting brief banner)"
-          >
-            <FileText className="h-3.5 w-3.5 text-white" />
-            <span>Export to PDF</span>
-          </button>
-
-          {/* Print for Site Meeting Button */}
-          <button
-            onClick={handlePrintDashboard}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs cursor-pointer"
-            title="Print clean, ink-friendly layout of Manager Dashboard for physical site safety briefings and meetings"
-          >
-            <Printer className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Print for Meeting</span>
-          </button>
-
-          {/* Compliance Report Modal Trigger */}
-          <button
-            onClick={() => setIsReportModalOpen(true)}
-            className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-xs cursor-pointer"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Reports &amp; Print</span>
+            <Settings className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Settings</span>
           </button>
         </div>
-      </header>
+      </div>
 
       {/* Category-Based Signal Filter & Historical Moving Average Global Strip */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg backdrop-blur-sm flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -8685,30 +7544,26 @@ export default function ManagerDashboard({
         telemetryStream={telemetryStream}
       />
 
-      {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}
-      <CriticalAnomalyToast
-        toasts={criticalAnomalyToasts}
-        onDismiss={handleDismissCriticalToast}
-        onAcknowledge={handleAcknowledgeCriticalToast}
-        onClearAll={handleClearAllCriticalToasts}
-        onDismissAll={handleClearAllCriticalToasts}
-        onDispatchAction={handleDispatchActionForCriticalToast}
-        onInspectInChart={handleInspectCriticalToastInChart}
+      {/* Unified Enterprise Toast Notification System (Single Bottom-Right Stack, Capped at Max 2) */}
+      <UnifiedNotificationToaster
+        criticalToasts={criticalAnomalyToasts}
+        breachToasts={activeToasts}
+        onDismissCritical={handleDismissCriticalToast}
+        onDismissBreach={handleDismissToast}
+        onAcknowledgeCritical={handleAcknowledgeCriticalToast}
+        onAcknowledgeBreach={handleAcknowledgeToast}
+        onClearAll={() => {
+          handleClearAllCriticalToasts();
+          handleClearAllToasts();
+        }}
+        onDispatchCritical={handleDispatchActionForCriticalToast}
+        onDispatchBreach={handleDispatchActionForToast}
+        onInspectInChart={handleInspectSignalInChart}
+        onOpenNotificationCenter={() => {
+          const el = document.getElementById('high-risk-notification-center') || document.getElementById('notification-center-section');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
         soundEnabled={toastSoundEnabled && !isAlertsMuted}
-        onToggleSound={() => setToastSoundEnabled((s) => !s)}
-        isMuted={isAlertsMuted}
-        onToggleMuteAlerts={handleToggleMuteAlerts}
-      />
-
-      {/* Real-Time Threshold Breach Notification Toast Container */}
-      <ThresholdBreachToastContainer
-        toasts={activeToasts}
-        onDismissToast={handleDismissToast}
-        onAcknowledgeToast={handleAcknowledgeToast}
-        onClearAllToasts={handleClearAllToasts}
-        onInspectSignalInChart={handleInspectSignalInChart}
-        onDispatchActionForToast={handleDispatchActionForToast}
-        soundEnabled={toastSoundEnabled}
         onToggleSound={() => setToastSoundEnabled((s) => !s)}
       />
 

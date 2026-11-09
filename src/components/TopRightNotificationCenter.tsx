@@ -158,54 +158,41 @@ export default function TopRightNotificationCenter({
   };
 
   return (
-    <div ref={dropdownRef} className={`relative inline-block ${className}`}>
+    <div ref={dropdownRef} className={`relative inline-flex items-center ${className}`}>
       {/* Top-Right Notification Center Trigger Button */}
       <button
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer select-none ${
+        className={`h-9 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-xs font-medium transition border cursor-pointer select-none ${
           isRiskCurrentlyBreached
-            ? 'bg-gradient-to-r from-rose-950/90 to-amber-950/90 hover:from-rose-900 hover:to-amber-900 border-rose-500/80 text-rose-100 shadow-md shadow-rose-950/60 ring-1 ring-rose-500/50'
+            ? 'bg-rose-950/90 hover:bg-rose-900 border-rose-500/80 text-rose-100 shadow-xs ring-1 ring-rose-500/40'
             : totalUnacknowledged > 0
-            ? 'bg-rose-950/90 hover:bg-rose-900 border-rose-500/70 text-rose-200 shadow-md shadow-rose-950/60 ring-1 ring-rose-500/40'
-            : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+            ? 'bg-rose-950/90 hover:bg-rose-900 border-rose-500/70 text-rose-200 shadow-xs'
+            : 'bg-slate-950 hover:bg-slate-900 border-slate-700 text-slate-300'
         }`}
         title={`Notification Center: Threshold ${telemetryRiskThreshold}% (Current: ${currentTelemetryRisk.toFixed(1)}%) | ${totalUnacknowledged} unread`}
         aria-label="Notification Center"
         aria-expanded={isOpen}
       >
         {isRiskCurrentlyBreached || totalUnacknowledged > 0 ? (
-          <BellRing className="h-4 w-4 text-rose-400 animate-bounce" />
+          <BellRing className="h-3.5 w-3.5 text-rose-400 shrink-0" />
         ) : (
-          <Bell className="h-4 w-4 text-slate-400" />
+          <Bell className="h-3.5 w-3.5 text-slate-400 shrink-0" />
         )}
-        <span className="hidden sm:inline font-bold">Notifications</span>
-
-        {/* Live Threshold Breach Pill */}
-        {isRiskCurrentlyBreached && (
-          <span className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded bg-rose-600 text-white font-mono text-[9px] font-bold uppercase animate-pulse">
-            Risk {currentTelemetryRisk.toFixed(1)}% &gt; {telemetryRiskThreshold}%
-          </span>
-        )}
+        <span className="hidden sm:inline font-semibold">Notifications</span>
 
         {/* Count Badge */}
         {totalUnacknowledged > 0 ? (
-          <span className="flex items-center">
-            <span className="relative flex h-2 w-2 mr-1">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-            </span>
-            <span className="bg-rose-600 text-white font-mono font-bold px-1.5 py-0.5 rounded-full text-[10px] tabular-nums">
-              {totalUnacknowledged}
-            </span>
+          <span className="inline-flex items-center justify-center bg-rose-600 text-white font-mono font-bold px-1.5 py-0.5 rounded-full text-[10px] tabular-nums shrink-0 leading-none">
+            {totalUnacknowledged}
           </span>
         ) : (
-          <span className="text-slate-500 text-[10px] font-mono">0</span>
+          <span className="text-slate-500 text-[10px] font-mono shrink-0">0</span>
         )}
       </button>
 
       {/* Dropdown Flyout Panel */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-84 sm:w-[420px] bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl z-50 overflow-hidden font-sans backdrop-blur-md animate-fadeIn">
+        <div className="absolute right-0 top-full mt-2 w-84 sm:w-[420px] bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl z-50 overflow-hidden font-sans backdrop-blur-md animate-fadeIn">
           {/* Header */}
           <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center space-x-2">

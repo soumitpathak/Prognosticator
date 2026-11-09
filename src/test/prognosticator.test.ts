@@ -1,0 +1,394 @@
+import { describe, it, expect } from 'vitest';
+import { KalmanFilterSimulator, defaultKalman } from '../services/kalmanFilter';
+import { PrivacyShieldLayer, defaultPrivacyShield } from '../services/privacyShield';
+import {
+  computeLstmReconstructionAnomaly,
+  predictWorkforceAnomaly,
+  simulateScenarioAnomaly,
+  computeHeatIndexFromTempAndHumidity
+} from '../services/lstmAnomalyEngine';
+import { calculateHeatIndex, calculateWhatIfImpact, WHAT_IF_PRESETS } from '../services/whatIfSimulationEngine';
+import {
+  generate30DayDegradationProjection,
+  predictiveMaintenanceService,
+  INITIAL_IOT_ENDPOINTS
+} from '../services/predictiveMaintenanceService';
+import { causalCorrelationEngineService } from '../services/causalCorrelationEngineService';
+import {
+  generateWeeklyWorkerDensityMatrix,
+  getPast7DaysDates
+} from '../services/workerDensityCorrelationService';
+import { systemComplianceService } from '../services/systemComplianceService';
+import { nlpAnomalyInsightsService } from '../services/nlpAnomalyInsightsService';
+import { generateLstm12hForecast } from '../services/lstm12hForecastingService';
+
+describe('1. Kalman Filter & Signal Processing', () => {
+  it('should return an empty array when smoothing an empty or null array', () => {
+    const filter = new KalmanFilterSimulator();
+    expect(filter.smooth([])).toEqual([]);
+    // @ts-expect-error testing runtime null resilience
+    expect(filter.smooth(null)).toEqual([]);
+  });
+
+  it('should reduce variance and smooth high-frequency sensor noise', () => {
+    const filter = new KalmanFilterSimulator(0.01, 0.5);
+    const noisyData = [70, 78, 65, 82, 63, 79, 64, 80];
+    const smoothed = filter.smooth(noisyData);
+
+    expect(smoothed.length).toBe(noisyData.length);
+    for (const val of smoothed) {
+      expect(val).toBeGreaterThan(60);
+      expect(val).toBeLessThan(85);
+    }
+    const finalVal = smoothed[smoothed.length - 1];
+    expect(Math.abs(finalVal - 72.6)).toBeLessThan(5);
+  });
+
+  it('should impute missing or non-finite measurements safely without throwing', () => {
+    const filter = new KalmanFilterSimulator();
+    const dataWithGaps = [70, NaN, 72, Infinity, -Infinity, 71];
+    const smoothed = filter.smooth(dataWithGaps);
+
+    expect(smoothed.length).toBe(dataWithGaps.length);
+    smoothed.forEach((val) => {
+      expect(Number.isFinite(val)).toBe(true);
+    });
+  });
+
+  it('should perform single step updates correctly', () => {
+    const filter = new KalmanFilterSimulator(0.02, 0.1);
+    const step1 = filter.step(75, 70, 1.0);
+    expect(step1.estimate).toBeGreaterThan(70);
+    expect(step1.estimate).toBeLessThanOrEqual(75);
+    expect(step1.covariance).toBeGreaterThan(0);
+  });
+});
+
+describe('2. Privacy Shield & k-Anonymity Layer', () => {
+  it('should enforce k-Anonymity small-cell suppression when cohort N < 12', () => {
+    const shield = new PrivacyShieldLayer(12, 0.5);
+
+    expect(shield.isCohortSuppressed(11)).toBe(true);
+    expect(shield.isCohortSuppressed(5)).toBe(true);
+    expect(shield.isCohortSuppressed(12)).toBe(false);
+    expect(shield.isCohortSuppressed(20)).toBe(false);
+
+    const suppressedResult = shield.sanitizeAlertPayload({
+      cohort_size: 7,
+      risk_score: 85,
+      risk_probability: 0.85
+    });
+
+    expect(suppressedResult.isSuppressed).toBe(true);
+    expect(suppressedResult.sanitized.risk_score).toBe(0);
+    expect(suppressedResult.sanitized.risk_probability).toBe(0);
+    expect(suppressedResult.disciplinaryUseAllowed).toBe(false);
+    expect(suppressedResult.complianceNotice).toContain('Small-Cell Suppression Applied');
+  });
+
+  it('should allow cohort aggregation and inject Laplace differential privacy noise when N >= 12', () => {
+    const shield = new PrivacyShieldLayer(12, 0.5);
+    const result = shield.sanitizeAlertPayload({
+      cohort_size: 15,
+      risk_score: 50,
+      risk_probability: 0.5
+    });
+
+    expect(result.isSuppressed).toBe(false);
+    expect(typeof result.differentialPrivacyNoise).toBe('number');
+    expect(Number.isFinite(result.differentialPrivacyNoise)).toBe(true);
+    expect(result.sanitized.risk_score).toBeGreaterThanOrEqual(0);
+    expect(result.sanitized.risk_score).toBeLessThanOrEqual(100);
+    expect(result.disciplinaryUseAllowed).toBe(false);
+  });
+
+  it('should handle Laplace noise sampling safely across multiple draws', () => {
+    const shield = new PrivacyShieldLayer(12, 0.5);
+    for (let i = 0; i < 50; i++) {
+      const sample = shield.sampleLaplace(1.0);
+      expect(Number.isFinite(sample)).toBe(true);
+      expect(Number.isNaN(sample)).toBe(false);
+    }
+  });
+});
+
+describe('3. LSTM Explainable Anomaly Detection Engine', () => {
+  it('should compute physiological reconstruction MSE and tier classifications accurately', () => {
+    const normal = computeLstmReconstructionAnomaly([68, 67, 68], [36.5, 36.6], 28.0, 0);
+    expect(normal.riskTier).toBe('STABLE');
+    expect(normal.riskProbability).toBeLessThan(0.40);
+    expect(normal.mseScore).toBeLessThan(0.15);
+
+    const critical = computeLstmReconstructionAnomaly([35, 30, 25], [38.5, 39.0, 39.2], 45.0, 6.0);
+    expect(critical.riskTier).toBe('CRITICAL_RISK');
+    expect(critical.riskProbability).toBeGreaterThan(0.75);
+    expect(critical.attributions['Heart Rate Variability (HRV) Drop']).toBeGreaterThan(0);
+    expect(critical.recommendedAction).toContain('Immediate extraction');
+  });
+
+  it('should predict workforce anomaly with privacy shield integration', () => {
+    const payload = {
+      worker_id: 'W-9042',
+      location_zone: 'Zone-Foundry-A',
+      timestamp: new Date().toISOString(),
+      hrv_series: [68, 65, 55, 42, 38],
+      skin_temp_series: [36.5, 36.8, 37.4, 38.1],
+      heat_index: 41,
+      sleep_deficit_hours: 4.5,
+      cohort_size: 16
+    };
+
+    const result = predictWorkforceAnomaly(payload);
+    expect(result.status).toBe('success');
+    expect(result.is_suppressed).toBe(false);
+    expect(result.risk_probability).toBeGreaterThan(0);
+    expect(Object.keys(result.explainable_attributions).length).toBe(4);
+  });
+
+  it('should suppress prediction when cohort size violates k-anonymity', () => {
+    const smallCohortPayload = {
+      worker_id: 'W-SECRET-01',
+      location_zone: 'Zone-Isolated-01',
+      timestamp: new Date().toISOString(),
+      hrv_series: [40, 38],
+      skin_temp_series: [38.5],
+      heat_index: 44,
+      sleep_deficit_hours: 5,
+      cohort_size: 4
+    };
+
+    const result = predictWorkforceAnomaly(smallCohortPayload);
+    expect(result.status).toBe('suppressed');
+    expect(result.is_suppressed).toBe(true);
+    expect(result.worker_id).toContain('[MASKED');
+  });
+
+  it('should simulate scenario anomaly with explainability attributions', () => {
+    const simResult = simulateScenarioAnomaly({
+      ambientTempC: 42,
+      relativeHumidityPct: 75,
+      noiseLevelDb: 95,
+      trafficDensityLevel: 8,
+      workerHeartRateBpm: 135,
+      hrvMs: 28,
+      sleepDeficitHours: 4.0
+    });
+
+    expect(simResult.riskTier).toBe('CRITICAL_RISK');
+    expect(simResult.topAttributions.length).toBeGreaterThan(0);
+    expect(simResult.topAttributions[0].attributionPct).toBeGreaterThan(0);
+    expect(simResult.explainabilitySummary).toContain('LSTM-Kalman engine');
+  });
+});
+
+describe('4. Heat Index and What-If Simulation Engine', () => {
+  it('should compute Heat Index in Celsius consistently', () => {
+    const hiHigh = calculateHeatIndex(35, 70);
+    expect(hiHigh).toBeGreaterThan(45);
+
+    const hiLow = calculateHeatIndex(22, 50);
+    expect(hiLow).toBeCloseTo(22, 0);
+  });
+
+  it('should compute What-If parameter impacts and calculate herd immunity transitions', () => {
+    const nominal = calculateWhatIfImpact({
+      vaccinationRatePct: 82,
+      seasonalHumidityPct: 55,
+      ambientHeatC: 34.0,
+      shiftDurationHours: 8.5,
+      ppeCoolingMitigationPct: 85,
+      restHydrationFrequencyMin: 15,
+      isSimulationActive: true
+    });
+
+    expect(nominal.herdImmunityAchieved).toBe(true);
+    expect(nominal.netRiskDelta).toBeCloseTo(0, 0);
+
+    const severe = calculateWhatIfImpact({
+      vaccinationRatePct: 40,
+      seasonalHumidityPct: 80,
+      ambientHeatC: 45.0,
+      shiftDurationHours: 12.0,
+      ppeCoolingMitigationPct: 50,
+      restHydrationFrequencyMin: 5,
+      isSimulationActive: true
+    });
+
+    expect(severe.herdImmunityAchieved).toBe(false);
+    expect(severe.netRiskDelta).toBeGreaterThan(20);
+    expect(severe.riskTier).toBe('CRITICAL_SURGE');
+  });
+
+  it('should validate What-If presets consistency', () => {
+    expect(WHAT_IF_PRESETS.length).toBeGreaterThanOrEqual(4);
+    const summer = WHAT_IF_PRESETS.find((p) => p.id === 'SUMMER_HEATWAVE');
+    expect(summer).toBeDefined();
+    expect(summer?.params.ambientHeatC).toBeGreaterThan(40);
+  });
+});
+
+describe('5. Predictive IoT Maintenance & 30-Day Projections', () => {
+  it('should generate 30 days of forward degradation projections', () => {
+    const endpoints = predictiveMaintenanceService.getEndpoints();
+    expect(endpoints.length).toBeGreaterThan(0);
+
+    const firstEp = endpoints[0];
+    const projection = generate30DayDegradationProjection(firstEp, 1.0);
+
+    expect(projection.length).toBe(30);
+    expect(projection[0].day).toBe(1);
+    expect(projection[29].day).toBe(30);
+
+    expect(projection[29].healthIndex).toBeLessThanOrEqual(projection[0].healthIndex);
+    expect(projection[0].healthIndex).toBeLessThanOrEqual(100);
+    expect(projection[29].healthIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should stage maintenance and execute preventive recalibration', () => {
+    const endpoints = predictiveMaintenanceService.getEndpoints();
+    const targetId = endpoints[0].endpointId;
+
+    const staged = predictiveMaintenanceService.stageMaintenanceForEndpoint(targetId);
+    expect(staged?.isStagedForMaintenance).toBe(true);
+
+    const recalibrated = predictiveMaintenanceService.executePreventiveCalibration(targetId);
+    expect(recalibrated?.healthScore).toBe(96);
+    expect(recalibrated?.forecastHorizon).toBe('NOMINAL');
+    expect(recalibrated?.isStagedForMaintenance).toBe(false);
+  });
+});
+
+describe('6. Causal Correlation Engine & Inter-Zone Propagation', () => {
+  it('should retrieve active inter-zone causal nodes and propagation links', () => {
+    const links = causalCorrelationEngineService.getLinks();
+    expect(links.length).toBeGreaterThan(0);
+
+    for (const link of links) {
+      expect(link.sourceZoneId).toBeDefined();
+      expect(link.targetZoneId).toBeDefined();
+      expect(link.pearsonR).toBeGreaterThanOrEqual(-1);
+      expect(link.pearsonR).toBeLessThanOrEqual(1);
+      expect(link.causalConfidencePct).toBeGreaterThanOrEqual(0);
+      expect(link.causalConfidencePct).toBeLessThanOrEqual(100);
+    }
+
+    const nodes = causalCorrelationEngineService.getNodes();
+    expect(nodes.length).toBeGreaterThan(0);
+  });
+
+  it('should simulate cascade and allow decoupling link', () => {
+    const links = causalCorrelationEngineService.getLinks();
+    const firstLink = links[0];
+    const decoupled = causalCorrelationEngineService.decoupleLink(firstLink.id);
+    expect(decoupled?.isCascadingActive).toBe(false);
+    expect(decoupled?.causalConfidencePct).toBeLessThan(firstLink.causalConfidencePct);
+
+    causalCorrelationEngineService.triggerSimulatedCascade(links[0].sourceZoneId);
+    const updatedLinks = causalCorrelationEngineService.getLinks();
+    expect(updatedLinks.length).toBeGreaterThan(0);
+  });
+});
+
+describe('7. Worker Density Correlation & Overcrowding Detection', () => {
+  it('should calculate 168-hour weekly density matrix and Pearson correlation coefficient', () => {
+    const { cells, summary } = generateWeeklyWorkerDensityMatrix([], 'ALL', 'ALL');
+
+    expect(cells.length).toBe(168);
+    expect(summary.totalWeeklyObservations).toBe(168);
+    expect(summary.pearsonR).toBeGreaterThan(-1);
+    expect(summary.pearsonR).toBeLessThanOrEqual(1);
+    expect(summary.dailyStats.length).toBe(7);
+    expect(summary.hourlyProfile.length).toBe(24);
+  });
+
+  it('should retrieve 7 past calendar dates', () => {
+    const days = getPast7DaysDates();
+    expect(days.length).toBe(7);
+    days.forEach((d) => {
+      expect(d.dateStr).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
+});
+
+describe('8. System Compliance & HIPAA Audit Module', () => {
+  it('should record audit events with cryptographic seals and privacy verification', () => {
+    const initialEvents = systemComplianceService.getEvents();
+    const initialCount = initialEvents.length;
+
+    const newEvent = systemComplianceService.logEvent({
+      accessorId: 'USR-TEST-01',
+      accessorName: 'Security Lead Jane Doe',
+      accessorRole: 'EHS Director',
+      department: 'Occupational Health',
+      reportName: 'Biometric Anomaly Triage',
+      reportType: 'BIOMETRIC_TELEMETRY',
+      accessAction: 'VIEWED_STREAM',
+      hipaaClassification: 'HIPAA Safe Harbor De-Identified',
+      privacyShieldMetric: {
+        epsilonConsumed: 0.05,
+        kAnonymityCount: 18,
+        laplaceNoiseBudgetRemaining: 0.45,
+        status: 'COMPLIANT_AUTHORIZED'
+      },
+      dataSubjectCount: 18,
+      justification: 'Automated test suite validation',
+      ipAddress: '127.0.0.1',
+      terminalId: 'TEST-TERM-01'
+    });
+
+    expect(newEvent.cryptographicHash).toBeDefined();
+    expect(newEvent.cryptographicHash.length).toBeGreaterThan(20);
+
+    const updatedEvents = systemComplianceService.getEvents();
+    expect(updatedEvents.length).toBe(initialCount + 1);
+
+    const metrics = systemComplianceService.getSummaryMetrics();
+    expect(metrics.totalEvents24h).toBeGreaterThan(0);
+    expect(metrics.complianceRatePct).toBeGreaterThan(70);
+  });
+});
+
+describe('9. NLP Anomaly Semantic Insights Service', () => {
+  it('should synthesize root-cause summaries and entity extraction', () => {
+    const report = nlpAnomalyInsightsService.generate24hInsights([], [], 24);
+
+    expect(report.totalAnomaliesProcessed).toBeGreaterThan(0);
+    expect(report.topAnomalyTypes.length).toBeGreaterThan(0);
+    expect(report.executiveDiagnosticNarrative).toBeDefined();
+    expect(report.executiveDiagnosticNarrative.length).toBeGreaterThan(50);
+    expect(report.modelMetadata.semanticCoherenceScore).toBeGreaterThan(0.9);
+  });
+});
+
+describe('10. LSTM 12-Hour Forward Forecasting', () => {
+  it('should project 12 hours forward for baseline, heat surge, and mitigated scenarios', () => {
+    const dummyAlerts = [
+      {
+        id: 'A-1',
+        worker_id: 'W-1',
+        location_zone: 'Outdoor-Construction-Sector-4',
+        detected_at: new Date().toISOString(),
+        anomaly_metric: 'HRV',
+        raw_value: '35 ms',
+        kalman_smoothed_value: '36 ms',
+        severity: 'CRITICAL' as const,
+        kalman_status: 'Jitter Filtered & Validated' as const,
+        lead_time: '2h',
+        recommended_action: 'Cooling',
+        acknowledged: false,
+        privacy_status: 'Masked'
+      }
+    ];
+
+    const baselineForecast = generateLstm12hForecast(dummyAlerts, undefined, { scenario: 'BASELINE' });
+    expect(baselineForecast.hours.length).toBe(12);
+    expect(baselineForecast.peakHourOffset).toBeGreaterThanOrEqual(1);
+    expect(baselineForecast.peakHourOffset).toBeLessThanOrEqual(12);
+
+    const heatSurgeForecast = generateLstm12hForecast(dummyAlerts, undefined, { scenario: 'HEAT_SURGE' });
+    expect(heatSurgeForecast.projectedPeakRisk).toBeGreaterThanOrEqual(baselineForecast.projectedPeakRisk);
+
+    const mitigatedForecast = generateLstm12hForecast(dummyAlerts, undefined, { scenario: 'MITIGATED' });
+    expect(mitigatedForecast.projectedPeakRisk).toBeLessThanOrEqual(baselineForecast.projectedPeakRisk);
+  });
+});

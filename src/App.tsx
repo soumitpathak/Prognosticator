@@ -56,13 +56,10 @@ export default function App() {
     }`}>
       {/* Top Universal Mode Bar */}
       <div className="bg-slate-950 border-b border-slate-800 px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center space-x-2">
-          <span className="text-cyan-400 font-bold tracking-wider font-mono text-[11px]">PROGNOSTICATOR v2.0</span>
-          <span className="text-slate-600">/</span>
-          <div className="flex items-center space-x-1.5 text-slate-400 text-[11px]">
-            <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
-            <span>Azure IoT Hub Gateway Active</span>
-          </div>
+        <div className="flex items-center space-x-2.5">
+          <span className="text-white font-bold tracking-tight text-sm font-sans">Prognosticator</span>
+          <span className="text-slate-600 hidden sm:inline">·</span>
+          <span className="text-slate-400 text-xs hidden sm:inline">Workforce Health Early Warning Intelligence</span>
         </div>
 
         {/* View Mode Switcher */}
@@ -139,18 +136,15 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent System Health Footer matching API /health */}
-      <footer className="bg-slate-950 border-t border-slate-900 px-4 md:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+      {/* Persistent Platform & Compliance Footer */}
+      <footer className="bg-slate-950 border-t border-slate-900 px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
         <div className="flex items-center space-x-3">
-          <span className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-            <span className="text-slate-400">Engine: Prognosticator LSTM-Kalman Core (Online)</span>
-          </span>
-          <span className="hidden sm:inline text-slate-700">|</span>
-          <span className="text-slate-400">Compliance: GDPR &amp; HIPAA Aligned</span>
+          <span>&copy; 2026 Prognosticator Intelligence Platform</span>
+          <span className="hidden sm:inline text-slate-700">·</span>
+          <span className="text-slate-400">GDPR &amp; HIPAA Privacy Shield Certified</span>
         </div>
-        <div className="text-slate-500 font-mono">
-          Privacy Shield: k-Anonymity (N &ge; 12) &amp; &epsilon;-DP (0.5) Enforced
+        <div className="text-slate-500 text-[11px] font-mono">
+          Non-Punitive Telemetry · k-Anonymity (N &ge; 12) &amp; &epsilon;-DP (0.5) Enforced
         </div>
       </footer>
 
