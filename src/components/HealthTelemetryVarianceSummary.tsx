@@ -18,12 +18,14 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { TelemetryDataPoint, FacilityZone } from '../types';
+import MiniSparkline from './MiniSparkline';
 
 export interface HealthTelemetryVarianceSummaryProps {
   telemetryStream: TelemetryDataPoint[];
   selectedZone?: FacilityZone | null;
   className?: string;
   theme?: 'dark' | 'high-contrast-light';
+  thresholdBreaches?: string[];
 }
 
 export interface MetricVarianceItem {
@@ -38,13 +40,16 @@ export interface MetricVarianceItem {
   description: string;
   benchmarkTarget: string;
   icon: React.ReactNode;
+  trend24h: number[];
+  sparklineColor: string;
 }
 
 export default function HealthTelemetryVarianceSummary({
   telemetryStream,
   selectedZone,
   className = '',
-  theme = 'dark'
+  theme = 'dark',
+  thresholdBreaches = []
 }: HealthTelemetryVarianceSummaryProps) {
   const [selectedBaseline, setSelectedBaseline] = useState<'7D_PRIOR' | 'SHIFT_BASELINE'>('7D_PRIOR');
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
@@ -90,7 +95,9 @@ export default function HealthTelemetryVarianceSummary({
         isWorsening: risk24h > riskPrior,
         description: 'Multi-signal composite risk score across active workforce cohort',
         benchmarkTarget: '≤ 30.0%',
-        icon: <ShieldAlert className="h-4 w-4 text-cyan-400" />
+        icon: <ShieldAlert className="h-4 w-4 text-cyan-400" />,
+        trend24h: recent24hPoints.map((p) => Number((p.risk_score || 0).toFixed(1))),
+        sparklineColor: '#06b6d4'
       },
       {
         key: 'hrv',
@@ -103,7 +110,9 @@ export default function HealthTelemetryVarianceSummary({
         isWorsening: hrv24h < hrvPrior, // Drop in HRV signifies increased autonomic fatigue
         description: 'Vagal tone and autonomic nervous system cardiovascular recovery capacity',
         benchmarkTarget: '≥ 45.0 ms',
-        icon: <Activity className="h-4 w-4 text-indigo-400" />
+        icon: <Activity className="h-4 w-4 text-indigo-400" />,
+        trend24h: recent24hPoints.map((p) => Number((p.smoothed_hrv || p.raw_hrv || 50).toFixed(1))),
+        sparklineColor: '#818cf8'
       },
       {
         key: 'heart_rate',
@@ -116,7 +125,9 @@ export default function HealthTelemetryVarianceSummary({
         isWorsening: hr24h > hrPrior,
         description: 'Mean cardiovascular demand and cardiac workload during active shift cycles',
         benchmarkTarget: '≤ 85.0 BPM',
-        icon: <Heart className="h-4 w-4 text-rose-400" />
+        icon: <Heart className="h-4 w-4 text-rose-400" />,
+        trend24h: recent24hPoints.map((p) => Number((p.heart_rate_bpm ?? (70 + (p.risk_score || 0) * 0.45)).toFixed(1))),
+        sparklineColor: '#f43f5e'
       },
       {
         key: 'skin_temp',
@@ -129,7 +140,9 @@ export default function HealthTelemetryVarianceSummary({
         isWorsening: skin24h > skinPrior,
         description: 'Cutaneous temperature indicating peripheral vasodilation & thermal accumulation',
         benchmarkTarget: '≤ 37.5°C',
-        icon: <Thermometer className="h-4 w-4 text-amber-400" />
+        icon: <Thermometer className="h-4 w-4 text-amber-400" />,
+        trend24h: recent24hPoints.map((p) => Number((p.smoothed_skin_temp || p.skin_temp_c || 36.8).toFixed(1))),
+        sparklineColor: '#f59e0b'
       },
       {
         key: 'twl_index',
@@ -142,7 +155,9 @@ export default function HealthTelemetryVarianceSummary({
         isWorsening: twl24h < twlPrior, // Drop in TWL indicates lower safe metabolic output
         description: 'Maximum safe continuous metabolic work rate in monitored ambient environment',
         benchmarkTarget: '≥ 115 W/m²',
-        icon: <Flame className="h-4 w-4 text-blue-400" />
+        icon: <Flame className="h-4 w-4 text-blue-400" />,
+        trend24h: recent24hPoints.map((p) => Number((p.twl_index || 135).toFixed(1))),
+        sparklineColor: '#38bdf8'
       },
       {
         key: 'ambient_heat',
@@ -155,7 +170,9 @@ export default function HealthTelemetryVarianceSummary({
         isWorsening: ambient24h > ambientPrior,
         description: 'Environmental radiant heat index recorded across facility sensor mesh',
         benchmarkTarget: '≤ 32.0°C',
-        icon: <Clock className="h-4 w-4 text-orange-400" />
+        icon: <Clock className="h-4 w-4 text-orange-400" />,
+        trend24h: recent24hPoints.map((p) => Number((p.ambient_temp_c || 32.0).toFixed(1))),
+        sparklineColor: '#fb923c'
       }
     ];
 
@@ -283,10 +300,16 @@ export default function HealthTelemetryVarianceSummary({
                 : 'bg-amber-950/90 text-amber-300 border-amber-500/60';
             }
 
+            const isBreached = thresholdBreaches.includes(item.key);
+
             return (
               <div
                 key={item.key}
-                className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between"
+                className={`p-3 rounded-xl transition flex flex-col justify-between ${
+                  isBreached
+                    ? 'bg-rose-950/40 border-2 border-rose-500 ring-2 ring-rose-500/40 shadow-lg shadow-rose-950/50'
+                    : 'bg-slate-950 border border-slate-800 hover:border-slate-700'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between text-slate-400 text-xs mb-1.5">
@@ -294,6 +317,11 @@ export default function HealthTelemetryVarianceSummary({
                       {item.icon}
                       <span className="truncate">{item.label}</span>
                     </span>
+                    {isBreached && (
+                      <span className="text-[9px] font-mono font-bold text-rose-300 bg-rose-950 border border-rose-500/60 px-1.5 py-0.2 rounded animate-pulse flex items-center gap-1 shrink-0">
+                        <AlertTriangle className="h-2.5 w-2.5 text-rose-400" /> BREACH
+                      </span>
+                    )}
                   </div>
 
                   {/* 24h Value vs Prior Week */}
@@ -319,7 +347,48 @@ export default function HealthTelemetryVarianceSummary({
                   </div>
                 </div>
 
-                <div className="mt-2.5 pt-2 border-t border-slate-850 text-[10px] space-y-0.5 font-mono">
+                {/* 24-Hour Primary Signal Trend Mini-Sparkline */}
+                <div className="mt-2.5 pt-2 border-t border-slate-850/80">
+                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-1">
+                    <span className="font-semibold text-slate-400">24h Signal Trend</span>
+                    <div className="flex items-center gap-1">
+                      {item.trend24h && item.trend24h.length >= 2 && (() => {
+                        const first = item.trend24h[0];
+                        const last = item.trend24h[item.trend24h.length - 1];
+                        const pct = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
+                        const isUp = pct > 0.05;
+                        const isDown = pct < -0.05;
+                        const isPositive = item.isWorsening ? isDown : isUp;
+                        return (
+                          <span
+                            className={`flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-mono font-bold ${
+                              isPositive
+                                ? 'bg-emerald-950/70 text-emerald-400 border border-emerald-500/30'
+                                : Math.abs(pct) > 0.05
+                                ? 'bg-amber-950/70 text-amber-400 border border-amber-500/30'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            {isUp ? <TrendingUp className="h-2.5 w-2.5" /> : isDown ? <TrendingDown className="h-2.5 w-2.5" /> : null}
+                            <span>{pct >= 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`}</span>
+                          </span>
+                        );
+                      })()}
+                      <span className="text-[8px] text-slate-500">24h Shift</span>
+                    </div>
+                  </div>
+                  <MiniSparkline
+                    data={item.trend24h}
+                    color={item.sparklineColor}
+                    unit={item.unit}
+                    height={32}
+                    showMinMax={true}
+                    showCurrentDot={true}
+                    ariaLabel={`${item.label} 24-hour trend sparkline`}
+                  />
+                </div>
+
+                <div className="mt-2 pt-1.5 border-t border-slate-850 text-[10px] space-y-0.5 font-mono">
                   <div className="flex justify-between text-slate-400">
                     <span>Prior 7D Baseline:</span>
                     <span className="text-slate-300 font-semibold">{item.priorWeekAvg} {item.unit}</span>

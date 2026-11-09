@@ -24,7 +24,8 @@ import {
   Filter,
   Thermometer,
   RotateCcw,
-  Eye
+  Eye,
+  Minus
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -74,6 +75,8 @@ import SensorCorrelationScatterPlot from './SensorCorrelationScatterPlot';
 import ReportExportModal from './ReportExportModal';
 import HealthMetricsPdfExportModal from './HealthMetricsPdfExportModal';
 import DownloadOptionsModal from './DownloadOptionsModal';
+import SafetyCommitteePdfExportModal from './SafetyCommitteePdfExportModal';
+import { generateSafetyCommitteePdfReport } from '../services/safetyCommitteePdfGenerator';
 import SignalCategoryFilterSidebar, {
   DEFAULT_SIGNAL_CATEGORIES,
   DEFAULT_GRANULAR_SIGNALS,
@@ -144,7 +147,7 @@ import AnomalyTelemetryDetailModal from './AnomalyTelemetryDetailModal';
 import RecentAnomalyTriggersRunningLogPanel from './RecentAnomalyTriggersRunningLogPanel';
 import PatternRecognitionPanel from './PatternRecognitionPanel';
 import DepartmentSeverityStackedBarChart from './DepartmentSeverityStackedBarChart';
-import PopulationHealthSparkline, { MiniSparkline } from './PopulationHealthSparkline';
+import PopulationHealthSparkline from './PopulationHealthSparkline';
 import HistoricalPopulationHealthAnomaliesLog from './HistoricalPopulationHealthAnomaliesLog';
 import TemporalAnomalyHeatmap from './TemporalAnomalyHeatmap';
 import RiskHeatmapRadarWidget from './RiskHeatmapRadarWidget';
@@ -171,6 +174,8 @@ import TopRightNotificationCenter from './TopRightNotificationCenter';
 import FacilityZonesRiskTrendChart from './FacilityZonesRiskTrendChart';
 import SecurityAuditLogPanel from './SecurityAuditLogPanel';
 import AnomalyTrendSparklineWidget from './AnomalyTrendSparklineWidget';
+import MiniSparkline from './MiniSparkline';
+import ExplainableAnomalyTooltip from './ExplainableAnomalyTooltip';
 import ZoneAnomalyConcentrationHeatmap from './ZoneAnomalyConcentrationHeatmap';
 import PrognosticForecastPanel from './PrognosticForecastPanel';
 import PredictiveTrendAlertsPanel from './PredictiveTrendAlertsPanel';
@@ -183,6 +188,9 @@ import SignedComplianceReportModal from './SignedComplianceReportModal';
 import ComplianceAuditLog from './ComplianceAuditLog';
 import ManagerSummaryMetricsRow from './ManagerSummaryMetricsRow';
 import ResourceUtilizationPanel from './ResourceUtilizationPanel';
+import AlertHistory, { PastAnomalyRecord, INITIAL_PAST_ANOMALIES } from './AlertHistory';
+import GlobalThresholdSettingsModal, { GlobalSensitivityLevel } from './GlobalThresholdSettingsModal';
+import GlobalThresholdAlertBanner, { ActiveSignalBreach } from './GlobalThresholdAlertBanner';
 import { complianceAuditService } from '../services/complianceAuditService';
 import { chartAnnotationService } from '../services/chartAnnotationService';
 import { generateDashboardSummaryPdfReport } from '../services/dashboardSummaryPdfGenerator';
@@ -234,6 +242,78 @@ const INITIAL_MEDICAL_DISPATCHES: MedicalDispatchNotification[] = [
   }
 ];
 
+/**
+ * Small percentage change indicator component displayed alongside sparklines
+ * to highlight positive or negative shifts in health signals over the last 24 hours.
+ */
+export function HealthSignal24hBadge({
+  data,
+  lowerIsBetter = false,
+  label = '24h',
+  className = ''
+}: {
+  data: number[];
+  lowerIsBetter?: boolean;
+  label?: string;
+  className?: string;
+}) {
+  const shift = useMemo(() => {
+    if (!data || data.length < 2) {
+      return { pct: 0, text: '0.0%', isIncrease: false, isDecrease: false, isFlat: true };
+    }
+    const first = data[0];
+    const last = data[data.length - 1];
+    if (Math.abs(first) < 0.0001) {
+      const diff = last - first;
+      return {
+        pct: diff,
+        text: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`,
+        isIncrease: diff > 0.05,
+        isDecrease: diff < -0.05,
+        isFlat: Math.abs(diff) <= 0.05
+      };
+    }
+    const pct = ((last - first) / Math.abs(first)) * 100;
+    return {
+      pct,
+      text: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`,
+      isIncrease: pct > 0.05,
+      isDecrease: pct < -0.05,
+      isFlat: Math.abs(pct) <= 0.05
+    };
+  }, [data]);
+
+  // Determine positive (improving) or negative (degrading) shift
+  // For risk score, anomalies, vibration, temperature: lower is better (a decrease is an improvement)
+  // For resilience, connectivity, staffing, HRV: higher is better (an increase is an improvement)
+  const isImproving = lowerIsBetter ? shift.isDecrease : shift.isIncrease;
+  const isWorsening = lowerIsBetter ? shift.isIncrease : shift.isDecrease;
+
+  let colorClasses = 'bg-slate-800/90 text-slate-300 border-slate-700/80';
+  let IconComponent = Minus;
+
+  if (isImproving) {
+    colorClasses = 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-xs shadow-emerald-950/40';
+    IconComponent = shift.isIncrease ? TrendingUp : TrendingDown;
+  } else if (isWorsening) {
+    colorClasses = Math.abs(shift.pct) >= 8
+      ? 'bg-rose-950/90 text-rose-300 border-rose-500/50 shadow-xs shadow-rose-950/40'
+      : 'bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-xs shadow-amber-950/40';
+    IconComponent = shift.isIncrease ? TrendingUp : TrendingDown;
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${colorClasses} ${className}`}
+      title={`${shift.text} shift in health signal over the last 24 hours (${isImproving ? 'Improving health trajectory' : isWorsening ? 'Signal degradation / increased risk' : 'Stable telemetry baseline'})`}
+    >
+      <IconComponent className="h-3 w-3 shrink-0" />
+      <span>{shift.text}</span>
+      {label && <span className="text-[9px] opacity-75 font-normal ml-0.5">{label}</span>}
+    </span>
+  );
+}
+
 export interface ManagerDashboardProps {
   isAccessibilityMode?: boolean;
   onToggleAccessibilityMode?: () => void;
@@ -252,6 +332,7 @@ export default function ManagerDashboard({
   const [correlationData, setCorrelationData] = useState<SensorCorrelationPoint[]>(() =>
     generateCorrelationDataset('ALL')
   );
+  const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
 
   // Live Weather State
   const [currentWeather, setCurrentWeather] = useState<ZoneWeatherData | null>(null);
@@ -617,6 +698,14 @@ export default function ManagerDashboard({
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [isHealthMetricsPdfModalOpen, setIsHealthMetricsPdfModalOpen] = useState<boolean>(false);
   const [isDownloadOptionsModalOpen, setIsDownloadOptionsModalOpen] = useState<boolean>(false);
+  const [isSafetyCommitteePdfModalOpen, setIsSafetyCommitteePdfModalOpen] = useState<boolean>(false);
+  const [isAlertHistoryOpen, setIsAlertHistoryOpen] = useState<boolean>(false);
+  const [isAlertHistoryDocked, setIsAlertHistoryDocked] = useState<boolean>(false);
+  const [pastAnomalies, setPastAnomalies] = useState<PastAnomalyRecord[]>(INITIAL_PAST_ANOMALIES);
+  const [isGlobalThresholdModalOpen, setIsGlobalThresholdModalOpen] = useState<boolean>(false);
+  const [globalSensitivity, setGlobalSensitivity] = useState<GlobalSensitivityLevel>('STANDARD');
+  const [acknowledgedBreachIds, setAcknowledgedBreachIds] = useState<Set<string>>(new Set());
+  const [simulatedBreaches, setSimulatedBreaches] = useState<ActiveSignalBreach[]>([]);
   const [isSignalFilterSidebarOpen, setIsSignalFilterSidebarOpen] = useState<boolean>(false);
   const [signalCategories, setSignalCategories] = useState<SignalCategoryState>(DEFAULT_SIGNAL_CATEGORIES);
   const [granularSignals, setGranularSignals] = useState<GranularSignalState>(DEFAULT_GRANULAR_SIGNALS);
@@ -1510,6 +1599,358 @@ export default function ManagerDashboard({
     [healthThresholds, toastSoundEnabled, voiceSettings.severityAudioToggles]
   );
 
+  // Computed live active breaches against Global Threshold Settings
+  const activeSignalBreaches = useMemo<ActiveSignalBreach[]>(() => {
+    const latest = telemetryStream[telemetryStream.length - 1];
+    if (!latest) return simulatedBreaches;
+
+    const breaches: ActiveSignalBreach[] = [];
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    // 1. Heart Rate (Pulse BPM)
+    const hr = latest.heart_rate_bpm ?? Math.round(72 + (68 - latest.smoothed_hrv) * 1.25);
+    const hrLimit = healthThresholds.maxHeartRateBpm ?? 120;
+    if (hr > hrLimit) {
+      const delta = hr - hrLimit;
+      const id = `breach-hr-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'heartRate',
+        signalName: 'Heart Rate (Pulse BPM) Exceeded',
+        measuredValue: hr,
+        measuredFormatted: `${hr} BPM`,
+        thresholdLimit: hrLimit,
+        thresholdFormatted: `≤ ${hrLimit} BPM Ceiling [${globalSensitivity}]`,
+        unit: 'BPM',
+        deltaFormatted: `+${delta} BPM (+${Math.round((delta / hrLimit) * 100)}%)`,
+        severity: delta >= 15 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Mandate immediate shaded cooling shelter rotation and electrolyte hydration.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    // 2. Autonomic HRV Floor (ms)
+    const hrv = latest.smoothed_hrv;
+    const hrvFloor = healthThresholds.minHrvMs;
+    if (hrv < hrvFloor) {
+      const delta = Number((hrvFloor - hrv).toFixed(1));
+      const id = `breach-hrv-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'hrv',
+        signalName: 'Autonomic HRV Collapse (Vagal Tone Depletion)',
+        measuredValue: hrv,
+        measuredFormatted: `${hrv} ms`,
+        thresholdLimit: hrvFloor,
+        thresholdFormatted: `≥ ${hrvFloor} ms Floor [${globalSensitivity}]`,
+        unit: 'ms',
+        deltaFormatted: `-${delta} ms (-${Math.round((delta / hrvFloor) * 100)}%)`,
+        severity: hrv <= 32 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Critical autonomic strain detected. Direct worker to immediate medical rest break.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    // 3. Core / Surface Skin Temperature (°C)
+    const skin = latest.skin_temp_c;
+    const skinLimit = healthThresholds.maxSkinTempC;
+    if (skin > skinLimit) {
+      const delta = Number((skin - skinLimit).toFixed(2));
+      const id = `breach-skin-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'skinTemp',
+        signalName: 'Worker Surface Skin Temperature Ceiling Exceeded',
+        measuredValue: skin,
+        measuredFormatted: `${skin}°C`,
+        thresholdLimit: skinLimit,
+        thresholdFormatted: `≤ ${skinLimit}°C Ceiling [${globalSensitivity}]`,
+        unit: '°C',
+        deltaFormatted: `+${delta}°C`,
+        severity: delta >= 0.7 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Direct worker to active air-conditioned recovery bay; check for heat exhaustion.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    // 4. Ambient Wet-Bulb WBGT Heat (°C)
+    const amb = latest.ambient_temp_c;
+    const ambLimit = healthThresholds.maxAmbientHeatC;
+    if (amb > ambLimit) {
+      const delta = Number((amb - ambLimit).toFixed(1));
+      const id = `breach-amb-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'ambientTemp',
+        signalName: 'Ambient WBGT Heat Ceiling Exceeded',
+        measuredValue: amb,
+        measuredFormatted: `${amb}°C`,
+        thresholdLimit: ambLimit,
+        thresholdFormatted: `≤ ${ambLimit}°C Ceiling [${globalSensitivity}]`,
+        unit: '°C',
+        deltaFormatted: `+${delta}°C`,
+        severity: delta >= 2.5 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Activate industrial misting blowers and mandate 15min rest rotation per OSHA.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    // 5. Thermal Work Limit (TWL in W/m²)
+    const twl = latest.twl_index;
+    const twlFloor = healthThresholds.minTwlIndex ?? 115;
+    if (twl !== undefined && twl < twlFloor) {
+      const delta = Number((twlFloor - twl).toFixed(0));
+      const id = `breach-twl-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'twl',
+        signalName: 'Thermal Work Limit (TWL) Below Safe Floor',
+        measuredValue: twl,
+        measuredFormatted: `${twl} W/m²`,
+        thresholdLimit: twlFloor,
+        thresholdFormatted: `≥ ${twlFloor} W/m² Floor [${globalSensitivity}]`,
+        unit: 'W/m²',
+        deltaFormatted: `-${delta} W/m²`,
+        severity: twl <= 95 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Severe metabolic heat deficit. Enforce mandatory rest and chilled fluid replenishment.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    // 6. Acoustic Noise (dBA)
+    const noise = latest.smoothed_noise_db ?? latest.noise_db ?? 75;
+    const noiseLimit = healthThresholds.maxNoiseDb;
+    if (noise > noiseLimit) {
+      const delta = Number((noise - noiseLimit).toFixed(1));
+      const id = `breach-noise-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'noise',
+        signalName: 'Acoustic Machinery Overpressure Breach',
+        measuredValue: noise,
+        measuredFormatted: `${noise} dBA`,
+        thresholdLimit: noiseLimit,
+        thresholdFormatted: `≤ ${noiseLimit} dBA Ceiling [${globalSensitivity}]`,
+        unit: 'dBA',
+        deltaFormatted: `+${delta} dBA`,
+        severity: delta >= 10 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Inspect dual-layer hearing protection and verify acoustic barrier seals.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    // 7. Composite Risk Score (%)
+    const risk = latest.risk_score;
+    const riskCutoff = healthThresholds.riskScoreCutoffPct;
+    if (risk > riskCutoff) {
+      const delta = Number((risk - riskCutoff).toFixed(1));
+      const id = `breach-risk-${selectedZone}`;
+      breaches.push({
+        id,
+        signalKey: 'riskScore',
+        signalName: 'Multidimensional Risk Score Cutoff Exceeded',
+        measuredValue: risk,
+        measuredFormatted: `${risk}%`,
+        thresholdLimit: riskCutoff,
+        thresholdFormatted: `≤ ${riskCutoff}% Cutoff [${globalSensitivity}]`,
+        unit: '%',
+        deltaFormatted: `+${delta}%`,
+        severity: risk >= 85 ? 'CRITICAL' : 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'LSTM Autoencoder flagged high multi-signal reconstruction error. Safety triage deployed.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: acknowledgedBreachIds.has(id)
+      });
+    }
+
+    const unackSimulated = simulatedBreaches.filter((s) => !acknowledgedBreachIds.has(s.id));
+    return [...unackSimulated, ...breaches];
+  }, [telemetryStream, healthThresholds, globalSensitivity, selectedZone, activeZoneObj, acknowledgedBreachIds, simulatedBreaches]);
+
+  const activeBreachSignalKeys = useMemo(() => {
+    return activeSignalBreaches.filter((b) => !b.acknowledged).map((b) => b.signalKey);
+  }, [activeSignalBreaches]);
+
+  const handleAcknowledgeSignalBreach = (id: string) => {
+    setAcknowledgedBreachIds((prev) => new Set([...prev, id]));
+    setActiveToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, acknowledged: true } : t))
+    );
+    setProtocolActiveNotice('Health signal threshold breach visual alert acknowledged.');
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  };
+
+  const handleAcknowledgeAllSignalBreaches = () => {
+    setAcknowledgedBreachIds(new Set(activeSignalBreaches.map((b) => b.id)));
+    setActiveToasts((prev) => prev.map((t) => ({ ...t, acknowledged: true })));
+    setProtocolActiveNotice('All active health signal threshold breach visual alerts acknowledged.');
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  };
+
+  const handleSimulateSignalBreachTest = (signalType: 'heartRate' | 'skinTemp' | 'hrv' | 'ambientTemp' | 'twl') => {
+    const testId = `test-breach-${Date.now()}`;
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    let newBreach: ActiveSignalBreach;
+
+    if (signalType === 'heartRate') {
+      const val = (healthThresholds.maxHeartRateBpm ?? 120) + 16;
+      newBreach = {
+        id: testId,
+        signalKey: 'heartRate',
+        signalName: 'Simulated Pulse Tachycardia Breach',
+        measuredValue: val,
+        measuredFormatted: `${val} BPM`,
+        thresholdLimit: healthThresholds.maxHeartRateBpm ?? 120,
+        thresholdFormatted: `≤ ${healthThresholds.maxHeartRateBpm ?? 120} BPM [${globalSensitivity}]`,
+        unit: 'BPM',
+        deltaFormatted: `+16 BPM (+${Math.round((16 / (healthThresholds.maxHeartRateBpm ?? 120)) * 100)}%)`,
+        severity: 'CRITICAL',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Immediate shaded rest and hydration protocol activated.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: false
+      };
+    } else if (signalType === 'skinTemp') {
+      const val = Number((healthThresholds.maxSkinTempC + 0.85).toFixed(2));
+      newBreach = {
+        id: testId,
+        signalKey: 'skinTemp',
+        signalName: 'Simulated Core / Skin Surface Temperature Surge',
+        measuredValue: val,
+        measuredFormatted: `${val}°C`,
+        thresholdLimit: healthThresholds.maxSkinTempC,
+        thresholdFormatted: `≤ ${healthThresholds.maxSkinTempC}°C [${globalSensitivity}]`,
+        unit: '°C',
+        deltaFormatted: `+0.85°C`,
+        severity: 'CRITICAL',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Direct worker cohort to misting cooling shelter.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: false
+      };
+    } else if (signalType === 'hrv') {
+      const val = Math.max(18, healthThresholds.minHrvMs - 14);
+      newBreach = {
+        id: testId,
+        signalKey: 'hrv',
+        signalName: 'Simulated Autonomic HRV Vagal Collapse',
+        measuredValue: val,
+        measuredFormatted: `${val} ms`,
+        thresholdLimit: healthThresholds.minHrvMs,
+        thresholdFormatted: `≥ ${healthThresholds.minHrvMs} ms [${globalSensitivity}]`,
+        unit: 'ms',
+        deltaFormatted: `-14 ms (-${Math.round((14 / healthThresholds.minHrvMs) * 100)}%)`,
+        severity: 'CRITICAL',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Autonomous nervous system fatigue detected. Immediate rest break.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: false
+      };
+    } else if (signalType === 'ambientTemp') {
+      const val = Number((healthThresholds.maxAmbientHeatC + 3.2).toFixed(1));
+      newBreach = {
+        id: testId,
+        signalKey: 'ambientTemp',
+        signalName: 'Simulated Ambient WBGT Heat Spike',
+        measuredValue: val,
+        measuredFormatted: `${val}°C`,
+        thresholdLimit: healthThresholds.maxAmbientHeatC,
+        thresholdFormatted: `≤ ${healthThresholds.maxAmbientHeatC}°C [${globalSensitivity}]`,
+        unit: '°C',
+        deltaFormatted: `+3.2°C`,
+        severity: 'HIGH',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Enforce 15-minute rotation cycles per OSHA heat stress standard.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: false
+      };
+    } else {
+      const val = Math.max(80, (healthThresholds.minTwlIndex ?? 115) - 22);
+      newBreach = {
+        id: testId,
+        signalKey: 'twl',
+        signalName: 'Simulated Thermal Work Limit (TWL) Collapse',
+        measuredValue: val,
+        measuredFormatted: `${val} W/m²`,
+        thresholdLimit: healthThresholds.minTwlIndex ?? 115,
+        thresholdFormatted: `≥ ${healthThresholds.minTwlIndex ?? 115} W/m² [${globalSensitivity}]`,
+        unit: 'W/m²',
+        deltaFormatted: `-22 W/m²`,
+        severity: 'CRITICAL',
+        zoneId: activeZoneObj.id,
+        zoneName: activeZoneObj.name,
+        recommendedAction: 'Mandate immediate spot cooling and fluid replacement.',
+        detectedAt: nowStr,
+        timestamp: Date.now(),
+        acknowledged: false
+      };
+    }
+
+    setSimulatedBreaches((prev) => [newBreach, ...prev]);
+
+    const toast: ThresholdBreachToast = {
+      id: `TOAST-TEST-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      timeFormatted: nowStr,
+      signalKey: newBreach.signalKey,
+      signalName: newBreach.signalName,
+      measuredValue: newBreach.measuredValue,
+      measuredFormatted: newBreach.measuredFormatted,
+      thresholdLimit: newBreach.thresholdLimit,
+      thresholdFormatted: newBreach.thresholdFormatted,
+      unit: newBreach.unit,
+      deltaFormatted: newBreach.deltaFormatted,
+      severity: newBreach.severity,
+      zoneId: newBreach.zoneId,
+      zoneName: newBreach.zoneName,
+      workerCount: activeZoneObj.count,
+      recommendedAction: newBreach.recommendedAction,
+      acknowledged: false,
+      createdAt: Date.now(),
+      autoDismissMs: 12000
+    };
+    setActiveToasts((prev) => [toast, ...prev].slice(0, 8));
+    if (toastSoundEnabled && !isAlertsMuted) {
+      voiceAlertService.playAlertChime(newBreach.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH', voiceSettings.severityAudioToggles);
+    }
+    setProtocolActiveNotice(`Visual alert triggered: ${newBreach.signalName} breached Global Threshold (${newBreach.measuredFormatted} vs ${newBreach.thresholdFormatted}).`);
+    setTimeout(() => setProtocolActiveNotice(null), 6000);
+  };
+
   const triggerAnomalyToast = useCallback(
     (
       alert: {
@@ -1929,6 +2370,48 @@ export default function ManagerDashboard({
     }, 250);
   }, [selectedZone, zones]);
 
+  // Handle successful safety committee PDF generation & log statutory audit record
+  const handleSafetyCommitteeExportSuccess = useCallback((filename: string) => {
+    setProtocolActiveNotice(`Safety Committee PDF Report successfully generated & downloaded: ${filename}`);
+    const auditEntry: SystemAuditLogEntry = {
+      id: `AUD-JHSC-${Date.now().toString().slice(-4)}`,
+      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      userId: 'USR-MGR-2026',
+      userName: 'Alex Mercer',
+      userRole: 'EHS Safety Supervisor',
+      category: 'REPORT_EXPORT',
+      targetModule: 'Safety Committee PDF Report Engine',
+      parameter: 'Offline Review Dossier PDF',
+      previousValue: 'N/A',
+      newValue: `Generated safety committee PDF report: ${filename}`,
+      justification: 'Exported current dashboard statistics as a formal PDF report for offline review by the Joint Health & Safety Committee (JHSC).',
+      approvalStatus: 'VERIFIED'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+    setTimeout(() => setProtocolActiveNotice(null), 6000);
+  }, []);
+
+  // Direct export of current dashboard statistics as a PDF report for offline safety committee review
+  const handleDirectSafetyCommitteePdfExport = useCallback(async () => {
+    try {
+      const currentZone = zones.find((z) => z.id === selectedZone) || zones[0];
+      setProtocolActiveNotice('Compiling current dashboard statistics for safety committee offline review...');
+      const res = await generateSafetyCommitteePdfReport({
+        activeAlerts,
+        currentZone,
+        zones,
+        telemetryStream,
+        healthThresholds,
+        kalmanConfig
+      });
+      handleSafetyCommitteeExportSuccess(res.filename);
+    } catch (err: any) {
+      console.error('Failed to export safety committee PDF:', err);
+      setProtocolActiveNotice('Direct generation failed, opening Safety Committee export dialog.');
+      setIsSafetyCommitteePdfModalOpen(true);
+    }
+  }, [zones, selectedZone, activeAlerts, telemetryStream, healthThresholds, kalmanConfig, handleSafetyCommitteeExportSuccess]);
+
   const handleDownloadReport = async (format: 'JSON' | 'CSV' | 'PDF') => {
     try {
       if (format === 'PDF') {
@@ -2181,7 +2664,6 @@ export default function ManagerDashboard({
     }
   ]);
 
-  const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
   const pendingCriticalCount = activeAlerts.filter((a) => a.severity === 'CRITICAL' && !a.acknowledged).length;
   const stagedDispatchCount = medicalDispatches.filter((d) => d.status === 'STAGED').length;
 
@@ -3124,10 +3606,210 @@ export default function ManagerDashboard({
     setProtocolActiveNotice(`Staged new medical dispatch for ${dispatchData.zone} in queue.`);
   };
 
-  // Acknowledge anomaly alert
+  // Acknowledge anomaly alert and sync with past anomalies history
   const handleAcknowledgeAlert = (id: string) => {
     setActiveAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a))
+    );
+
+    const alertObj = activeAlerts.find((a) => a.id === id);
+    if (alertObj) {
+      setPastAnomalies((prev) => {
+        if (prev.some((p) => p.id === id)) {
+          return prev.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  status: 'RESOLVED',
+                  resolvedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+              : p
+          );
+        }
+        const newRecord: PastAnomalyRecord = {
+          id: alertObj.id,
+          timestamp: new Date().toISOString(),
+          timeFormatted: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timeAgo: 'Just now',
+          severity: alertObj.severity,
+          anomalyMetric: alertObj.anomaly_metric,
+          locationZone: alertObj.location_zone,
+          workerId: alertObj.worker_id,
+          rawValue: alertObj.raw_value,
+          smoothedValue: alertObj.kalman_smoothed_value,
+          leadTime: alertObj.lead_time,
+          resolutionNotes: `Acknowledged and verified by safety operations. Recommended directive executed: ${alertObj.recommended_action}`,
+          resolvedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          resolvedBy: 'Safety Operations Lead',
+          status: 'RESOLVED'
+        };
+        return [newRecord, ...prev];
+      });
+    }
+  };
+
+  // Update resolution note for past anomaly
+  const handleUpdatePastAnomalyResolutionNote = (id: string, note: string, author?: string) => {
+    setPastAnomalies((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              resolutionNotes: note,
+              resolvedBy: author || item.resolvedBy || 'Safety Operations Lead',
+              resolvedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'RESOLVED'
+            }
+          : item
+      )
+    );
+    setProtocolActiveNotice(`Resolution notes recorded for past anomaly ${id}.`);
+  };
+
+  // Mark past anomaly resolved directly from side panel
+  const handleMarkPastAnomalyResolved = (id: string, note?: string) => {
+    setPastAnomalies((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status: 'RESOLVED',
+              resolvedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              resolutionNotes:
+                note ||
+                (item.resolutionNotes && !item.resolutionNotes.toLowerCase().includes('pending')
+                  ? item.resolutionNotes
+                  : 'Safety protocol executed: Direct cooling, rest rotation, or equipment dampening verified.')
+            }
+          : item
+      )
+    );
+    setActiveAlerts((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a))
+    );
+    setProtocolActiveNotice(`Past anomaly ${id} marked resolved with resolution notes.`);
+  };
+
+  // Bulk update past anomalies status (Reviewed, Archived, Resolved)
+  const handleBulkUpdatePastAnomaliesStatus = (
+    ids: string[],
+    newStatus: 'REVIEWED' | 'ARCHIVED' | 'RESOLVED',
+    note?: string
+  ) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setPastAnomalies((prev) =>
+      prev.map((item) => {
+        if (!ids.includes(item.id)) return item;
+        const actionLabel =
+          newStatus === 'REVIEWED'
+            ? 'Reviewed by Safety Operations Lead'
+            : newStatus === 'ARCHIVED'
+            ? 'Archived into long-term compliance retention'
+            : 'Marked resolved in bulk operations';
+        return {
+          ...item,
+          status: newStatus,
+          resolvedAt: item.resolvedAt || timeStr,
+          resolvedBy: item.resolvedBy || 'Safety Operations Lead',
+          resolutionNotes: note
+            ? note
+            : item.resolutionNotes
+            ? `${item.resolutionNotes} [${actionLabel}: ${timeStr}]`
+            : `${actionLabel} at ${timeStr}.`
+        };
+      })
+    );
+    if (newStatus === 'RESOLVED' || newStatus === 'REVIEWED') {
+      setActiveAlerts((prev) =>
+        prev.map((a) => (ids.includes(a.id) ? { ...a, acknowledged: true } : a))
+      );
+    }
+    const statusLabel = newStatus === 'REVIEWED' ? 'Reviewed' : newStatus === 'ARCHIVED' ? 'Archived' : 'Resolved';
+    setProtocolActiveNotice(
+      `Bulk operation completed: ${ids.length} ${ids.length === 1 ? 'alert' : 'alerts'} marked as '${statusLabel}'.`
+    );
+  };
+
+  // Save global threshold settings and synchronize sensitivity level
+  const handleSaveGlobalThresholdSettings = (
+    updatedThresholds: HealthSignalNotificationThresholds,
+    sensitivity: GlobalSensitivityLevel,
+    justificationStr: string
+  ) => {
+    setHealthThresholds(updatedThresholds);
+    setGlobalSensitivity(sensitivity);
+
+    if (sensitivity === 'STANDARD') {
+      setDailyFrequencyThreshold(5);
+      setCriticalFrequencyThreshold(3);
+      setProactiveRiskThreshold(5.5);
+      setSensitivityLevel('MEDIUM');
+      setKalmanConfig((prev) => ({
+        ...prev,
+        preset: 'MEDIUM',
+        criticalCutoffPct: 65,
+        measurementVarianceR: 2.0
+      }));
+    } else if (sensitivity === 'HIGH') {
+      setDailyFrequencyThreshold(4);
+      setCriticalFrequencyThreshold(2);
+      setProactiveRiskThreshold(4.0);
+      setSensitivityLevel('HIGH');
+      setKalmanConfig((prev) => ({
+        ...prev,
+        preset: 'HIGH',
+        criticalCutoffPct: 50,
+        measurementVarianceR: 1.2
+      }));
+    } else if (sensitivity === 'EXTREME') {
+      setDailyFrequencyThreshold(3);
+      setCriticalFrequencyThreshold(1);
+      setProactiveRiskThreshold(3.0);
+      setSensitivityLevel('HIGH');
+      setKalmanConfig((prev) => ({
+        ...prev,
+        preset: 'HIGH',
+        criticalCutoffPct: 40,
+        measurementVarianceR: 0.8
+      }));
+    } else {
+      setSensitivityLevel('CUSTOM');
+      setKalmanConfig((prev) => ({
+        ...prev,
+        preset: 'CUSTOM',
+        criticalCutoffPct: updatedThresholds.riskScoreCutoffPct
+      }));
+    }
+
+    const auditEntry: SystemAuditLogEntry = {
+      id: `LOG-THRESH-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toLocaleTimeString(),
+      userId: 'USR-SEC-MGR',
+      userName: 'Safety Operations Lead',
+      userRole: 'SITE_SAFETY_MANAGER',
+      category: 'THRESHOLD_CHANGE',
+      targetModule: 'Global Anomaly Engine',
+      parameter: 'Multi-Signal Sensitivity & Health Thresholds',
+      previousValue: `Baseline (${healthThresholds.riskScoreCutoffPct}%)`,
+      newValue: `${sensitivity} Sensitivity (${updatedThresholds.riskScoreCutoffPct}% Cutoff)`,
+      justification: justificationStr,
+      approvalStatus: 'APPLIED',
+      ipAddress: '10.240.8.14',
+      zoneId: 'ALL'
+    };
+    setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    // Reset acknowledged breaches so newly tightened thresholds immediately trigger visual alerts
+    setAcknowledgedBreachIds(new Set());
+
+    // Immediately trigger check against latest telemetry point with force = true
+    const latestPt = telemetryStream[telemetryStream.length - 1];
+    if (latestPt) {
+      checkReadingForThresholdBreaches(latestPt, activeZoneObj, true);
+    }
+
+    setProtocolActiveNotice(
+      `Global Threshold Sensitivity applied: ${sensitivity} (Risk Cutoff: ${updatedThresholds.riskScoreCutoffPct}%, HR Ceiling: ${updatedThresholds.maxHeartRateBpm ?? 120} BPM, WBGT: ${updatedThresholds.maxAmbientHeatC}°C). Visual alerts active.`
     );
   };
 
@@ -4074,14 +4756,17 @@ export default function ManagerDashboard({
             <span>{managerTab === 'patterns' ? '← Live Dashboard' : 'Pattern Library (D3.js)'}</span>
           </button>
 
-          {/* Daily Summary Report Button */}
+          {/* Automated Daily Email Digest (Top 5 Critical) Button */}
           <button
             onClick={() => setIsDailySummaryReportOpen(true)}
             className="flex items-center space-x-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Open 24-Hour Daily Summary Report in email-ready format"
+            title="Open Automated Daily Email Digest summarizing the Top 5 most critical anomalies detected over the last 24 hours"
           >
             <Mail className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Daily Summary Report (24h)</span>
+            <span>Daily Email Digest</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/25 text-rose-300 border border-rose-500/40">
+              Top 5 Critical
+            </span>
           </button>
 
           {/* Quick Jump: Cohort Comparison View */}
@@ -4942,6 +5627,46 @@ export default function ManagerDashboard({
             </span>
           </button>
 
+          {/* Alert History Side Panel Trigger: Chronological list of past anomalies with timestamps, severity levels, and resolution notes */}
+          <button
+            type="button"
+            onClick={() => setIsAlertHistoryOpen(true)}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-indigo-500/60 text-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer hover:border-indigo-400"
+            title="Open chronological alert history side panel with timestamps, severity levels, and resolution notes"
+          >
+            <History className="h-3.5 w-3.5 text-indigo-400" />
+            <span>Alert History</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">
+              {pastAnomalies.length}
+            </span>
+          </button>
+
+          {/* Global Threshold Settings Modal Trigger: Customize sensitivity levels (Standard, High, Extreme) across health signals */}
+          <button
+            type="button"
+            onClick={() => setIsGlobalThresholdModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 border border-cyan-500/60 text-cyan-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer hover:border-cyan-400"
+            title="Open Global Threshold Settings to customize sensitivity levels (Standard, High, Extreme, Custom) for anomaly detection across health signals"
+          >
+            <Sliders className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Global Thresholds</span>
+            <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold uppercase ${
+              globalSensitivity === 'EXTREME'
+                ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                : globalSensitivity === 'HIGH'
+                ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                : 'bg-cyan-950 text-cyan-300 border border-cyan-500/40'
+            }`}>
+              {globalSensitivity}
+            </span>
+            {activeBreachSignalKeys.length > 0 && (
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-500/50 font-bold animate-pulse flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                {activeBreachSignalKeys.length} BREACH
+              </span>
+            )}
+          </button>
+
           {/* Download Options Modal Trigger: Select specific metrics to include in report before downloading */}
           <button
             onClick={() => setIsDownloadOptionsModalOpen(true)}
@@ -4950,6 +5675,19 @@ export default function ManagerDashboard({
           >
             <Sliders className="h-3.5 w-3.5 text-white" />
             <span>Download Options</span>
+          </button>
+
+          {/* Safety Committee PDF Report Button: Export Current Dashboard Statistics as a PDF Report for Offline Review */}
+          <button
+            onClick={() => setIsSafetyCommitteePdfModalOpen(true)}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 border border-indigo-400/60 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md shadow-indigo-950/40 cursor-pointer"
+            title="Export current dashboard statistics as a PDF report for offline review by the safety committee (OSHA 1910 / ISO 45001 format)"
+          >
+            <Users className="h-3.5 w-3.5 text-white" />
+            <span>Safety Committee PDF</span>
+            <span className="text-[9px] bg-indigo-950/80 text-indigo-200 border border-indigo-400/40 px-1 py-0.2 rounded font-mono">
+              Offline
+            </span>
           </button>
 
           {/* Export Current Dashboard Data as CSV */}
@@ -5339,6 +6077,21 @@ export default function ManagerDashboard({
         </div>
       </div>
 
+      {/* Global Notification System: Visual Alert Banner triggered when any health signal breaches thresholds defined in Global Threshold Settings */}
+      <GlobalThresholdAlertBanner
+        activeBreaches={activeSignalBreaches}
+        sensitivityLevel={globalSensitivity}
+        thresholds={healthThresholds}
+        onAcknowledgeBreach={handleAcknowledgeSignalBreach}
+        onAcknowledgeAll={handleAcknowledgeAllSignalBreaches}
+        onInspectSignal={handleInspectSignalInChart}
+        onOpenThresholdModal={() => setIsGlobalThresholdModalOpen(true)}
+        onSimulateBreachTest={handleSimulateSignalBreachTest}
+        isMuted={isAlertsMuted}
+        onToggleMute={handleToggleMuteAlerts}
+        className="mb-5"
+      />
+
       {managerTab === 'resourceUtilization' ? (
         <div className="mb-6 animate-fadeIn">
           <ResourceUtilizationPanel
@@ -5451,11 +6204,14 @@ export default function ManagerDashboard({
 
             <button
               onClick={() => setIsDailySummaryReportOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-md shadow-cyan-900/40 cursor-pointer"
-              title="Generate and view email-ready 24-hour daily summary report for shift handover and executive briefs"
+              className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-md shadow-cyan-900/40 cursor-pointer"
+              title="Open Automated Daily Email Digest summarizing the Top 5 most critical anomalies detected over the last 24 hours"
             >
               <Mail className="h-3.5 w-3.5 text-white" />
-              <span>Daily Summary Report (24h)</span>
+              <span>Automated Daily Email Digest</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-extrabold bg-rose-500/30 text-rose-200 border border-rose-400/40 shadow-xs">
+                Top 5 Critical
+              </span>
             </button>
 
             <button
@@ -5481,24 +6237,51 @@ export default function ManagerDashboard({
         {/* 5 Primary Critical KPI Status Cards (Including Real-Time Health Anomaly Trend Sparkline) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
           {/* Card 1: Average Workforce Risk Score */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Average Workforce Risk Score
-              </span>
-              <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                <Activity className="h-4 w-4" />
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Average Workforce Risk Score
+                </span>
+                <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                  <Activity className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-mono text-cyan-400 tabular-nums">
+                  28.4%
+                </span>
+                <span className="text-xs text-emerald-400 font-mono font-medium">
+                  -1.2% vs 1h
+                </span>
               </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-cyan-400 tabular-nums">
-                28.4%
-              </span>
-              <span className="text-xs text-emerald-400 font-mono font-medium">
-                -1.2% vs 1h
-              </span>
+
+            {/* 24-Hour Signal Trend Mini-Sparkline */}
+            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
+                <span className="text-slate-400 font-medium">24h Risk Trajectory</span>
+                <div className="flex items-center gap-1.5">
+                  <HealthSignal24hBadge
+                    data={telemetryStream.slice(-24).map((p) => p.risk_score || 0)}
+                    lowerIsBetter={true}
+                    label="24h"
+                  />
+                  <span className="text-cyan-400 font-bold">Hourly LSTM</span>
+                </div>
+              </div>
+              <MiniSparkline
+                data={telemetryStream.slice(-24).map((p) => p.risk_score || 0)}
+                color="#06b6d4"
+                unit="%"
+                height={28}
+                showMinMax={true}
+                showCurrentDot={true}
+                ariaLabel="24-hour average workforce risk score trend"
+              />
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+
+            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
               <span>Status: <strong className="text-emerald-400">Normal Baseline</strong></span>
               <span className="text-slate-500">Peak: 78.2%</span>
             </div>
@@ -5515,72 +6298,159 @@ export default function ManagerDashboard({
           />
 
           {/* Card 3: Anomalies Detected (24h) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Anomalies Detected (24h)
-              </span>
-              <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
-                <AlertTriangle className="h-4 w-4" />
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Anomalies Detected (24h)
+                </span>
+                <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                  <AlertTriangle className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-mono text-rose-400 tabular-nums">
+                  14 Events
+                </span>
+                <span className="text-xs text-amber-300 font-mono font-medium">
+                  {activeAlerts.length} Active
+                </span>
               </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-rose-400 tabular-nums">
-                14 Events
-              </span>
-              <span className="text-xs text-amber-300 font-mono font-medium">
-                {activeAlerts.length} Active
-              </span>
+
+            {/* 24-Hour Anomaly Frequency Mini-Sparkline */}
+            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
+                <span className="text-slate-400 font-medium">24h Anomaly Velocity</span>
+                <div className="flex items-center gap-1.5">
+                  <HealthSignal24hBadge
+                    data={telemetryStream.slice(-24).map((p, idx) => {
+                      const base = p.is_anomaly ? 3 : p.risk_score > 60 ? 2 : p.risk_score > 40 ? 1 : 0;
+                      return Math.max(0, base + (idx % 4 === 0 && p.risk_score > 50 ? 1 : 0));
+                    })}
+                    lowerIsBetter={true}
+                    label="24h"
+                  />
+                  <span className="text-rose-400 font-bold">Peaks Flagged</span>
+                </div>
+              </div>
+              <MiniSparkline
+                data={telemetryStream.slice(-24).map((p, idx) => {
+                  const base = p.is_anomaly ? 3 : p.risk_score > 60 ? 2 : p.risk_score > 40 ? 1 : 0;
+                  return Math.max(0, base + (idx % 4 === 0 && p.risk_score > 50 ? 1 : 0));
+                })}
+                color="#f43f5e"
+                unit=" ev"
+                height={28}
+                showMinMax={true}
+                showCurrentDot={true}
+                ariaLabel="24-hour anomaly frequency trend"
+              />
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+
+            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
               <span className="text-rose-300">4 Critical &bull; 7 High</span>
               <span className="text-emerald-400">11 Mitigated</span>
             </div>
           </div>
 
-          {/* Card 3: Connected IoT Endpoints */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Connected IoT Endpoints
-              </span>
-              <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                <Radio className="h-4 w-4" />
+          {/* Card 4: Connected IoT Endpoints */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Connected IoT Endpoints
+                </span>
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                  <Radio className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
+                  184 / 184
+                </span>
+                <span className="text-xs text-emerald-400 font-mono font-medium">
+                  100% Online
+                </span>
               </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
-                184 / 184
-              </span>
-              <span className="text-xs text-emerald-400 font-mono font-medium">
-                100% Online
-              </span>
+
+            {/* 24-Hour IoT Connectivity Mini-Sparkline */}
+            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
+                <span className="text-slate-400 font-medium">24h Signal Mesh</span>
+                <div className="flex items-center gap-1.5">
+                  <HealthSignal24hBadge
+                    data={telemetryStream.slice(-24).map((_, i) => 184 - (i === 4 ? 1 : 0))}
+                    lowerIsBetter={false}
+                    label="24h"
+                  />
+                  <span className="text-emerald-400 font-bold">100% SLA</span>
+                </div>
+              </div>
+              <MiniSparkline
+                data={telemetryStream.slice(-24).map((_, i) => 184 - (i === 4 ? 1 : 0))}
+                color="#10b981"
+                unit=" dev"
+                height={28}
+                showMinMax={false}
+                showCurrentDot={true}
+                ariaLabel="24-hour IoT endpoint connectivity stability"
+              />
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+
+            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
               <span>Telemetry Ping: 15s</span>
               <span className="text-slate-500">0 Dropouts</span>
             </div>
           </div>
 
-          {/* Card 4: Safety Personnel & Standby Allocation */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Safety Personnel Allocation
-              </span>
-              <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
-                <Users className="h-4 w-4" />
+          {/* Card 5: Safety Personnel Allocation */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Safety Personnel Allocation
+                </span>
+                <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+                  <Users className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-mono text-white tabular-nums">
+                  12 Officers
+                </span>
+                <span className="text-xs text-cyan-300 font-mono font-medium">
+                  Ratio 1:12
+                </span>
               </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-white tabular-nums">
-                12 Officers
-              </span>
-              <span className="text-xs text-cyan-300 font-mono font-medium">
-                Ratio 1:12
-              </span>
+
+            {/* 24-Hour Personnel Deployment Mini-Sparkline */}
+            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
+                <span className="text-slate-400 font-medium">24h Shift Staffing</span>
+                <div className="flex items-center gap-1.5">
+                  <HealthSignal24hBadge
+                    data={telemetryStream.slice(-24).map((p) => (p.risk_score > 60 ? 12 : p.risk_score > 40 ? 11 : 10))}
+                    lowerIsBetter={false}
+                    label="24h"
+                  />
+                  <span className="text-indigo-400 font-bold">Active Ratio</span>
+                </div>
+              </div>
+              <MiniSparkline
+                data={telemetryStream.slice(-24).map((p) => (p.risk_score > 60 ? 12 : p.risk_score > 40 ? 11 : 10))}
+                color="#818cf8"
+                unit=" staff"
+                height={28}
+                showMinMax={false}
+                showCurrentDot={true}
+                ariaLabel="24-hour safety personnel deployment trend"
+              />
             </div>
-            <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+
+            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
               <span>9 Deployed Across Zones</span>
               <span className="text-amber-300 font-bold">3 Standby</span>
             </div>
@@ -5592,6 +6462,7 @@ export default function ManagerDashboard({
       <HealthTelemetryVarianceSummary
         telemetryStream={telemetryStream}
         theme={dashboardTheme}
+        thresholdBreaches={activeBreachSignalKeys}
         className="mb-6"
       />
 
@@ -6201,12 +7072,23 @@ export default function ManagerDashboard({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-mono">Resilience Trend</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">Resilience Trend</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => Math.round(100 - p.risk_score * 0.6))}
+                lowerIsBetter={false}
+                label="24h"
+              />
+            </div>
             <MiniSparkline
-              data={telemetryStream.slice(-15).map((p) => Math.round(100 - p.risk_score * 0.6))}
+              data={telemetryStream.slice(-24).map((p) => Math.round(100 - p.risk_score * 0.6))}
               color="#10b981"
-              height={26}
-              width={70}
+              height={28}
+              width={95}
+              unit="%"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour resilience trend with 7-day linear forecast"
             />
           </div>
         </div>
@@ -6222,12 +7104,23 @@ export default function ManagerDashboard({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-mono">Risk Variance</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">Risk Variance</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => p.risk_score)}
+                lowerIsBetter={true}
+                label="24h"
+              />
+            </div>
             <MiniSparkline
-              data={telemetryStream.slice(-15).map((p) => p.risk_score)}
+              data={telemetryStream.slice(-24).map((p) => p.risk_score)}
               color="#f43f5e"
-              height={26}
-              width={70}
+              height={28}
+              width={95}
+              unit="%"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour risk variance trend with 7-day linear forecast"
             />
           </div>
         </div>
@@ -6249,12 +7142,23 @@ export default function ManagerDashboard({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-mono">ISO 10816 Curve</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">ISO 10816 Curve</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
+                lowerIsBetter={true}
+                label="24h"
+              />
+            </div>
             <MiniSparkline
-              data={telemetryStream.slice(-15).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
+              data={telemetryStream.slice(-24).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
               color="#f59e0b"
-              height={26}
-              width={70}
+              height={28}
+              width={95}
+              unit="mm/s"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour ISO 10816 vibration curve with 7-day linear forecast"
             />
           </div>
         </div>
@@ -6268,12 +7172,23 @@ export default function ManagerDashboard({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-mono">Heat Wave Index</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">Heat Wave Index</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => p.ambient_temp_c)}
+                lowerIsBetter={true}
+                label="24h"
+              />
+            </div>
             <MiniSparkline
-              data={telemetryStream.slice(-15).map((p) => p.ambient_temp_c)}
+              data={telemetryStream.slice(-24).map((p) => p.ambient_temp_c)}
               color="#f97316"
-              height={26}
-              width={70}
+              height={28}
+              width={95}
+              unit="°C"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour ambient heat index trend with 7-day linear forecast"
             />
           </div>
         </div>
@@ -6287,12 +7202,23 @@ export default function ManagerDashboard({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-mono">HRV Autonomic</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">HRV Autonomic</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => p.smoothed_hrv)}
+                lowerIsBetter={false}
+                label="24h"
+              />
+            </div>
             <MiniSparkline
-              data={telemetryStream.slice(-15).map((p) => p.smoothed_hrv)}
+              data={telemetryStream.slice(-24).map((p) => p.smoothed_hrv)}
               color="#06b6d4"
-              height={26}
-              width={70}
+              height={28}
+              width={95}
+              unit="ms"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour HRV autonomic trend with 7-day linear forecast"
             />
           </div>
         </div>
@@ -7168,6 +8094,7 @@ export default function ManagerDashboard({
         isSpeaking={isSpeaking}
         voiceEnabled={voiceSettings.enabled}
         onExportData={() => setIsReportModalOpen(true)}
+        onInspectAnomaly={handleOpenAnomalyDetails}
       />
 
       {/* Automated Predictive Maintenance Scheduler Tool (Correlating Alerts with Technician Availability) */}
@@ -7488,6 +8415,7 @@ export default function ManagerDashboard({
         onOpenConfig={() => setIsDailySummaryConfigOpen(true)}
         zones={zones}
         alerts={activeAlerts}
+        pastAnomalies={pastAnomalies}
         incidentAssignments={incidentAssignments}
         telemetryStream={telemetryStream}
       />
@@ -7698,6 +8626,19 @@ export default function ManagerDashboard({
         }}
       />
 
+      {/* Safety Committee PDF Report Export Modal: Offline review by the Joint Health & Safety Committee */}
+      <SafetyCommitteePdfExportModal
+        isOpen={isSafetyCommitteePdfModalOpen}
+        onClose={() => setIsSafetyCommitteePdfModalOpen(false)}
+        activeAlerts={activeAlerts}
+        currentZone={activeZoneObj}
+        zones={zones}
+        telemetryStream={telemetryStream}
+        healthThresholds={healthThresholds}
+        kalmanConfig={kalmanConfig}
+        onExportSuccess={(filename) => handleSafetyCommitteeExportSuccess(filename)}
+      />
+
       {/* Category-based Signal Filter Sidebar: Allows toggling Cardiac, Environmental, and Performance signals and Historical Moving Averages */}
       <SignalCategoryFilterSidebar
         isOpen={isSignalFilterSidebarOpen}
@@ -7714,6 +8655,34 @@ export default function ManagerDashboard({
         onChangeMaWindow={setGlobalMaWindowHours}
         isAccessibilityMode={isAccessibilityMode}
         onToggleAccessibilityMode={handleToggleAccessibilityMode}
+      />
+
+      {/* Alert History Component: Maintains a chronological list of past anomalies with timestamps, severity levels, and resolution notes in a side panel */}
+      <AlertHistory
+        isOpen={isAlertHistoryOpen}
+        onClose={() => setIsAlertHistoryOpen(false)}
+        pastAnomalies={pastAnomalies}
+        onUpdateResolutionNote={handleUpdatePastAnomalyResolutionNote}
+        onMarkResolved={handleMarkPastAnomalyResolved}
+        onBulkMarkStatus={handleBulkUpdatePastAnomaliesStatus}
+        onInspectAnomaly={handleOpenAnomalyDetails}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        isDocked={isAlertHistoryDocked}
+        onToggleDock={() => setIsAlertHistoryDocked((prev) => !prev)}
+      />
+
+      {/* Global Threshold Settings Modal: Customize sensitivity levels (Standard, High, Extreme, Custom) for anomaly detection across health signals */}
+      <GlobalThresholdSettingsModal
+        isOpen={isGlobalThresholdModalOpen}
+        onClose={() => setIsGlobalThresholdModalOpen(false)}
+        currentThresholds={healthThresholds}
+        currentSensitivity={globalSensitivity}
+        onSaveSettings={handleSaveGlobalThresholdSettings}
+        zones={zones}
+        telemetryStream={telemetryStream}
       />
 
       {/* Real-Time Critical Anomaly Notification Toast Component (Showing Department & Confidence Level) */}

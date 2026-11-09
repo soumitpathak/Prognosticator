@@ -32,6 +32,7 @@ import {
   Download
 } from 'lucide-react';
 import AnomalyHeatmap, { HeatmapCellData } from './AnomalyHeatmap';
+import ExplainableAnomalyTooltip from './ExplainableAnomalyTooltip';
 
 export type SeverityFilterOption = 'ALL' | 'CRITICAL' | 'MEDIUM' | 'LOW';
 
@@ -135,6 +136,7 @@ interface ActiveAlertsSectionProps {
   isSpeaking?: boolean;
   voiceEnabled?: boolean;
   onExportData?: () => void;
+  onInspectAnomaly?: (alert: ActiveAnomalyAlert) => void;
 }
 
 export default function ActiveAlertsSection({
@@ -145,7 +147,8 @@ export default function ActiveAlertsSection({
   onSpeakAlert,
   isSpeaking = false,
   voiceEnabled = true,
-  onExportData
+  onExportData,
+  onInspectAnomaly
 }: ActiveAlertsSectionProps) {
   // Filter & Sort State
   const [selectedSeverity, setSelectedSeverity] = useState<SeverityFilterOption>('ALL');
@@ -755,6 +758,14 @@ export default function ActiveAlertsSection({
                         {getMetricIcon(alert)}
                         {alert.anomaly_metric}
                       </span>
+
+                      {/* Explainable Anomaly Tooltip: Reveals underlying telemetry factors */}
+                      <ExplainableAnomalyTooltip
+                        alert={alert}
+                        onOpenFullAnalysis={onInspectAnomaly}
+                        triggerVariant="badge"
+                      />
+
                       <span className="text-slate-500 text-xs">&bull;</span>
                       <span className="text-xs font-mono text-slate-400">{alert.id}</span>
                       <span className="text-slate-500 text-xs">&bull;</span>
@@ -861,9 +872,16 @@ export default function ActiveAlertsSection({
                             <span className="text-slate-400">Smoothed:</span> <span className="text-cyan-400 font-bold">{alert.kalman_smoothed_value}</span>
                           </div>
                         </div>
-                        <div className="sm:text-right shrink-0">
-                          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Model Early Warning Lead</span>
-                          <span className="text-xs font-bold text-cyan-400 font-mono">{alert.lead_time}</span>
+                        <div className="sm:text-right shrink-0 flex flex-col sm:items-end gap-1.5">
+                          <div>
+                            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Model Early Warning Lead</span>
+                            <span className="text-xs font-bold text-cyan-400 font-mono">{alert.lead_time}</span>
+                          </div>
+                          <ExplainableAnomalyTooltip
+                            alert={alert}
+                            onOpenFullAnalysis={onInspectAnomaly}
+                            triggerVariant="button"
+                          />
                         </div>
                       </div>
                     )}

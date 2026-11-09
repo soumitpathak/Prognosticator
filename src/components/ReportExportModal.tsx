@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { generateExecutiveSafetyPdfReport } from '../services/executivePdfGenerator';
 import { generateDashboardSummaryPdfReport } from '../services/dashboardSummaryPdfGenerator';
+import { generateSafetyCommitteePdfReport } from '../services/safetyCommitteePdfGenerator';
 import {
   downloadAnomalyReportCsv,
   downloadHealthTrendsCsv,
@@ -218,6 +219,32 @@ export default function ReportExportModal({
     } catch (error) {
       console.error('Failed to generate summary PDF report:', error);
       setDownloadSuccessMessage('Summary PDF export failed.');
+      setTimeout(() => setDownloadSuccessMessage(null), 4000);
+    } finally {
+      setIsPdfGenerating(false);
+      setPdfGenerationStatus('');
+    }
+  };
+
+  // 4. Export Safety Committee PDF Report (Offline Review)
+  const handleGenerateSafetyCommitteePdf = async () => {
+    setIsPdfGenerating(true);
+    setPdfGenerationStatus('Compiling statistical indicators for safety committee offline review...');
+
+    try {
+      const res = await generateSafetyCommitteePdfReport({
+        activeAlerts: relevantAlerts,
+        currentZone: currentZoneObj,
+        zones,
+        telemetryStream: filteredTelemetry,
+        onProgress: (status) => setPdfGenerationStatus(status)
+      });
+
+      setDownloadSuccessMessage(`Safety Committee Review PDF (${res.filename}) generated successfully.`);
+      setTimeout(() => setDownloadSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error('Failed to generate safety committee PDF report:', error);
+      setDownloadSuccessMessage('Safety Committee PDF export failed.');
       setTimeout(() => setDownloadSuccessMessage(null), 4000);
     } finally {
       setIsPdfGenerating(false);
@@ -568,13 +595,21 @@ export default function ReportExportModal({
                 </button>
 
                 {/* Sub-actions for PDF reports */}
-                <div className="flex gap-2 text-[11px]">
+                <div className="flex flex-wrap gap-2 text-[11px]">
                   <button
                     disabled={isPdfGenerating}
                     onClick={handleGenerateSummaryPdf}
                     className="flex-1 py-1.5 px-2 bg-slate-950 hover:bg-slate-800 text-cyan-400 border border-slate-800 rounded-md transition text-center cursor-pointer font-medium disabled:opacity-50"
                   >
                     Summary Metrics (PDF)
+                  </button>
+                  <button
+                    disabled={isPdfGenerating}
+                    onClick={handleGenerateSafetyCommitteePdf}
+                    className="flex-1 py-1.5 px-2 bg-slate-950 hover:bg-slate-800 text-indigo-400 border border-slate-800 rounded-md transition text-center cursor-pointer font-medium disabled:opacity-50"
+                    title="Export current dashboard statistics as a PDF report for offline review by the safety committee"
+                  >
+                    Safety Committee (PDF)
                   </button>
                   <button
                     onClick={handlePrintPdf}

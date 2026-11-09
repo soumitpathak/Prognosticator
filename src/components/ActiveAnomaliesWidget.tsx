@@ -22,6 +22,7 @@ import {
   Layers,
   Lock
 } from 'lucide-react';
+import ExplainableAnomalyTooltip from './ExplainableAnomalyTooltip';
 
 interface ActiveAnomaliesWidgetProps {
   alerts: ActiveAnomalyAlert[];
@@ -402,6 +403,9 @@ export default function ActiveAnomaliesWidget({
                       <span className="font-semibold text-sm text-white flex items-center gap-1.5">
                         {alert.anomaly_metric}
                       </span>
+
+                      {/* Explainable Anomaly Tooltip */}
+                      <ExplainableAnomalyTooltip alert={alert} triggerVariant="badge" />
 
                       <span className="text-slate-600">•</span>
                       <span className="text-xs font-mono text-cyan-400 font-bold">{alert.id}</span>
