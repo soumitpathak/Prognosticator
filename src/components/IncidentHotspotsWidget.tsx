@@ -40,7 +40,7 @@ interface ContributingFactorNLG {
   severity: 'CRITICAL' | 'HIGH' | 'MODERATE';
 }
 
-export default function IncidentHotspotsWidget({
+function IncidentHotspotsWidgetComponent({
   alerts,
   zones,
   telemetryStream,
@@ -445,3 +445,6 @@ TOP 3 CONTRIBUTING FACTORS:
     </div>
   );
 }
+
+const IncidentHotspotsWidget = React.memo(IncidentHotspotsWidgetComponent);
+export default IncidentHotspotsWidget;

@@ -53,7 +53,7 @@ interface D3WorkplaceZoneRiskHeatmapProps {
   className?: string;
 }
 
-export default function D3WorkplaceZoneRiskHeatmap({
+function D3WorkplaceZoneRiskHeatmapComponent({
   zones,
   alerts = [],
   telemetryStream = [],
@@ -645,3 +645,6 @@ export default function D3WorkplaceZoneRiskHeatmap({
     </div>
   );
 }
+
+const D3WorkplaceZoneRiskHeatmap = React.memo(D3WorkplaceZoneRiskHeatmapComponent);
+export default D3WorkplaceZoneRiskHeatmap;

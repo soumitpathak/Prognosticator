@@ -52,7 +52,7 @@ interface ChartDataWithForecastAndMA extends Partial<TelemetryDataPoint> {
   formattedDate?: string;
 }
 
-export default function TelemetryCharts({
+function TelemetryChartsComponent({
   data,
   zoneName,
   streamToggles,
@@ -532,6 +532,7 @@ export default function TelemetryCharts({
                 fillOpacity={1}
                 fill="url(#tempGradient)"
                 connectNulls={false}
+                isAnimationActive={false}
               />
               {showMovingAverage && (
                 <Line
@@ -544,6 +545,7 @@ export default function TelemetryCharts({
                   dot={false}
                   activeDot={{ r: 5, fill: '#34d399' }}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               )}
               {showForecast && (
@@ -556,6 +558,7 @@ export default function TelemetryCharts({
                   strokeDasharray="4 4"
                   dot={{ r: 3.5, fill: '#38bdf8' }}
                   connectNulls={true}
+                  isAnimationActive={false}
                 />
               )}
             </AreaChart>
@@ -589,6 +592,7 @@ export default function TelemetryCharts({
                 strokeWidth={1}
                 strokeDasharray="2 2"
                 dot={false}
+                isAnimationActive={false}
               />
               <Area
                 type="monotone"
@@ -599,6 +603,7 @@ export default function TelemetryCharts({
                 fillOpacity={1}
                 fill="url(#noiseGradient)"
                 connectNulls={false}
+                isAnimationActive={false}
               />
               {showMovingAverage && (
                 <Line
@@ -611,6 +616,7 @@ export default function TelemetryCharts({
                   dot={false}
                   activeDot={{ r: 5, fill: '#34d399' }}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               )}
               {showForecast && (
@@ -623,6 +629,7 @@ export default function TelemetryCharts({
                   strokeDasharray="4 4"
                   dot={{ r: 3.5, fill: '#38bdf8' }}
                   connectNulls={true}
+                  isAnimationActive={false}
                 />
               )}
             </AreaChart>
@@ -650,6 +657,7 @@ export default function TelemetryCharts({
                 strokeWidth={1.2}
                 dot={false}
                 opacity={0.65}
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -659,6 +667,7 @@ export default function TelemetryCharts({
                 strokeWidth={2.5}
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
               {showMovingAverage && (
                 <Line
@@ -671,6 +680,7 @@ export default function TelemetryCharts({
                   dot={false}
                   activeDot={{ r: 5, fill: '#34d399', stroke: '#fff', strokeWidth: 1.5 }}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               )}
               {showForecast && (
@@ -683,6 +693,7 @@ export default function TelemetryCharts({
                   strokeDasharray="4 4"
                   dot={{ r: 3.5, fill: '#a855f7' }}
                   connectNulls={true}
+                  isAnimationActive={false}
                 />
               )}
             </LineChart>
@@ -704,13 +715,13 @@ export default function TelemetryCharts({
                 />
               )}
               {(!streamToggles || streamToggles.ambientTemp) && (
-                <Line yAxisId="left" type="monotone" dataKey="ambient_temp_c" name="Ambient Temp (°C)" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line yAxisId="left" type="monotone" dataKey="ambient_temp_c" name="Ambient Temp (°C)" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
               )}
               {(!streamToggles || streamToggles.noiseDb) && (
-                <Line yAxisId="left" type="monotone" dataKey="noise_db" name="Kalman Noise (dB)" stroke="#f43f5e" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line yAxisId="left" type="monotone" dataKey="noise_db" name="Kalman Noise (dB)" stroke="#f43f5e" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
               )}
               {(!streamToggles || streamToggles.hrvDrop) && (
-                <Line yAxisId="left" type="monotone" dataKey="smoothed_hrv" name="Kalman HRV (ms)" stroke="#06b6d4" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line yAxisId="left" type="monotone" dataKey="smoothed_hrv" name="Kalman HRV (ms)" stroke="#06b6d4" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
               )}
               {showMovingAverage && (!streamToggles || streamToggles.hrvDrop) && (
                 <Line
@@ -723,10 +734,11 @@ export default function TelemetryCharts({
                   strokeDasharray="5 3"
                   dot={false}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               )}
               {(!streamToggles || streamToggles.riskScore) && (
-                <Line yAxisId="right" type="monotone" dataKey="risk_score" name="Risk %" stroke="#a855f7" strokeWidth={2.5} dot={false} connectNulls={false} />
+                <Line yAxisId="right" type="monotone" dataKey="risk_score" name="Risk %" stroke="#a855f7" strokeWidth={2.5} dot={false} connectNulls={false} isAnimationActive={false} />
               )}
               {showForecast && (!streamToggles || streamToggles.riskScore) && (
                 <Line
@@ -739,6 +751,7 @@ export default function TelemetryCharts({
                   strokeDasharray="4 4"
                   dot={{ r: 3.5, fill: '#ec4899' }}
                   connectNulls={true}
+                  isAnimationActive={false}
                 />
               )}
             </LineChart>
@@ -770,3 +783,6 @@ export default function TelemetryCharts({
     </div>
   );
 }
+
+const TelemetryCharts = React.memo(TelemetryChartsComponent);
+export default TelemetryCharts;

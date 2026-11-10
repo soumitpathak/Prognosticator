@@ -34,7 +34,7 @@ interface ActiveAnomaliesWidgetProps {
   isSpeaking?: boolean;
 }
 
-export default function ActiveAnomaliesWidget({
+function ActiveAnomaliesWidgetComponent({
   alerts,
   telemetryStream,
   onAcknowledgeAlert,
@@ -564,3 +564,6 @@ export default function ActiveAnomaliesWidget({
     </div>
   );
 }
+
+const ActiveAnomaliesWidget = React.memo(ActiveAnomaliesWidgetComponent);
+export default ActiveAnomaliesWidget;

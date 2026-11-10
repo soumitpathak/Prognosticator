@@ -45,7 +45,7 @@ export interface D3AnomalyTrend30DaysChartProps {
   onOpenCompliancePdfModal?: () => void;
 }
 
-export default function D3AnomalyTrend30DaysChart({
+function D3AnomalyTrend30DaysChartComponent({
   data,
   summary,
   currentZone,
@@ -1148,3 +1148,6 @@ export default function D3AnomalyTrend30DaysChart({
     </div>
   );
 }
+
+const D3AnomalyTrend30DaysChart = React.memo(D3AnomalyTrend30DaysChartComponent);
+export default D3AnomalyTrend30DaysChart;

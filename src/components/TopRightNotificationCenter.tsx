@@ -42,7 +42,7 @@ export interface TopRightNotificationCenterProps {
   className?: string;
 }
 
-export default function TopRightNotificationCenter({
+function TopRightNotificationCenterComponent({
   alerts,
   onViewDetails,
   onAcknowledgeAlert,
@@ -569,3 +569,6 @@ export default function TopRightNotificationCenter({
     </div>
   );
 }
+
+const TopRightNotificationCenter = React.memo(TopRightNotificationCenterComponent);
+export default TopRightNotificationCenter;

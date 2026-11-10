@@ -49,7 +49,7 @@ interface BiometricSyncModuleProps {
   onNotice?: (msg: string) => void;
 }
 
-export default function BiometricSyncModule({
+function BiometricSyncModuleComponent({
   zones,
   selectedZoneId,
   onSelectZone,
@@ -648,3 +648,6 @@ export default function BiometricSyncModule({
     </div>
   );
 }
+
+const BiometricSyncModule = React.memo(BiometricSyncModuleComponent);
+export default BiometricSyncModule;

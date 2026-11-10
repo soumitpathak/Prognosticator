@@ -48,7 +48,7 @@ interface WorkforceHealth30DaysTrendChartProps {
   onToggleMovingAverage?: (active: boolean) => void;
 }
 
-export default function WorkforceHealth30DaysTrendChart({
+function WorkforceHealth30DaysTrendChartComponent({
   selectedZone,
   zones = [],
   thresholds,
@@ -917,3 +917,6 @@ function CustomHealthTrendTooltip({ active, payload, label, thresholds }: any) {
     </div>
   );
 }
+
+const WorkforceHealth30DaysTrendChart = React.memo(WorkforceHealth30DaysTrendChartComponent);
+export default WorkforceHealth30DaysTrendChart;

@@ -46,7 +46,7 @@ interface IncidentProjectionChartProps {
   containerId?: string;
 }
 
-export default function IncidentProjectionChart({
+function IncidentProjectionChartComponent({
   alerts,
   telemetryStream,
   currentZone,
@@ -549,3 +549,6 @@ export default function IncidentProjectionChart({
     </div>
   );
 }
+
+const IncidentProjectionChart = React.memo(IncidentProjectionChartComponent);
+export default IncidentProjectionChart;

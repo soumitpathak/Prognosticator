@@ -7,10 +7,22 @@ import { ZoneWeatherData } from '../types';
  * Allows the Prognosticator anomaly engine to dynamically adjust physiological baselines.
  */
 
+const weatherCache = new Map<string, { data: ZoneWeatherData; timestamp: number }>();
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+
 export async function fetchLiveZoneWeather(latitude: number, longitude: number, zoneName = 'Facility Zone'): Promise<ZoneWeatherData> {
+  const cacheKey = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+  const cached = weatherCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m`;
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1800);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!res.ok) {
       throw new Error(`Open-Meteo HTTP ${res.status}`);
     }
@@ -37,7 +49,7 @@ export async function fetchLiveZoneWeather(latitude: number, longitude: number, 
       adjustment = `Moderate ambient climate. Recommended hydration cycles active every 30 minutes.`;
     }
 
-    return {
+    const result: ZoneWeatherData = {
       temperature: temp,
       humidity,
       apparentTemperature: apparent,
@@ -47,6 +59,8 @@ export async function fetchLiveZoneWeather(latitude: number, longitude: number, 
       baselineAdjustment: adjustment,
       heatStrainIndex: heatStrain
     };
+    weatherCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
   } catch (error) {
     // Intelligent fallback with realistic regional climatology if offline
     const isTropicalOrDesert = Math.abs(latitude) < 30;

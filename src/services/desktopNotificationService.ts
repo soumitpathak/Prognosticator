@@ -46,7 +46,6 @@ class DesktopNotificationService {
     } else {
       this.config.permission = Notification.permission;
     }
-    this.notifyListeners();
     return this.config.permission;
   }
 
@@ -81,7 +80,15 @@ class DesktopNotificationService {
   }
 
   private notifyListeners() {
-    this.listeners.forEach((cb) => cb({ ...this.config }));
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(() => {
+        this.listeners.forEach((cb) => cb({ ...this.config }));
+      });
+    } else {
+      setTimeout(() => {
+        this.listeners.forEach((cb) => cb({ ...this.config }));
+      }, 0);
+    }
   }
 
   public updateConfig(partial: Partial<DesktopNotificationConfig>) {

@@ -69,7 +69,7 @@ interface ForecastedResourceDistributionWidgetProps {
   onSelectZone?: (zoneId: string) => void;
 }
 
-export default function ForecastedResourceDistributionWidget({
+function ForecastedResourceDistributionWidgetComponent({
   zones,
   alerts,
   telemetryStream,
@@ -618,3 +618,6 @@ export default function ForecastedResourceDistributionWidget({
     </div>
   );
 }
+
+const ForecastedResourceDistributionWidget = React.memo(ForecastedResourceDistributionWidgetComponent);
+export default ForecastedResourceDistributionWidget;

@@ -139,7 +139,7 @@ interface ActiveAlertsSectionProps {
   onInspectAnomaly?: (alert: ActiveAnomalyAlert) => void;
 }
 
-export default function ActiveAlertsSection({
+function ActiveAlertsSectionComponent({
   alerts,
   onAcknowledgeAlert,
   onDispatchAction,
@@ -949,3 +949,6 @@ export default function ActiveAlertsSection({
     </div>
   );
 }
+
+const ActiveAlertsSection = React.memo(ActiveAlertsSectionComponent);
+export default ActiveAlertsSection;

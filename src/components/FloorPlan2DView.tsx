@@ -35,7 +35,7 @@ interface FloorPlan2DViewProps {
 
 type OverlayMode = 'all' | 'thermal' | 'acoustic' | 'nodes';
 
-export default function FloorPlan2DView({
+function FloorPlan2DViewComponent({
   zones,
   selectedZoneId,
   onSelectZone,
@@ -885,3 +885,6 @@ export default function FloorPlan2DView({
     </div>
   );
 }
+
+const FloorPlan2DView = React.memo(FloorPlan2DViewComponent);
+export default FloorPlan2DView;

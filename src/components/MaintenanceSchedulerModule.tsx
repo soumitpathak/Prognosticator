@@ -40,7 +40,7 @@ interface MaintenanceSchedulerModuleProps {
   onSelectZone: (zoneId: string) => void;
 }
 
-export default function MaintenanceSchedulerModule({
+function MaintenanceSchedulerModuleComponent({
   alerts,
   zones,
   onAcknowledgeAlert,
@@ -547,3 +547,6 @@ export default function MaintenanceSchedulerModule({
     </div>
   );
 }
+
+const MaintenanceSchedulerModule = React.memo(MaintenanceSchedulerModuleComponent);
+export default MaintenanceSchedulerModule;

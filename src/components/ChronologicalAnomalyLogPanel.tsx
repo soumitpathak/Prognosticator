@@ -45,7 +45,7 @@ interface ChronologicalAnomalyLogPanelProps {
 type SeverityFilter = 'ALL_HIGH_PRIORITY' | 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'ALL';
 type StatusFilter = 'ALL' | 'UNACKNOWLEDGED' | 'ACKNOWLEDGED';
 
-export default function ChronologicalAnomalyLogPanel({
+function ChronologicalAnomalyLogPanelComponent({
   alerts,
   zones = [],
   selectedZoneId,
@@ -873,3 +873,6 @@ export default function ChronologicalAnomalyLogPanel({
     </div>
   );
 }
+
+const ChronologicalAnomalyLogPanel = React.memo(ChronologicalAnomalyLogPanelComponent);
+export default ChronologicalAnomalyLogPanel;

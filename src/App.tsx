@@ -55,21 +55,25 @@ export default function App() {
       isAccessibilityMode ? 'manager-high-contrast-light bg-slate-100 text-slate-900' : 'bg-slate-950 text-slate-100'
     }`}>
       {/* Top Universal Mode Bar */}
-      <div className="bg-slate-950 border-b border-slate-800 px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className={`border-b px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs transition-colors ${
+        isAccessibilityMode ? 'bg-slate-200 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-slate-100'
+      }`}>
         <div className="flex items-center space-x-2.5">
-          <span className="text-white font-bold tracking-tight text-sm font-sans">Prognosticator</span>
-          <span className="text-slate-600 hidden sm:inline">·</span>
-          <span className="text-slate-400 text-xs hidden sm:inline">Workforce Health Early Warning Intelligence</span>
+          <span className={`font-bold tracking-tight text-sm font-sans ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>Prognosticator</span>
+          <span className="text-slate-400 hidden sm:inline">·</span>
+          <span className={`text-xs hidden sm:inline ${isAccessibilityMode ? 'text-slate-700' : 'text-slate-400'}`}>Workforce Health Early Warning Intelligence</span>
         </div>
 
         {/* View Mode Switcher */}
-        <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+        <div className={`flex items-center border rounded-lg p-0.5 ${
+          isAccessibilityMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-900 border-slate-800'
+        }`}>
           <button
             onClick={() => setActiveTab('manager')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer ${
               activeTab === 'manager'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
+                ? isAccessibilityMode ? 'bg-cyan-700 text-white shadow-xs font-bold' : 'bg-cyan-600 text-white shadow-sm'
+                : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Shield className="h-3.5 w-3.5" />
@@ -77,10 +81,10 @@ export default function App() {
           </button>
           <button
             onClick={() => setActiveTab('worker')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer ${
               activeTab === 'worker'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
+                ? isAccessibilityMode ? 'bg-cyan-700 text-white shadow-xs font-bold' : 'bg-cyan-600 text-white shadow-sm'
+                : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <UserCheck className="h-3.5 w-3.5" />
@@ -114,7 +118,9 @@ export default function App() {
 
           <button
             onClick={() => setIsArchModalOpen(true)}
-            className="flex items-center space-x-1 text-slate-400 hover:text-cyan-400 transition text-[11px]"
+            className={`flex items-center space-x-1 transition text-[11px] cursor-pointer ${
+              isAccessibilityMode ? 'text-slate-700 hover:text-cyan-700 font-medium' : 'text-slate-400 hover:text-cyan-400'
+            }`}
           >
             <Layers className="h-3.5 w-3.5" />
             <span>System Pipeline &amp; Privacy Spec</span>
@@ -137,13 +143,15 @@ export default function App() {
       </main>
 
       {/* Persistent Platform & Compliance Footer */}
-      <footer className="bg-slate-950 border-t border-slate-900 px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+      <footer className={`border-t px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-xs gap-2 transition-colors ${
+        isAccessibilityMode ? 'bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-950 border-slate-900 text-slate-500'
+      }`}>
         <div className="flex items-center space-x-3">
           <span>&copy; 2026 Prognosticator Intelligence Platform</span>
-          <span className="hidden sm:inline text-slate-700">·</span>
-          <span className="text-slate-400">GDPR &amp; HIPAA Privacy Shield Certified</span>
+          <span className={`hidden sm:inline ${isAccessibilityMode ? 'text-slate-400' : 'text-slate-700'}`}>·</span>
+          <span className={isAccessibilityMode ? 'text-slate-900 font-medium' : 'text-slate-400'}>GDPR &amp; HIPAA Privacy Shield Certified</span>
         </div>
-        <div className="text-slate-500 text-[11px] font-mono">
+        <div className={`text-[11px] font-mono ${isAccessibilityMode ? 'text-slate-800 font-semibold' : 'text-slate-500'}`}>
           Non-Punitive Telemetry · k-Anonymity (N &ge; 12) &amp; &epsilon;-DP (0.5) Enforced
         </div>
       </footer>

@@ -195,7 +195,7 @@ const CORRELATION_PRESETS = [
   }
 ];
 
-export default function SensorCorrelationScatterPlot({
+function SensorCorrelationScatterPlotComponent({
   data,
   zones,
   selectedZoneId = 'ALL',
@@ -800,3 +800,6 @@ export default function SensorCorrelationScatterPlot({
     </div>
   );
 }
+
+const SensorCorrelationScatterPlot = React.memo(SensorCorrelationScatterPlotComponent);
+export default SensorCorrelationScatterPlot;

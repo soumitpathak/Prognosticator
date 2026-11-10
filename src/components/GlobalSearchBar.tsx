@@ -676,7 +676,7 @@ export const PREDICTIVE_REPORTS_INDEX = [
   }
 ];
 
-export default function GlobalSearchBar({
+function GlobalSearchBarComponent({
   zones,
   alerts,
   onSelectZone,
@@ -1490,3 +1490,6 @@ export default function GlobalSearchBar({
     </div>
   );
 }
+
+const GlobalSearchBar = React.memo(GlobalSearchBarComponent);
+export default GlobalSearchBar;

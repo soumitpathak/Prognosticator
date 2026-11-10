@@ -443,6 +443,15 @@ export default function ManagerDashboard({
   const [healthDateRange, setHealthDateRange] = useState<DateRangeSelection>(DEFAULT_DATE_RANGE);
   const [selectedComparisonDeptId, setSelectedComparisonDeptId] = useState<string>('Outdoor-Construction-Sector-4');
 
+  // Progressive below-the-fold component loading for instantaneous initial page load
+  const [isDeferredLoaded, setIsDeferredLoaded] = useState<boolean>(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsDeferredLoaded(true);
+    }, 40);
+    return () => clearTimeout(timer);
+  }, []);
+
   // What-If Simulator state for WorkforceRiskTrend7DaysChart
   const [isWhatIfSimulatorOpen, setIsWhatIfSimulatorOpen] = useState<boolean>(false);
 
@@ -2024,18 +2033,16 @@ export default function ManagerDashboard({
     if (activeToasts.length === 0 && criticalAnomalyToasts.length === 0) return;
     const timer = setInterval(() => {
       const now = Date.now();
-      setActiveToasts((prev) =>
-        prev.filter((t) => {
-          if (t.acknowledged) return false;
-          return now - t.createdAt < 6500;
-        })
-      );
-      setCriticalAnomalyToasts((prev) =>
-        prev.filter((t) => {
-          if (t.acknowledged) return false;
-          return now - t.createdAt < 6500;
-        })
-      );
+      setActiveToasts((prev) => {
+        if (prev.length === 0) return prev;
+        const next = prev.filter((t) => !t.acknowledged && now - t.createdAt < 6500);
+        return next.length === prev.length ? prev : next;
+      });
+      setCriticalAnomalyToasts((prev) => {
+        if (prev.length === 0) return prev;
+        const next = prev.filter((t) => !t.acknowledged && now - t.createdAt < 6500);
+        return next.length === prev.length ? prev : next;
+      });
     }, 1000);
     return () => clearInterval(timer);
   }, [activeToasts.length, criticalAnomalyToasts.length]);
@@ -4951,7 +4958,8 @@ export default function ManagerDashboard({
         className="mb-5"
       />
 
-      {managerTab === 'resourceUtilization' ? (
+      {/* Non-Live Primary View Tabs */}
+      {managerTab === 'resourceUtilization' && (
         <div className="mb-6 animate-fadeIn">
           <ResourceUtilizationPanel
             zones={zones}
@@ -4967,15 +4975,18 @@ export default function ManagerDashboard({
             }}
           />
         </div>
-      ) : managerTab === 'complianceAudit' ? (
+      )}
+      {managerTab === 'complianceAudit' && (
         <div className="mb-6 animate-fadeIn">
           <ComplianceAuditLog />
         </div>
-      ) : managerTab === 'compliance' ? (
+      )}
+      {managerTab === 'compliance' && (
         <div className="mb-6 animate-fadeIn">
           <SystemComplianceAuditModule />
         </div>
-      ) : managerTab === 'predictiveMaintenance' ? (
+      )}
+      {managerTab === 'predictiveMaintenance' && (
         <div className="mb-6 animate-fadeIn">
           <PredictiveMaintenanceModule
             onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
@@ -4989,7 +5000,8 @@ export default function ManagerDashboard({
             }}
           />
         </div>
-      ) : managerTab === 'correlationEngine' ? (
+      )}
+      {managerTab === 'correlationEngine' && (
         <div className="mb-6 animate-fadeIn">
           <CorrelationEngineModule
             onNavigateToZone={(zoneId) => {
@@ -5002,7 +5014,8 @@ export default function ManagerDashboard({
             }}
           />
         </div>
-      ) : managerTab === 'patterns' ? (
+      )}
+      {managerTab === 'patterns' && (
         <div className="mb-6 animate-fadeIn">
           <PatternLibraryTab
             onApplyMitigationToActiveZone={(sig) => {
@@ -5013,7 +5026,8 @@ export default function ManagerDashboard({
             }}
           />
         </div>
-      ) : managerTab === 'density' ? (
+      )}
+      {managerTab === 'density' && (
         <div className="mb-6 animate-fadeIn">
           <WorkerDensityCorrelationTab
             zones={zones}
@@ -5025,8 +5039,10 @@ export default function ManagerDashboard({
             onInspectAnomaly={handleOpenAnomalyDetails}
           />
         </div>
-      ) : (
-        <>
+      )}
+
+      {/* Primary Live Operations View: Persistent DOM to prevent expensive remounting & D3/Chart recalculation */}
+      <div className={managerTab === 'live' ? 'block' : 'hidden'}>
 
       {/* Top-Level Summary Section: Real-Time Critical KPIs & Status Cards */}
       <div id="top-level-summary-kpis" className="mb-6">
@@ -5636,6 +5652,8 @@ export default function ManagerDashboard({
         className="mb-6"
       />
 
+      {isDeferredLoaded ? (
+        <>
       {/* Resource Utilization & Worker Distribution Heatmap Panel */}
       <ResourceUtilizationPanel
         zones={zones}
@@ -7258,8 +7276,16 @@ export default function ManagerDashboard({
           onAddManualLog={handleAddManualAuditLog}
         />
       </div>
-      </>
+        </>
+      ) : (
+        <div className="py-12 flex flex-col items-center justify-center bg-slate-900/40 border border-slate-800 rounded-xl mb-6 text-center">
+          <div className="flex items-center space-x-2 text-cyan-400 text-xs font-mono">
+            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span>Hydrating telemetry streams &amp; prognostic charts...</span>
+          </div>
+        </div>
       )}
+      </div>
 
       {/* Modals & Drawers */}
       <SignedComplianceReportModal

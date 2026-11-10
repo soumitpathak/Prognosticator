@@ -131,7 +131,7 @@ export interface ChartPointWithMA extends Partial<TelemetryDataPoint> {
   projected_noise?: number;
 }
 
-export default function HistoricalWorkforceHealthChart({
+function HistoricalWorkforceHealthChartComponent({
   data,
   zoneName,
   activeThresholdCutoff = 65,
@@ -2516,3 +2516,6 @@ export default function HistoricalWorkforceHealthChart({
     </div>
   );
 }
+
+const HistoricalWorkforceHealthChart = React.memo(HistoricalWorkforceHealthChartComponent);
+export default HistoricalWorkforceHealthChart;

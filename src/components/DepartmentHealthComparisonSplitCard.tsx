@@ -242,7 +242,7 @@ interface DepartmentHealthComparisonSplitCardProps {
   className?: string;
 }
 
-export default function DepartmentHealthComparisonSplitCard({
+function DepartmentHealthComparisonSplitCardComponent({
   zones,
   dateRange,
   selectedDepartmentId,
@@ -716,3 +716,6 @@ export default function DepartmentHealthComparisonSplitCard({
     </div>
   );
 }
+
+const DepartmentHealthComparisonSplitCard = React.memo(DepartmentHealthComparisonSplitCardComponent);
+export default DepartmentHealthComparisonSplitCard;
