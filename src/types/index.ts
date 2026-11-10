@@ -605,6 +605,13 @@ export interface CriticalAnomalyToastData {
   riskProbability?: number;
   attributions?: Record<string, number>;
   dispatched?: boolean;
+  // Kalman Filter Model specific properties
+  kalmanSmoothedValue?: string;
+  rawMeasuredValue?: string;
+  kalmanStatus?: string;
+  kalmanGain?: number;
+  processVarianceQ?: number;
+  measurementVarianceR?: number;
 }
 
 export interface AnomalyTrendDayWithProjection extends AnomalyTrendDay {

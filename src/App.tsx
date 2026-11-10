@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import ManagerDashboard from './components/ManagerDashboard';
-import WorkerPrivateDashboard from './components/WorkerPrivateDashboard';
-import ArchitectureModal from './components/ArchitectureModal';
-import { Shield, UserCheck, Layers, Radio, Eye } from 'lucide-react';
+const WorkerPrivateDashboard = lazy(() => import('./components/WorkerPrivateDashboard'));
+const ArchitectureModal = lazy(() => import('./components/ArchitectureModal'));
+import { Shield, UserCheck, Layers, Eye } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'manager' | 'worker'>('manager');
@@ -137,7 +137,14 @@ export default function App() {
           />
         ) : (
           <div className="p-4 md:p-6 max-w-7xl mx-auto">
-            <WorkerPrivateDashboard />
+            <Suspense fallback={
+              <div className="flex items-center justify-center p-12 text-cyan-400 font-mono text-sm">
+                <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping mr-2"></span>
+                Loading private biometric vault...
+              </div>
+            }>
+              <WorkerPrivateDashboard />
+            </Suspense>
           </div>
         )}
       </main>
@@ -156,11 +163,15 @@ export default function App() {
         </div>
       </footer>
 
-      {/* System Pipeline Architecture Modal */}
-      <ArchitectureModal
-        isOpen={isArchModalOpen}
-        onClose={() => setIsArchModalOpen(false)}
-      />
+      {/* System Pipeline Architecture Modal (Rendered on-demand) */}
+      {isArchModalOpen && (
+        <Suspense fallback={null}>
+          <ArchitectureModal
+            isOpen={true}
+            onClose={() => setIsArchModalOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

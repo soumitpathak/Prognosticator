@@ -611,6 +611,14 @@ export const PREDICTIVE_REPORTS_INDEX = [
     actionHint: 'Download CSV Audit Dossier'
   },
   {
+    key: 'DOWNLOAD_PDF_REPORT',
+    title: 'Download Comprehensive Telemetry PDF Report',
+    subtitle: 'Generate a comprehensive report of current telemetry data leveraging print-friendly CSS styles (A4 Portrait)',
+    badge: 'PRINT PDF',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+    actionHint: 'Download Telemetry PDF'
+  },
+  {
     key: 'DASHBOARD_SUMMARY_PDF',
     title: 'Download Dashboard Summary Report (PDF)',
     subtitle: 'Executive 2-page documentation summarizing active metrics, anomaly events, and workplace zones',

@@ -1184,11 +1184,18 @@ export default function ManagerDashboard({
       attributions?: Record<string, number>;
       cohortCount?: number;
       force?: boolean;
+      // Kalman Filter Model specific properties
+      kalmanSmoothedValue?: string;
+      rawMeasuredValue?: string;
+      kalmanStatus?: string;
+      kalmanGain?: number;
+      processVarianceQ?: number;
+      measurementVarianceR?: number;
     }) => {
       const now = Date.now();
       const zoneKey = params.locationZone || 'default';
       const lastTrigger = lastCriticalToastTimestampsRef.current[zoneKey] || 0;
-      if (!params.force && now - lastTrigger < 60000) return; // 60-second cooldown for background stream
+      if (!params.force && now - lastTrigger < 8000) return; // 8-second cooldown for background stream
       lastCriticalToastTimestampsRef.current[zoneKey] = now;
 
       const confScore = params.confidenceLevel > 1 ? params.confidenceLevel / 100 : params.confidenceLevel;
@@ -1250,7 +1257,13 @@ export default function ManagerDashboard({
         acknowledged: false,
         riskTier: effectiveRiskTier,
         riskProbability: params.riskProbability ?? confScore,
-        attributions: params.attributions
+        attributions: params.attributions,
+        kalmanSmoothedValue: params.kalmanSmoothedValue,
+        rawMeasuredValue: params.rawMeasuredValue,
+        kalmanStatus: params.kalmanStatus,
+        kalmanGain: params.kalmanGain,
+        processVarianceQ: params.processVarianceQ,
+        measurementVarianceR: params.measurementVarianceR
       };
 
       setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 4));
@@ -2028,25 +2041,6 @@ export default function ManagerDashboard({
     [toastSoundEnabled, voiceSettings.severityAudioToggles]
   );
 
-  // Auto-dismiss countdown for non-acknowledged toasts
-  useEffect(() => {
-    if (activeToasts.length === 0 && criticalAnomalyToasts.length === 0) return;
-    const timer = setInterval(() => {
-      const now = Date.now();
-      setActiveToasts((prev) => {
-        if (prev.length === 0) return prev;
-        const next = prev.filter((t) => !t.acknowledged && now - t.createdAt < 6500);
-        return next.length === prev.length ? prev : next;
-      });
-      setCriticalAnomalyToasts((prev) => {
-        if (prev.length === 0) return prev;
-        const next = prev.filter((t) => !t.acknowledged && now - t.createdAt < 6500);
-        return next.length === prev.length ? prev : next;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [activeToasts.length, criticalAnomalyToasts.length]);
-
   const handleDismissToast = useCallback((id: string) => {
     setActiveToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -2063,6 +2057,12 @@ export default function ManagerDashboard({
   };
 
   const handleInspectSignalInChart = (signalKey: string) => {
+    if (signalKey.includes('Sector') || signalKey.includes('Zone') || signalKey.includes('Line') || signalKey.includes('Hub') || signalKey.includes('Tunnel') || signalKey.toLowerCase().includes('kalman')) {
+      const el = document.getElementById('kalman-predictive-model-30days-chart') || document.getElementById('historical-workforce-health-chart') || document.getElementById('telemetry-charts-card');
+      el?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
     if (signalKey === 'anomalyEngine') {
       const el = document.getElementById('active-anomalies-widget') || document.getElementById('historical-health-chart-card');
       el?.scrollIntoView({ behavior: 'smooth' });
@@ -2347,16 +2347,16 @@ export default function ManagerDashboard({
     window.print();
   }, []);
 
-  // Formal PDF report export utilizing existing print-friendly styles
-  const handleExportToPdfWithPrintStyles = useCallback(() => {
+  // Formal Comprehensive Telemetry PDF Report utilizing print-friendly styles
+  const handleDownloadPdfReport = useCallback(() => {
     const previousTitle = document.title;
     const dateFormatted = new Date().toISOString().split('T')[0];
-    const currentZone = zones.find((z) => z.id === selectedZone) || zones[0];
-    const formalTitle = `Prognosticator_Formal_Site_Safety_Report_${currentZone?.id || selectedZone}_${dateFormatted}`;
+    const currentZone = zones.find((z) => z.id === selectedZone) || activeZoneObj;
+    const formalTitle = `Prognosticator_Workforce_Health_Telemetry_Report_${currentZone?.id || 'Facility'}_${dateFormatted}`;
     document.title = formalTitle;
 
     setProtocolActiveNotice(
-      'Generating formal report document using print-friendly styles. Choose "Save as PDF" in the destination dialog.'
+      'Generating comprehensive telemetry PDF report using print-friendly styles. Choose "Save as PDF" in the destination dialog.'
     );
 
     // Record compliance audit log for formal report generation
@@ -2367,24 +2367,93 @@ export default function ManagerDashboard({
       userName: 'Alex Mercer',
       userRole: 'EHS Safety Supervisor',
       category: 'REPORT_EXPORT',
-      targetModule: 'Print-Friendly PDF Export Engine',
-      parameter: 'Formal Report Document PDF',
+      targetModule: 'Print-Friendly Telemetry PDF Engine',
+      parameter: 'Comprehensive Telemetry Dossier PDF',
       previousValue: 'N/A',
-      newValue: `Generated formal PDF report: ${formalTitle}.pdf`,
-      justification: 'Utilized existing print-friendly stylesheet to render formal executive report document for regulatory inspection and site safety meetings.',
+      newValue: `Generated comprehensive telemetry PDF report: ${formalTitle}.pdf`,
+      justification: 'Utilized existing print-friendly stylesheet to render comprehensive workforce telemetry data, Kalman filtering model parameters, and active anomaly logs for regulatory inspection and site safety meetings.',
       approvalStatus: 'VERIFIED'
     };
     setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+    // Record statutory HIPAA / OSHA compliance access event
+    systemComplianceService.logEvent({
+      accessorId: 'USR-MGR-2026',
+      accessorName: 'Alex Mercer',
+      accessorRole: 'EHS Safety Supervisor',
+      department: currentZone.name,
+      reportName: 'Comprehensive Workforce Health Telemetry Report',
+      reportType: 'POPULATION_HEALTH_EPIDEMIOLOGY',
+      accessAction: 'EXPORTED_PDF',
+      hipaaClassification: 'HIPAA §164.312(b) Audit Controls & Regulatory Inspection',
+      privacyShieldMetric: {
+        epsilonConsumed: 0.05,
+        kAnonymityCount: currentZone.count || 18,
+        laplaceNoiseBudgetRemaining: 2.80,
+        status: 'COMPLIANT_AUTHORIZED'
+      },
+      dataSubjectCount: currentZone.count || 18,
+      justification: 'Generated comprehensive PDF report of current telemetry data utilizing print-friendly styles.',
+      ipAddress: '10.240.8.14',
+      terminalId: 'OPS-MGR-TERMINAL-1'
+    });
 
     setTimeout(() => {
       window.print();
       setTimeout(() => {
         document.title = previousTitle;
-        setProtocolActiveNotice('Formal PDF report generated successfully.');
-        setTimeout(() => setProtocolActiveNotice(null), 4000);
+        setProtocolActiveNotice('Comprehensive Telemetry PDF Report generated successfully.');
+        setTimeout(() => setProtocolActiveNotice(null), 5000);
       }, 1500);
     }, 250);
-  }, [selectedZone, zones]);
+  }, [selectedZone, zones, activeZoneObj]);
+
+  // Alias for backward compatibility
+  const handleExportToPdfWithPrintStyles = handleDownloadPdfReport;
+
+  // Trigger realistic Kalman filtering health anomaly simulation & toast alert
+  const triggerKalmanAnomalySimulation = useCallback((customZone?: FacilityZone) => {
+    const targetZone = customZone || activeZoneObj;
+    const rawHrv = 30.8;
+    const smoothedHrv = 34.2;
+    const rawTemp = 38.65;
+    const smoothedTemp = 38.20;
+    const heartRate = 138;
+    const mse = 0.412;
+    const riskProb = 0.924;
+
+    triggerCriticalAnomalyNotification({
+      department: targetZone.name.includes('Construction') ? 'Civil & Structural Construction' : 'Industrial Operations Division',
+      confidenceLevel: riskProb,
+      riskProbability: riskProb,
+      riskTier: 'CRITICAL_RISK',
+      locationZone: targetZone.name,
+      zoneId: targetZone.id,
+      cohortCount: targetZone.count,
+      workerPseudonym: `W-${Math.floor(1000 + Math.random() * 9000)}`,
+      anomalyMetric: 'Acute Autonomic & Core Temperature Strain (Kalman Innovation Exceeded)',
+      measuredValue: `State Estimate Prob: 92.4% (MSE: 0.412, HR: ${heartRate} BPM)`,
+      rawMeasuredValue: `Raw HRV: ${rawHrv}ms, Skin Temp: ${rawTemp}°C (Jitter: ±7.4ms)`,
+      kalmanSmoothedValue: `HRV: ${smoothedHrv}ms, Skin: ${smoothedTemp}°C (P_k|k = 0.024)`,
+      kalmanStatus: 'Recursive Jitter Filtered & State Drift Validated',
+      thresholdLimit: `HRV Min ${targetZone.customBaselines?.baselineHrv || 60}ms, Skin Max ${healthThresholds.maxSkinTempC}°C`,
+      reconstructionMse: mse,
+      recommendedAction: 'Immediate shaded cooling extraction; stage rapid oral rehydration and medical dispatch liaison.',
+      privacyNotice: `k-Anonymity Cleared (N=${targetZone.count} ≥ 12) & ε=0.5 Differential Privacy Shield`,
+      attributions: {
+        'Heart Rate Variability (HRV) Collapse': 0.42,
+        'Thermal Heat Index Load': 0.31,
+        'Skin Temperature Elevation': 0.18,
+        'Sleep Debt Cumulative Fatigue': 0.09
+      },
+      force: true
+    });
+
+    setProtocolActiveNotice(
+      `Kalman model anomaly triggered for ${targetZone.name}. Visual toast notification dispatched.`
+    );
+    setTimeout(() => setProtocolActiveNotice(null), 5000);
+  }, [activeZoneObj, healthThresholds, triggerCriticalAnomalyNotification]);
 
   // Handle successful safety committee PDF generation & log statutory audit record
   const handleSafetyCommitteeExportSuccess = useCallback((filename: string) => {
@@ -3276,6 +3345,12 @@ export default function ManagerDashboard({
           privacyStatus: result.privacy_compliance
         });
 
+        const lastStreamPt = telemetryStream[telemetryStream.length - 1];
+        const rawHrvDisplay = lastStreamPt?.raw_hrv ? `${lastStreamPt.raw_hrv}ms` : '31.2ms (±6ms Jitter)';
+        const smoothedHrvDisplay = lastStreamPt?.smoothed_hrv ? `${lastStreamPt.smoothed_hrv}ms` : '34.6ms';
+        const rawTempDisplay = lastStreamPt?.raw_skin_temp ? `${lastStreamPt.raw_skin_temp}°C` : '38.4°C';
+        const smoothedTempDisplay = lastStreamPt?.smoothed_skin_temp ? `${lastStreamPt.smoothed_skin_temp}°C` : '38.1°C';
+
         triggerCriticalAnomalyNotification({
           confidenceLevel: result.risk_probability,
           riskProbability: result.risk_probability,
@@ -3288,6 +3363,9 @@ export default function ManagerDashboard({
             ? 'Acute Autonomic Deceleration & Thermal Strain'
             : 'Elevated Multi-Signal Population Heat Stress',
           measuredValue: `State Estimate Prob: ${(result.risk_probability * 100).toFixed(1)}% (MSE: ${result.reconstruction_mse.toFixed(3)})`,
+          rawMeasuredValue: `Raw HRV: ${rawHrvDisplay}, Raw Skin: ${rawTempDisplay}`,
+          kalmanSmoothedValue: `Smoothed HRV: ${smoothedHrvDisplay}, Temp: ${smoothedTempDisplay}`,
+          kalmanStatus: 'Recursive Jitter Filtered & State Drift Validated',
           thresholdLimit: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
           reconstructionMse: result.reconstruction_mse,
           recommendedAction: result.recommended_operational_action,
@@ -4135,6 +4213,149 @@ export default function ManagerDashboard({
         </div>
       </div>
 
+      {/* Comprehensive Telemetry Data Report Section (Leverages print-friendly styles for PDF Generation) */}
+      <div className="hidden print:block mb-6 space-y-4 text-xs font-sans text-slate-900">
+        {/* Telemetry Snapshot Table */}
+        <div className="border border-slate-300 rounded-lg p-3 bg-white">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-950 mb-2 border-b border-slate-300 pb-1 flex justify-between items-center">
+            <span>1. Current Multi-Signal Health &amp; Environmental Telemetry</span>
+            <span className="text-[10px] font-mono text-slate-600 font-normal">Slide Window: 24h &bull; Sliding Interval: 15m</span>
+          </h2>
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-300 font-mono text-slate-700 bg-slate-50">
+                <th className="py-1 px-2">Telemetry Parameter</th>
+                <th className="py-1 px-2">Raw Measured Reading</th>
+                <th className="py-1 px-2">Safe Threshold / Baseline</th>
+                <th className="py-1 px-2">Kalman Smoothed Estimate</th>
+                <th className="py-1 px-2">Validation Status / Delta</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 font-mono">
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Ambient Temperature (°C)</td>
+                <td className="py-1.5 px-2">{activeZoneObj.temp}</td>
+                <td className="py-1.5 px-2">&le; {healthThresholds.maxAmbientHeatC}&deg;C</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.ambient_temp_c ?? 38.4}&deg;C</td>
+                <td className="py-1.5 px-2 font-semibold text-rose-700">Solar Diurnal Peak</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Wet-Bulb Heat Index / TWL</td>
+                <td className="py-1.5 px-2">{activeZoneObj.heatIndex}&deg;C (TWL: {activeZoneObj.twl} W/m&sup2;)</td>
+                <td className="py-1.5 px-2">TWL &gt; 115 W/m&sup2; (Safe Work)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.twl_index ?? 92.4} W/m&sup2;</td>
+                <td className="py-1.5 px-2 font-semibold text-amber-700">Thermal Strain Alert</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Heart Rate Variability (HRV ms)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.raw_hrv ?? 31.0} ms</td>
+                <td className="py-1.5 px-2">&ge; {activeZoneObj.customBaselines?.baselineHrv || 60} ms baseline</td>
+                <td className="py-1.5 px-2 font-bold text-cyan-800">{telemetryStream[telemetryStream.length - 1]?.smoothed_hrv ?? 34.2} ms</td>
+                <td className="py-1.5 px-2 font-semibold text-rose-700">-46.8% Autonomic Drop</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Mean Workforce Heart Rate (BPM)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.raw_heart_rate_bpm ?? 128} BPM</td>
+                <td className="py-1.5 px-2">&le; {healthThresholds.maxHeartRateBpm} BPM limit</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.heart_rate_bpm ?? 124} BPM</td>
+                <td className="py-1.5 px-2 font-semibold text-amber-700">Tachycardic Exertion</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Epidermal Skin Temperature (&deg;C)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.raw_skin_temp ?? 38.35}&deg;C</td>
+                <td className="py-1.5 px-2">&le; {healthThresholds.maxSkinTempC}&deg;C</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.smoothed_skin_temp ?? 38.12}&deg;C</td>
+                <td className="py-1.5 px-2 font-semibold text-rose-700">+1.62&deg;C Core Elevation</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Acoustic Machinery Noise (dBA)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.raw_noise_db ?? 98.4} dBA</td>
+                <td className="py-1.5 px-2">&le; {activeZoneObj.customBaselines?.noiseLimitDb || 85} dBA (8h PEL)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.smoothed_noise_db ?? 94.2} dBA</td>
+                <td className="py-1.5 px-2 font-semibold text-amber-700">Overexposure Zone</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 px-2 font-semibold font-sans">Air Quality Index (AQI PM2.5)</td>
+                <td className="py-1.5 px-2">{activeZoneObj.aqi} AQI</td>
+                <td className="py-1.5 px-2">&le; 100 AQI (Good/Moderate)</td>
+                <td className="py-1.5 px-2">{telemetryStream[telemetryStream.length - 1]?.aqi ?? activeZoneObj.aqi} AQI</td>
+                <td className="py-1.5 px-2 font-semibold text-amber-700">Unhealthy for Sensitive Groups</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Kalman Filtering Model Diagnostics & Risk State */}
+        <div className="border border-slate-300 rounded-lg p-3 bg-white">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-950 mb-2 border-b border-slate-300 pb-1">
+            2. Kalman Filter Model Diagnostics &amp; Risk State Estimation
+          </h2>
+          <div className="grid grid-cols-3 gap-3 font-mono text-xs">
+            <div className="p-2 border border-slate-300 rounded bg-slate-50">
+              <span className="text-slate-600 block text-[10px] uppercase font-bold">Process Noise Covariance (Q)</span>
+              <strong className="text-sm text-slate-950">Q = {kalmanConfig.processVarianceQ.toFixed(3)}</strong>
+              <span className="text-[10px] text-slate-600 block mt-0.5">Underlying physiological transition rate</span>
+            </div>
+            <div className="p-2 border border-slate-300 rounded bg-slate-50">
+              <span className="text-slate-600 block text-[10px] uppercase font-bold">Measurement Noise Variance (R)</span>
+              <strong className="text-sm text-slate-950">R = {kalmanConfig.measurementVarianceR.toFixed(3)}</strong>
+              <span className="text-[10px] text-slate-600 block mt-0.5">Bluetooth biometric sensor jitter envelope</span>
+            </div>
+            <div className="p-2 border border-slate-300 rounded bg-slate-50">
+              <span className="text-slate-600 block text-[10px] uppercase font-bold">Innovation Covariance (P_k|k)</span>
+              <strong className="text-sm text-slate-950">P_k|k = 0.024</strong>
+              <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Filter Stability: Optimal (99.4%)</span>
+            </div>
+          </div>
+          <div className="mt-2.5 p-2 bg-slate-50 border border-slate-300 rounded text-xs font-mono flex justify-between items-center">
+            <span><strong>Reconstruction MSE:</strong> {telemetryAlert?.reconstruction_mse?.toFixed(3) ?? '0.385'}</span>
+            <span><strong>Risk Probability:</strong> {((telemetryAlert?.risk_probability ?? 0.884) * 100).toFixed(1)}%</span>
+            <span><strong>Risk Tier:</strong> <strong className="text-rose-800">{telemetryAlert?.risk_tier ?? 'CRITICAL_RISK'}</strong></span>
+            <span><strong>Privacy Shield:</strong> <strong className="text-emerald-800">k={activeZoneObj.count} &ge; 12 (&epsilon;=0.5 DP)</strong></span>
+          </div>
+        </div>
+
+        {/* Active Workforce Anomaly Incidents Table */}
+        <div className="border border-slate-300 rounded-lg p-3 bg-white">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-950 mb-2 border-b border-slate-300 pb-1">
+            3. Active Population Health Anomalies ({activeAlerts.length} Flagged Events)
+          </h2>
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-300 font-mono text-slate-700 bg-slate-50">
+                <th className="py-1 px-2">Alert ID</th>
+                <th className="py-1 px-2">Location Zone</th>
+                <th className="py-1 px-2">Severity</th>
+                <th className="py-1 px-2">Anomaly Metric</th>
+                <th className="py-1 px-2">Raw vs Kalman Reading</th>
+                <th className="py-1 px-2">Early Warning Lead</th>
+                <th className="py-1 px-2">Prescribed Operational Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 font-mono text-[11px]">
+              {activeAlerts.slice(0, 5).map((alert) => (
+                <tr key={alert.id}>
+                  <td className="py-1 px-2 font-bold">{alert.id}</td>
+                  <td className="py-1 px-2">{alert.location_zone}</td>
+                  <td className="py-1 px-2">
+                    <span className={`font-bold ${alert.severity === 'CRITICAL' ? 'text-rose-700' : 'text-amber-700'}`}>
+                      {alert.severity}
+                    </span>
+                  </td>
+                  <td className="py-1 px-2 font-sans font-medium">{alert.anomaly_metric}</td>
+                  <td className="py-1 px-2 font-mono text-[10px]">
+                    <div>Raw: {alert.raw_value}</div>
+                    <div className="text-cyan-800 font-semibold">Kalman: {alert.kalman_smoothed_value}</div>
+                  </td>
+                  <td className="py-1 px-2">{alert.lead_time}</td>
+                  <td className="py-1 px-2 font-sans text-slate-800">{alert.recommended_action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Top Navigation Bar */}
       <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
         <div className="flex items-center space-x-3 shrink-0">
@@ -4208,7 +4429,9 @@ export default function ManagerDashboard({
               el?.scrollIntoView({ behavior: 'smooth' });
             }}
             onSelectReport={(reportKey) => {
-              if (reportKey === 'EXPORT_DATA') {
+              if (reportKey === 'DOWNLOAD_PDF_REPORT') {
+                handleDownloadPdfReport();
+              } else if (reportKey === 'EXPORT_DATA') {
                 setIsReportModalOpen(true);
               } else if (reportKey === 'EXPORT_ALL_ANALYTICS_CSV') {
                 handleExportAnomalyLogsAndTrendDataCsv();
@@ -4411,6 +4634,26 @@ export default function ManagerDashboard({
 
         {/* Right: Consolidated Executive Actions & Menus */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Download PDF Report (Print Styles) */}
+          <button
+            onClick={handleDownloadPdfReport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition cursor-pointer shadow-sm"
+            title="Download comprehensive PDF report of current telemetry data leveraging print-friendly styles"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            <span>Download PDF Report</span>
+          </button>
+
+          {/* Simulate Kalman Anomaly Alert Toast */}
+          <button
+            onClick={() => triggerKalmanAnomalySimulation()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-700/60 transition cursor-pointer shadow-xs"
+            title="Trigger visual toast alert for a significant Kalman filtering health telemetry anomaly"
+          >
+            <Cpu className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+            <span>Simulate Kalman Anomaly</span>
+          </button>
+
           {/* What-If Simulator Trigger */}
           <button
             onClick={handleOpenWhatIfSimulator}
@@ -4443,6 +4686,14 @@ export default function ManagerDashboard({
                 <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
                   Executive PDF Reports
                 </div>
+                <button
+                  onClick={handleDownloadPdfReport}
+                  className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition font-semibold"
+                  title="Download comprehensive PDF report of current telemetry data leveraging print-friendly styles"
+                >
+                  <Printer className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span className="truncate">Download PDF Report (Print Styles)</span>
+                </button>
                 <button
                   onClick={handleDownloadDashboardSummaryPdf}
                   disabled={isGeneratingSummaryPdf}
@@ -5421,6 +5672,28 @@ export default function ManagerDashboard({
             approvalStatus: 'VERIFIED'
           };
           setSystemAuditLogs((prev) => [entry, ...prev]);
+        }}
+        onTriggerAnomalyToast={(cohort) => {
+          triggerCriticalAnomalyNotification({
+            department: cohort.cohortName,
+            confidenceLevel: cohort.kalmanAnomalyScore / 100,
+            riskProbability: cohort.kalmanAnomalyScore / 100,
+            riskTier: cohort.severity === 'CRITICAL' ? 'CRITICAL_RISK' : 'HIGH_RISK',
+            locationZone: cohort.zoneName,
+            zoneId: cohort.zoneId,
+            cohortCount: cohort.populationSize,
+            workerPseudonym: `COHORT-${cohort.zoneId.slice(0, 8)}`,
+            anomalyMetric: `${cohort.primaryAttribution} (Kalman Score: ${cohort.kalmanAnomalyScore}%)`,
+            measuredValue: `Kalman Anomaly Score: ${cohort.kalmanAnomalyScore}% (Limit: ${cohort.thresholdLimit}%)`,
+            rawMeasuredValue: `Raw Measured Divergence: +${cohort.divergenceDelta}%`,
+            kalmanSmoothedValue: `Kalman Smoothed Score: ${cohort.kalmanAnomalyScore}%`,
+            kalmanStatus: cohort.kalmanValidationStatus,
+            thresholdLimit: `${cohort.thresholdLimit}% Safe Threshold`,
+            reconstructionMse: 0.392,
+            recommendedAction: cohort.recommendedIntervention,
+            privacyNotice: `k-Anonymity Verified (N=${cohort.populationSize} >= 12) & ε=0.5 DP Shield`,
+            force: true
+          });
         }}
         className="mb-6"
       />
@@ -7185,6 +7458,14 @@ export default function ManagerDashboard({
               <span>Stage Medical Dispatch ({stagedDispatchCount})</span>
             </button>
             <button
+              onClick={handleDownloadPdfReport}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition shadow-lg shadow-cyan-600/20 flex items-center gap-1.5 cursor-pointer"
+              title="Download comprehensive telemetry PDF report leveraging print-friendly styles"
+            >
+              <Printer className="h-4 w-4" />
+              <span>Download PDF Report</span>
+            </button>
+            <button
               onClick={handleDirectPdfExport}
               disabled={isDirectPdfExporting}
               className={`font-medium py-2.5 px-4 rounded-lg text-sm transition border flex items-center gap-1.5 shadow-sm ${
@@ -7287,288 +7568,338 @@ export default function ManagerDashboard({
       )}
       </div>
 
-      {/* Modals & Drawers */}
-      <SignedComplianceReportModal
-        isOpen={isSignedCompliancePdfModalOpen}
-        onClose={() => setIsSignedCompliancePdfModalOpen(false)}
-        auditRecords={anomalyAuditRecords}
-      />
+      {/* Modals & Drawers - Loaded conditionally on demand for optimal runtime performance */}
+      {isSignedCompliancePdfModalOpen && (
+        <SignedComplianceReportModal
+          isOpen={true}
+          onClose={() => setIsSignedCompliancePdfModalOpen(false)}
+          auditRecords={anomalyAuditRecords}
+        />
+      )}
 
-      <DailySummaryReportModal
-        isOpen={isDailySummaryReportOpen}
-        onClose={() => setIsDailySummaryReportOpen(false)}
-        onOpenConfig={() => setIsDailySummaryConfigOpen(true)}
-        zones={zones}
-        alerts={activeAlerts}
-        pastAnomalies={pastAnomalies}
-        incidentAssignments={incidentAssignments}
-        telemetryStream={telemetryStream}
-      />
+      {isDailySummaryReportOpen && (
+        <DailySummaryReportModal
+          isOpen={true}
+          onClose={() => setIsDailySummaryReportOpen(false)}
+          onOpenConfig={() => setIsDailySummaryConfigOpen(true)}
+          zones={zones}
+          alerts={activeAlerts}
+          pastAnomalies={pastAnomalies}
+          incidentAssignments={incidentAssignments}
+          telemetryStream={telemetryStream}
+        />
+      )}
 
-      <DailySummaryConfigModal
-        isOpen={isDailySummaryConfigOpen}
-        onClose={() => setIsDailySummaryConfigOpen(false)}
-        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-      />
+      {isDailySummaryConfigOpen && (
+        <DailySummaryConfigModal
+          isOpen={true}
+          onClose={() => setIsDailySummaryConfigOpen(false)}
+          onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+          onNotice={(msg) => {
+            setProtocolActiveNotice(msg);
+            setTimeout(() => setProtocolActiveNotice(null), 6000);
+          }}
+        />
+      )}
 
-      <ScenarioSimulationModal
-        isOpen={isScenarioSimulationOpen}
-        onClose={() => setIsScenarioSimulationOpen(false)}
-        activeZone={activeZoneObj}
-        onInjectSimulatedScenario={handleInjectSimulatedScenario}
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-      />
+      {isScenarioSimulationOpen && (
+        <ScenarioSimulationModal
+          isOpen={true}
+          onClose={() => setIsScenarioSimulationOpen(false)}
+          activeZone={activeZoneObj}
+          onInjectSimulatedScenario={handleInjectSimulatedScenario}
+          onNotice={(msg) => {
+            setProtocolActiveNotice(msg);
+            setTimeout(() => setProtocolActiveNotice(null), 7000);
+          }}
+        />
+      )}
 
-      <ExplainableAiLogWindow
-        isModal
-        isOpen={isExplainableAiModalOpen}
-        onClose={() => setIsExplainableAiModalOpen(false)}
-        anomalies={activeAlerts}
-        zones={zones}
-        onOpenScenarioSimulation={() => {
-          setIsExplainableAiModalOpen(false);
-          setIsScenarioSimulationOpen(true);
-        }}
-        onDispatchMitigation={handleDispatchAction}
-      />
+      {isExplainableAiModalOpen && (
+        <ExplainableAiLogWindow
+          isModal
+          isOpen={true}
+          onClose={() => setIsExplainableAiModalOpen(false)}
+          anomalies={activeAlerts}
+          zones={zones}
+          onOpenScenarioSimulation={() => {
+            setIsExplainableAiModalOpen(false);
+            setIsScenarioSimulationOpen(true);
+          }}
+          onDispatchMitigation={handleDispatchAction}
+        />
+      )}
 
-      <AuditLogModal
-        isOpen={isAuditModalOpen}
-        onClose={() => setIsAuditModalOpen(false)}
-        auditEvents={auditEvents}
-      />
+      {isAuditModalOpen && (
+        <AuditLogModal
+          isOpen={true}
+          onClose={() => setIsAuditModalOpen(false)}
+          auditEvents={auditEvents}
+        />
+      )}
 
-      <AnomalyAuditLogModal
-        isOpen={isAnomalyAuditModalOpen}
-        onClose={() => setIsAnomalyAuditModalOpen(false)}
-        auditRecords={anomalyAuditRecords}
-      />
+      {isAnomalyAuditModalOpen && (
+        <AnomalyAuditLogModal
+          isOpen={true}
+          onClose={() => setIsAnomalyAuditModalOpen(false)}
+          auditRecords={anomalyAuditRecords}
+        />
+      )}
 
-      <QuickSnapshotModal
-        isOpen={isQuickSnapshotModalOpen}
-        onClose={() => setIsQuickSnapshotModalOpen(false)}
-        alerts={activeAlerts}
-        zones={zones}
-        anomalyAuditRecords={anomalyAuditRecords}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onJumpToZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setIsQuickSnapshotModalOpen(false);
-          const el = document.getElementById('zone-anomaly-concentration-heatmap');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
+      {isQuickSnapshotModalOpen && (
+        <QuickSnapshotModal
+          isOpen={true}
+          onClose={() => setIsQuickSnapshotModalOpen(false)}
+          alerts={activeAlerts}
+          zones={zones}
+          anomalyAuditRecords={anomalyAuditRecords}
+          onAcknowledgeAlert={handleAcknowledgeAlert}
+          onJumpToZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setIsQuickSnapshotModalOpen(false);
+            const el = document.getElementById('zone-anomaly-concentration-heatmap');
+            el?.scrollIntoView({ behavior: 'smooth' });
+          }}
+        />
+      )}
 
-      <TelemetryInspectorModal
-        isOpen={isInspectorOpen}
-        onClose={() => setIsInspectorOpen(false)}
-        telemetryStream={telemetryStream}
-        zoneName={activeZoneObj.name}
-      />
+      {isInspectorOpen && (
+        <TelemetryInspectorModal
+          isOpen={true}
+          onClose={() => setIsInspectorOpen(false)}
+          telemetryStream={telemetryStream}
+          zoneName={activeZoneObj.name}
+        />
+      )}
 
-      <StreamSimulatorDrawer
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        currentZone={selectedZone}
-        onSimulateCustomPacket={handleCustomPacketFromSimulator}
-        isStreamingActive={isStreamingActive}
-        onToggleLiveStream={() => setIsStreamingActive((s) => !s)}
-        jitterEnabled={jitterEnabled}
-        onToggleJitter={() => setJitterEnabled((j) => !j)}
-        onTriggerBurst={handleTriggerBurst}
-      />
+      {isSimulatorOpen && (
+        <StreamSimulatorDrawer
+          isOpen={true}
+          onClose={() => setIsSimulatorOpen(false)}
+          currentZone={selectedZone}
+          onSimulateCustomPacket={handleCustomPacketFromSimulator}
+          isStreamingActive={isStreamingActive}
+          onToggleLiveStream={() => setIsStreamingActive((s) => !s)}
+          jitterEnabled={jitterEnabled}
+          onToggleJitter={() => setJitterEnabled((j) => !j)}
+          onTriggerBurst={handleTriggerBurst}
+        />
+      )}
 
-      <ReportExportModal
-        isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        activeAlerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        currentZone={activeZoneObj.name}
-        zones={zones}
-      />
+      {isReportModalOpen && (
+        <ReportExportModal
+          isOpen={true}
+          onClose={() => setIsReportModalOpen(false)}
+          activeAlerts={activeAlerts}
+          telemetryStream={telemetryStream}
+          currentZone={activeZoneObj.name}
+          zones={zones}
+        />
+      )}
 
-      <KalmanSettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        currentConfig={kalmanConfig}
-        onSaveConfig={handleSaveConfig}
-        voiceSettings={voiceSettings}
-        onUpdateVoiceSettings={setVoiceSettings}
-        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
-      />
+      {isSettingsModalOpen && (
+        <KalmanSettingsModal
+          isOpen={true}
+          onClose={() => setIsSettingsModalOpen(false)}
+          currentConfig={kalmanConfig}
+          onSaveConfig={handleSaveConfig}
+          voiceSettings={voiceSettings}
+          onUpdateVoiceSettings={setVoiceSettings}
+          onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
+        />
+      )}
 
-      <MedicalDispatchModal
-        isOpen={isDispatchModalOpen}
-        onClose={() => setIsDispatchModalOpen(false)}
-        dispatches={medicalDispatches}
-        onTransmitDispatch={handleTransmitDispatch}
-        onTransmitAll={handleTransmitAllDispatches}
-        onAcknowledgeDispatch={handleAcknowledgeDispatch}
-        onStageNewDispatch={handleStageNewDispatch}
-        zoneNames={zones.map((z) => z.name)}
-      />
+      {isDispatchModalOpen && (
+        <MedicalDispatchModal
+          isOpen={true}
+          onClose={() => setIsDispatchModalOpen(false)}
+          dispatches={medicalDispatches}
+          onTransmitDispatch={handleTransmitDispatch}
+          onTransmitAll={handleTransmitAllDispatches}
+          onAcknowledgeDispatch={handleAcknowledgeDispatch}
+          onStageNewDispatch={handleStageNewDispatch}
+          zoneNames={zones.map((z) => z.name)}
+        />
+      )}
 
-      <CustomZoneBuilderModal
-        isOpen={isZoneBuilderOpen}
-        onClose={() => setIsZoneBuilderOpen(false)}
-        onAddZone={handleAddCustomZone}
-      />
+      {isZoneBuilderOpen && (
+        <CustomZoneBuilderModal
+          isOpen={true}
+          onClose={() => setIsZoneBuilderOpen(false)}
+          onAddZone={handleAddCustomZone}
+        />
+      )}
 
       {/* Audible Voice Alerts Synthesis Modal */}
-      <VoiceAlertsModal
-        isOpen={isVoiceModalOpen}
-        onClose={() => setIsVoiceModalOpen(false)}
-        settings={voiceSettings}
-        onUpdateSettings={setVoiceSettings}
-        isSpeaking={isSpeaking}
-        onStopSpeaking={handleStopSpeaking}
-      />
+      {isVoiceModalOpen && (
+        <VoiceAlertsModal
+          isOpen={true}
+          onClose={() => setIsVoiceModalOpen(false)}
+          settings={voiceSettings}
+          onUpdateSettings={setVoiceSettings}
+          isSpeaking={isSpeaking}
+          onStopSpeaking={handleStopSpeaking}
+        />
+      )}
 
       {/* Workforce Health Signal Notification Thresholds Configuration Modal */}
-      <HealthThresholdsConfigModal
-        isOpen={isHealthThresholdsModalOpen}
-        onClose={() => setIsHealthThresholdsModalOpen(false)}
-        currentThresholds={healthThresholds}
-        onSaveThresholds={handleSaveHealthThresholds}
-        zones={zones}
-        activeZoneId={selectedZone}
-      />
+      {isHealthThresholdsModalOpen && (
+        <HealthThresholdsConfigModal
+          isOpen={true}
+          onClose={() => setIsHealthThresholdsModalOpen(false)}
+          currentThresholds={healthThresholds}
+          onSaveThresholds={handleSaveHealthThresholds}
+          zones={zones}
+          activeZoneId={selectedZone}
+        />
+      )}
 
       {/* Historical Anomaly Log Statutory Compliance CSV Export Modal */}
-      <HistoricalAnomalyCsvExportModal
-        isOpen={isComplianceCsvExportModalOpen}
-        onClose={() => setIsComplianceCsvExportModalOpen(false)}
-        alerts={activeAlerts}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        thresholds={healthThresholds}
-        onExportLogged={handleHistoricalComplianceExportLogged}
-      />
+      {isComplianceCsvExportModalOpen && (
+        <HistoricalAnomalyCsvExportModal
+          isOpen={true}
+          onClose={() => setIsComplianceCsvExportModalOpen(false)}
+          alerts={activeAlerts}
+          zones={zones}
+          selectedZoneId={selectedZone}
+          thresholds={healthThresholds}
+          onExportLogged={handleHistoricalComplianceExportLogged}
+        />
+      )}
 
       {/* Historical Anomaly Log Formatted PDF Document Export Modal */}
-      <HistoricalAnomalyPdfExportModal
-        isOpen={isCompliancePdfExportModalOpen}
-        onClose={() => setIsCompliancePdfExportModalOpen(false)}
-        alerts={activeAlerts}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        thresholds={healthThresholds}
-        onExportLogged={handleHistoricalCompliancePdfExportLogged}
-      />
+      {isCompliancePdfExportModalOpen && (
+        <HistoricalAnomalyPdfExportModal
+          isOpen={true}
+          onClose={() => setIsCompliancePdfExportModalOpen(false)}
+          alerts={activeAlerts}
+          zones={zones}
+          selectedZoneId={selectedZone}
+          thresholds={healthThresholds}
+          onExportLogged={handleHistoricalCompliancePdfExportLogged}
+        />
+      )}
 
       {/* Health Metrics Current Display Mock PDF Export Modal */}
-      <HealthMetricsPdfExportModal
-        isOpen={isHealthMetricsPdfModalOpen}
-        onClose={() => setIsHealthMetricsPdfModalOpen(false)}
-        zone={activeZoneObj}
-        telemetryStream={telemetryStream}
-        activeAlerts={activeAlerts}
-        thresholds={healthThresholds}
-        onReportExported={handleHealthMetricsReportExported}
-      />
+      {isHealthMetricsPdfModalOpen && (
+        <HealthMetricsPdfExportModal
+          isOpen={true}
+          onClose={() => setIsHealthMetricsPdfModalOpen(false)}
+          zone={activeZoneObj}
+          telemetryStream={telemetryStream}
+          activeAlerts={activeAlerts}
+          thresholds={healthThresholds}
+          onReportExported={handleHealthMetricsReportExported}
+        />
+      )}
 
       {/* Comprehensive Anomaly Telemetry Parameters & Kalman State Diagnostics Modal */}
-      <AnomalyTelemetryDetailModal
-        isOpen={isAnomalyDetailModalOpen}
-        onClose={() => {
-          setIsAnomalyDetailModalOpen(false);
-          setSelectedAnomalyForDetail(null);
-        }}
-        anomaly={selectedAnomalyForDetail}
-        zone={activeZoneObj}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-      />
+      {isAnomalyDetailModalOpen && (
+        <AnomalyTelemetryDetailModal
+          isOpen={true}
+          onClose={() => {
+            setIsAnomalyDetailModalOpen(false);
+            setSelectedAnomalyForDetail(null);
+          }}
+          anomaly={selectedAnomalyForDetail}
+          zone={activeZoneObj}
+          onAcknowledgeAlert={handleAcknowledgeAlert}
+          onDispatchAction={handleDispatchAction}
+          onSelectZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setAnomalyTrendZoneId(zoneId);
+            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+            setTelemetryAlert(res);
+          }}
+        />
+      )}
 
       {/* Download Options Modal: Select specific metrics to include in report before downloading */}
-      <DownloadOptionsModal
-        isOpen={isDownloadOptionsModalOpen}
-        onClose={() => setIsDownloadOptionsModalOpen(false)}
-        zones={zones}
-        activeAlerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        currentZone={activeZoneObj}
-        onExportSuccess={(filename, exportFormat, metricCount) => {
-          setProtocolActiveNotice(
-            `Custom report downloaded (${metricCount} metrics, ${exportFormat}): ${filename}`
-          );
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-      />
+      {isDownloadOptionsModalOpen && (
+        <DownloadOptionsModal
+          isOpen={true}
+          onClose={() => setIsDownloadOptionsModalOpen(false)}
+          zones={zones}
+          activeAlerts={activeAlerts}
+          telemetryStream={telemetryStream}
+          currentZone={activeZoneObj}
+          onExportSuccess={(filename, exportFormat, metricCount) => {
+            setProtocolActiveNotice(
+              `Custom report downloaded (${metricCount} metrics, ${exportFormat}): ${filename}`
+            );
+            setTimeout(() => setProtocolActiveNotice(null), 6000);
+          }}
+        />
+      )}
 
       {/* Safety Committee PDF Report Export Modal: Offline review by the Joint Health & Safety Committee */}
-      <SafetyCommitteePdfExportModal
-        isOpen={isSafetyCommitteePdfModalOpen}
-        onClose={() => setIsSafetyCommitteePdfModalOpen(false)}
-        activeAlerts={activeAlerts}
-        currentZone={activeZoneObj}
-        zones={zones}
-        telemetryStream={telemetryStream}
-        healthThresholds={healthThresholds}
-        kalmanConfig={kalmanConfig}
-        onExportSuccess={(filename) => handleSafetyCommitteeExportSuccess(filename)}
-      />
+      {isSafetyCommitteePdfModalOpen && (
+        <SafetyCommitteePdfExportModal
+          isOpen={true}
+          onClose={() => setIsSafetyCommitteePdfModalOpen(false)}
+          activeAlerts={activeAlerts}
+          currentZone={activeZoneObj}
+          zones={zones}
+          telemetryStream={telemetryStream}
+          healthThresholds={healthThresholds}
+          kalmanConfig={kalmanConfig}
+          onExportSuccess={(filename) => handleSafetyCommitteeExportSuccess(filename)}
+        />
+      )}
 
-      {/* Category-based Signal Filter Sidebar: Allows toggling Cardiac, Environmental, and Performance signals and Historical Moving Averages */}
-      <SignalCategoryFilterSidebar
-        isOpen={isSignalFilterSidebarOpen}
-        onClose={() => setIsSignalFilterSidebarOpen(false)}
-        categories={signalCategories}
-        onToggleCategory={handleToggleSignalCategory}
-        granularSignals={granularSignals}
-        onToggleSignal={handleToggleGranularSignal}
-        onResetFilters={handleResetSignalFilters}
-        onSelectAllSignals={handleSelectAllSignals}
-        showMovingAverages={showGlobalMovingAverages}
-        onToggleMovingAverages={() => setShowGlobalMovingAverages((prev) => !prev)}
-        maWindowHours={globalMaWindowHours}
-        onChangeMaWindow={setGlobalMaWindowHours}
-        isAccessibilityMode={isAccessibilityMode}
-        onToggleAccessibilityMode={handleToggleAccessibilityMode}
-      />
+      {/* Category-based Signal Filter Sidebar */}
+      {isSignalFilterSidebarOpen && (
+        <SignalCategoryFilterSidebar
+          isOpen={true}
+          onClose={() => setIsSignalFilterSidebarOpen(false)}
+          categories={signalCategories}
+          onToggleCategory={handleToggleSignalCategory}
+          granularSignals={granularSignals}
+          onToggleSignal={handleToggleGranularSignal}
+          onResetFilters={handleResetSignalFilters}
+          onSelectAllSignals={handleSelectAllSignals}
+          showMovingAverages={showGlobalMovingAverages}
+          onToggleMovingAverages={() => setShowGlobalMovingAverages((prev) => !prev)}
+          maWindowHours={globalMaWindowHours}
+          onChangeMaWindow={setGlobalMaWindowHours}
+          isAccessibilityMode={isAccessibilityMode}
+          onToggleAccessibilityMode={handleToggleAccessibilityMode}
+        />
+      )}
 
-      {/* Alert History Component: Maintains a chronological list of past anomalies with timestamps, severity levels, and resolution notes in a side panel */}
-      <AlertHistory
-        isOpen={isAlertHistoryOpen}
-        onClose={() => setIsAlertHistoryOpen(false)}
-        pastAnomalies={pastAnomalies}
-        onUpdateResolutionNote={handleUpdatePastAnomalyResolutionNote}
-        onMarkResolved={handleMarkPastAnomalyResolved}
-        onBulkMarkStatus={handleBulkUpdatePastAnomaliesStatus}
-        onInspectAnomaly={handleOpenAnomalyDetails}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-        isDocked={isAlertHistoryDocked}
-        onToggleDock={() => setIsAlertHistoryDocked((prev) => !prev)}
-      />
+      {/* Alert History Component: Maintains a chronological list of past anomalies */}
+      {(isAlertHistoryOpen || isAlertHistoryDocked) && (
+        <AlertHistory
+          isOpen={isAlertHistoryOpen || isAlertHistoryDocked}
+          onClose={() => setIsAlertHistoryOpen(false)}
+          pastAnomalies={pastAnomalies}
+          onUpdateResolutionNote={handleUpdatePastAnomalyResolutionNote}
+          onMarkResolved={handleMarkPastAnomalyResolved}
+          onBulkMarkStatus={handleBulkUpdatePastAnomaliesStatus}
+          onInspectAnomaly={handleOpenAnomalyDetails}
+          onSelectZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setAnomalyTrendZoneId(zoneId);
+          }}
+          isDocked={isAlertHistoryDocked}
+          onToggleDock={() => setIsAlertHistoryDocked((prev) => !prev)}
+        />
+      )}
 
-      {/* Global Threshold Settings Modal: Customize sensitivity levels (Standard, High, Extreme, Custom) for anomaly detection across health signals */}
-      <GlobalThresholdSettingsModal
-        isOpen={isGlobalThresholdModalOpen}
-        onClose={() => setIsGlobalThresholdModalOpen(false)}
-        currentThresholds={healthThresholds}
-        currentSensitivity={globalSensitivity}
-        onSaveSettings={handleSaveGlobalThresholdSettings}
-        zones={zones}
-        telemetryStream={telemetryStream}
-      />
+      {/* Global Threshold Settings Modal */}
+      {isGlobalThresholdModalOpen && (
+        <GlobalThresholdSettingsModal
+          isOpen={true}
+          onClose={() => setIsGlobalThresholdModalOpen(false)}
+          currentThresholds={healthThresholds}
+          currentSensitivity={globalSensitivity}
+          onSaveSettings={handleSaveGlobalThresholdSettings}
+          zones={zones}
+          telemetryStream={telemetryStream}
+        />
+      )}
 
       {/* Unified Enterprise Toast Notification System (Single Bottom-Right Stack, Capped at Max 2) */}
       <UnifiedNotificationToaster
@@ -7594,16 +7925,18 @@ export default function ManagerDashboard({
       />
 
       {/* Real-Time Team Mobile Alerts & Engineer Read Receipts Modal Simulator */}
-      <TeamAlertMobileModal
-        isOpen={isTeamAlertModalOpen}
-        onClose={() => setIsTeamAlertModalOpen(false)}
-        onAlertAcknowledged={(alert) => {
-          setProtocolActiveNotice(
-            `Field engineer acknowledged incident ${alert.incidentId || alert.id}: ${alert.fieldNotes || 'Status updated to En Route.'}`
-          );
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-      />
+      {isTeamAlertModalOpen && (
+        <TeamAlertMobileModal
+          isOpen={true}
+          onClose={() => setIsTeamAlertModalOpen(false)}
+          onAlertAcknowledged={(alert) => {
+            setProtocolActiveNotice(
+              `Field engineer acknowledged incident ${alert.incidentId || alert.id}: ${alert.fieldNotes || 'Status updated to En Route.'}`
+            );
+            setTimeout(() => setProtocolActiveNotice(null), 6000);
+          }}
+        />
+      )}
 
       {/* Formal PDF Report Document Footer */}
       <div className="hidden print:block print-footer-banner border-t-2 border-slate-900 pt-3 mt-8 text-xs font-mono text-slate-700">

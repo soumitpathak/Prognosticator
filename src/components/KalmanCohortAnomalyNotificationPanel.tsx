@@ -30,6 +30,7 @@ interface KalmanCohortAnomalyNotificationPanelProps {
   onSelectZone: (zoneId: string) => void;
   onDispatchMitigation?: (cohortName: string, actionDirective: string) => void;
   onLogAudit?: (action: string, details: string) => void;
+  onTriggerAnomalyToast?: (anomaly: CohortAnomalyNotification) => void;
   className?: string;
 }
 
@@ -59,6 +60,7 @@ export default function KalmanCohortAnomalyNotificationPanel({
   onSelectZone,
   onDispatchMitigation,
   onLogAudit,
+  onTriggerAnomalyToast,
   className = ''
 }: KalmanCohortAnomalyNotificationPanelProps) {
   // Defined Kalman anomaly score threshold (default 65.0%)
@@ -186,6 +188,27 @@ export default function KalmanCohortAnomalyNotificationPanel({
     setActionNotice(
       `Injected simulated Kalman anomaly surge (88.5%) into ${target.name}. Notification armed!`
     );
+
+    if (onTriggerAnomalyToast) {
+      onTriggerAnomalyToast({
+        id: `cohort-spike-${target.id}-${Date.now()}`,
+        cohortName: `${target.name} Cohort`,
+        zoneId: target.id,
+        zoneName: target.name,
+        populationSize: target.count || 18,
+        kalmanAnomalyScore: 88.5,
+        thresholdLimit: anomalyThreshold,
+        divergenceDelta: Number((88.5 - anomalyThreshold).toFixed(1)),
+        severity: 'CRITICAL',
+        kalmanValidationStatus: 'Confirmed Kalman Sensor Spike & Physiological Divergence',
+        primaryAttribution: 'Diurnal Solar Heat Strain (WBGT > 32°C) + Dehydration Curve',
+        detectedAt: 'Just now',
+        isAcknowledged: false,
+        recommendedIntervention: 'Mandatory shaded cooling extraction; stage rapid oral rehydration and medical dispatch liaison.',
+        isCohortSuppressed: (target.count || 18) < 12
+      });
+    }
+
     setTimeout(() => setActionNotice(null), 6000);
   };
 
