@@ -2,6 +2,7 @@ import {
   UserPersona,
   UserRole,
   Permission,
+  ClearanceLevel,
   RegulatoryJurisdiction,
   RegulatoryFrameworkDetail
 } from '../types';
@@ -435,6 +436,180 @@ export class AuthService {
 
     return this.currentUser;
   }
+
+  public registerNewUser(params: {
+    fullName: string;
+    email: string;
+    password?: string;
+    department?: string;
+    organization?: string;
+  }): UserPersona {
+    const email = params.email.trim().toLowerCase();
+    const existing = TARGET_PERSONAS.find((p) => p.email.toLowerCase() === email);
+    if (existing) {
+      return this.switchPersona(existing.id);
+    }
+
+    const initials =
+      params.fullName
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2) || 'EN';
+
+    const newPersona: UserPersona = {
+      id: `user_${Date.now()}`,
+      name: params.fullName,
+      email: params.email,
+      role: 'SAFETY_DIRECTOR',
+      roleTitle: 'Site Safety Specialist (Admin-Managed Role)',
+      department: params.department || 'Occupational Health & Field Safety',
+      organization: params.organization || 'Apex Industrial Operations',
+      workforceType: 'SUPERVISORY_STAFF',
+      jurisdiction: this.currentJurisdiction,
+      avatarInitials: initials,
+      avatarColor: 'bg-cyan-700',
+      clearanceLevel: 'LEVEL_3_TECHNICAL',
+      primaryLanguage: 'en',
+      languageLabel: 'English',
+      bioSummary: `Registered enterprise member. Role & clearance assigned and managed by System Administrator in RBAC console.`,
+      permissions: [
+        'VIEW_AGGREGATE_ANALYTICS',
+        'VIEW_COMPLIANCE_AUDIT_LOGS',
+        'RUN_WHAT_IF_SIMULATIONS'
+      ]
+    };
+
+    TARGET_PERSONAS.push(newPersona);
+    this.currentUser = newPersona;
+    this.loggedIn = true;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_USER, newPersona.id);
+        localStorage.setItem(STORAGE_KEY_AUTH_STATUS, 'true');
+        window.dispatchEvent(
+          new CustomEvent(AUTH_EVENT_NAME, {
+            detail: { user: newPersona, jurisdiction: this.currentJurisdiction, isAuthenticated: true }
+          })
+        );
+      } catch (e) {
+        console.error('Failed to persist registered user session:', e);
+      }
+    }
+
+    return newPersona;
+  }
+
+  public isAdmin(): boolean {
+    return (
+      this.currentUser.role === 'SAFETY_DIRECTOR' ||
+      this.currentUser.permissions.includes('MANAGE_USER_ROLES')
+    );
+  }
+
+  public updateUserRole(userId: string, newRole: UserRole, newClearance?: ClearanceLevel): UserPersona | null {
+    if (!this.isAdmin()) {
+      console.warn('Unauthorized: User roles can only be updated by an administrator.');
+      return null;
+    }
+
+    const targetIndex = TARGET_PERSONAS.findIndex((p) => p.id === userId);
+    if (targetIndex === -1) return null;
+
+    const target = TARGET_PERSONAS[targetIndex];
+    let defaultPermissions: Permission[] = [];
+    let roleTitle = target.roleTitle;
+    let clearance: ClearanceLevel = newClearance || target.clearanceLevel;
+
+    switch (newRole) {
+      case 'SAFETY_DIRECTOR':
+        defaultPermissions = [
+          'VIEW_AGGREGATE_ANALYTICS',
+          'CONFIGURE_GLOBAL_THRESHOLDS',
+          'ACTUATE_HVAC_REMEDIATION',
+          'DISPATCH_MEDICAL_EMERGENCY',
+          'SCHEDULE_IOT_MAINTENANCE',
+          'EXPORT_CERTIFIED_REPORTS',
+          'VIEW_COMPLIANCE_AUDIT_LOGS',
+          'RUN_WHAT_IF_SIMULATIONS',
+          'MANAGE_USER_ROLES'
+        ];
+        roleTitle = 'Enterprise Safety Director (Admin)';
+        clearance = clearance || 'LEVEL_4_EXECUTIVE';
+        break;
+      case 'OCCUPATIONAL_HEALTH_OFFICER':
+        defaultPermissions = [
+          'VIEW_AGGREGATE_ANALYTICS',
+          'DISPATCH_MEDICAL_EMERGENCY',
+          'EXPORT_CERTIFIED_REPORTS',
+          'VIEW_COMPLIANCE_AUDIT_LOGS',
+          'RUN_WHAT_IF_SIMULATIONS'
+        ];
+        roleTitle = 'Chief Occupational Health & Clinic Physician';
+        clearance = clearance || 'LEVEL_2_CLINICAL';
+        break;
+      case 'FACILITY_ENGINEER':
+        defaultPermissions = [
+          'VIEW_AGGREGATE_ANALYTICS',
+          'ACTUATE_HVAC_REMEDIATION',
+          'SCHEDULE_IOT_MAINTENANCE',
+          'RUN_WHAT_IF_SIMULATIONS',
+          'VIEW_COMPLIANCE_AUDIT_LOGS'
+        ];
+        roleTitle = 'Lead Mechanical & Automation Reliability Engineer';
+        clearance = clearance || 'LEVEL_3_TECHNICAL';
+        break;
+      case 'FRONTLINE_WORKER':
+        defaultPermissions = [
+          'VIEW_PRIVATE_BIOMETRICS',
+          'REQUEST_ANONYMOUS_REST_BREAK'
+        ];
+        roleTitle = 'Frontline Industrial Specialist';
+        clearance = clearance || 'LEVEL_1_BASIC';
+        break;
+      case 'COMPLIANCE_AUDITOR':
+        defaultPermissions = [
+          'VIEW_AGGREGATE_ANALYTICS',
+          'EXPORT_CERTIFIED_REPORTS',
+          'VIEW_COMPLIANCE_AUDIT_LOGS'
+        ];
+        roleTitle = 'Workplace Safety & Health Statutory Auditor';
+        clearance = clearance || 'LEVEL_5_AUDITOR';
+        break;
+    }
+
+    const updated = {
+      ...target,
+      role: newRole,
+      roleTitle,
+      clearanceLevel: clearance,
+      permissions: defaultPermissions
+    };
+
+    TARGET_PERSONAS[targetIndex] = updated;
+
+    if (this.currentUser.id === userId) {
+      this.currentUser = updated;
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(AUTH_EVENT_NAME, {
+            detail: { user: this.currentUser, jurisdiction: this.currentJurisdiction, isAuthenticated: this.loggedIn }
+          })
+        );
+      } catch (e) {
+        console.error('Failed to dispatch auth update:', e);
+      }
+    }
+
+    return updated;
+  }
+
+
 
   public logout(): void {
     this.loggedIn = false;

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { authService } from '../services/authService';
 import {
   generatePacketForZone,
   generateSyntheticStream,
@@ -692,5 +693,61 @@ describe('Principal SDET E2E Test Suite: Prognosticator Platform', () => {
       expect(corruptedJson.error).toContain('JSON');
     });
   });
+
+  describe('15. Role-Based Landing & Admin Governance Architecture', () => {
+    it('verifies that Sarah Chen (Safety Director) has enterprise administrator privileges', () => {
+      authService.switchPersona('user_safety_director');
+      expect(authService.isAdmin()).toBe(true);
+      expect(authService.hasPermission('MANAGE_USER_ROLES')).toBe(true);
+      expect(authService.getCurrentUser().role).toBe('SAFETY_DIRECTOR');
+    });
+
+    it('verifies that non-admin personas cannot manage user roles', () => {
+      // Frontline Worker
+      authService.switchPersona('user_migrant_worker_tariq');
+      expect(authService.isAdmin()).toBe(false);
+      expect(authService.hasPermission('MANAGE_USER_ROLES')).toBe(false);
+
+      // Attempting to update a role as non-admin returns null
+      const failedUpdate = authService.updateUserRole('user_health_officer', 'SAFETY_DIRECTOR');
+      expect(failedUpdate).toBeNull();
+
+      // Occupational Health Officer
+      authService.switchPersona('user_health_officer');
+      expect(authService.isAdmin()).toBe(false);
+
+      // Facility Engineer
+      authService.switchPersona('user_facility_engineer');
+      expect(authService.isAdmin()).toBe(false);
+
+      // Compliance Auditor
+      authService.switchPersona('user_compliance_auditor');
+      expect(authService.isAdmin()).toBe(false);
+    });
+
+    it('allows an Administrator to successfully update user roles and permissions', () => {
+      authService.switchPersona('user_safety_director');
+      expect(authService.isAdmin()).toBe(true);
+
+      const targetId = 'user_facility_engineer';
+      const updated = authService.updateUserRole(targetId, 'FACILITY_ENGINEER', 'LEVEL_3_TECHNICAL');
+
+      expect(updated).not.toBeNull();
+      expect(updated?.role).toBe('FACILITY_ENGINEER');
+      expect(updated?.clearanceLevel).toBe('LEVEL_3_TECHNICAL');
+      expect(updated?.permissions).toContain('ACTUATE_HVAC_REMEDIATION');
+    });
+
+    it('confirms all 5 operational roles exist with distinct targeted permissions', () => {
+      const personas = authService.getAllPersonas();
+      const roles = new Set(personas.map((p) => p.role));
+      expect(roles.has('SAFETY_DIRECTOR')).toBe(true);
+      expect(roles.has('OCCUPATIONAL_HEALTH_OFFICER')).toBe(true);
+      expect(roles.has('FACILITY_ENGINEER')).toBe(true);
+      expect(roles.has('FRONTLINE_WORKER')).toBe(true);
+      expect(roles.has('COMPLIANCE_AUDITOR')).toBe(true);
+    });
+  });
 });
+
 

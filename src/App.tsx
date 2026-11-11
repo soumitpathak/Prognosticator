@@ -1,6 +1,9 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import ManagerDashboard from './components/ManagerDashboard';
 const WorkerPrivateDashboard = lazy(() => import('./components/WorkerPrivateDashboard'));
+const ClinicianHealthDashboard = lazy(() => import('./components/ClinicianHealthDashboard'));
+const FacilityEngineeringDashboard = lazy(() => import('./components/FacilityEngineeringDashboard'));
+const ComplianceAuditorDashboard = lazy(() => import('./components/ComplianceAuditorDashboard'));
 const ArchitectureModal = lazy(() => import('./components/ArchitectureModal'));
 const UserLoginModal = lazy(() => import('./components/UserLoginModal'));
 const UserManagementRbacModal = lazy(() => import('./components/UserManagementRbacModal'));
@@ -24,7 +27,7 @@ import {
   Wrench,
   FileCheck
 } from 'lucide-react';
-import { UserPersona, RegulatoryJurisdiction } from './types';
+import { UserPersona, RegulatoryJurisdiction, UserRole } from './types';
 import { authService, REGULATORY_FRAMEWORKS } from './services/authService';
 
 export default function App() {
@@ -34,16 +37,16 @@ export default function App() {
   );
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => authService.isAuthenticated());
 
-  const [activeTab, setActiveTab] = useState<'manager' | 'worker'>(() => {
-    const user = authService.getCurrentUser();
-    return user.role === 'FRONTLINE_WORKER' ? 'worker' : 'manager';
-  });
+  // Landing dashboard strictly based on assigned user role
+  const [activeRoleView, setActiveRoleView] = useState<UserRole>(() => authService.getCurrentUser().role);
 
   const [isArchModalOpen, setIsArchModalOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isRbacModalOpen, setIsRbacModalOpen] = useState<boolean>(false);
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState<boolean>(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
+
+  const isAdmin = authService.isAdmin();
 
   // Global Accessibility Mode State (High-Contrast Light presentation for visually impaired users)
   const [isAccessibilityMode, setIsAccessibilityMode] = useState<boolean>(() => {
@@ -62,9 +65,8 @@ export default function App() {
       setCurrentUser(user);
       setCurrentJurisdiction(jur);
       setIsAuthenticated(authStatus);
-      if (user.role === 'FRONTLINE_WORKER') {
-        setActiveTab('worker');
-      }
+      // Strictly align landing console to user's assigned role
+      setActiveRoleView(user.role);
     });
     return unsubscribe;
   }, []);
@@ -100,20 +102,21 @@ export default function App() {
     setIsAccessibilityMode((prev) => !prev);
   };
 
-  const handleTabChange = (target: 'manager' | 'worker') => {
-    if (target === 'manager' && currentUser.role === 'FRONTLINE_WORKER') {
-      const policyCheck = authService.evaluatePolicy('VIEW_AGGREGATE_ANALYTICS');
-      setAccessDeniedMessage(policyCheck.reason);
+  const handleRoleViewChange = (targetRole: UserRole) => {
+    // Non-admins cannot switch their console
+    if (!isAdmin && targetRole !== currentUser.role) {
+      setAccessDeniedMessage(`Access Restricted: As a [${currentUser.roleTitle}], your operational console is strictly governed by Enterprise Admin policy.`);
       return;
     }
     setAccessDeniedMessage(null);
-    setActiveTab(target);
+    setActiveRoleView(targetRole);
   };
 
   const frameworkDetail = REGULATORY_FRAMEWORKS[currentJurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
 
-  const getRoleIcon = () => {
-    switch (currentUser.role) {
+  const getRoleIcon = (role?: UserRole) => {
+    const target = role || currentUser.role;
+    switch (target) {
       case 'SAFETY_DIRECTOR':
         return <Shield className="h-3.5 w-3.5 text-cyan-400" />;
       case 'OCCUPATIONAL_HEALTH_OFFICER':
@@ -126,6 +129,21 @@ export default function App() {
         return <FileCheck className="h-3.5 w-3.5 text-rose-400" />;
       default:
         return <UserCheck className="h-3.5 w-3.5 text-cyan-400" />;
+    }
+  };
+
+  const getRoleLandingTitle = (role: UserRole) => {
+    switch (role) {
+      case 'SAFETY_DIRECTOR':
+        return 'Executive Whole-Site Command & Prognostics';
+      case 'OCCUPATIONAL_HEALTH_OFFICER':
+        return 'Occupational Health & Clinical Triage Center';
+      case 'FACILITY_ENGINEER':
+        return 'Facility HVAC & Mechanical Reliability Console';
+      case 'COMPLIANCE_AUDITOR':
+        return 'Statutory Regulatory Compliance & WSH Audit';
+      case 'FRONTLINE_WORKER':
+        return 'Sovereign Worker Private Biometric Shield';
     }
   };
 
@@ -144,11 +162,7 @@ export default function App() {
           onLoginSuccess={(user) => {
             setIsAuthenticated(true);
             setCurrentUser(user);
-            if (user.role === 'FRONTLINE_WORKER') {
-              setActiveTab('worker');
-            } else {
-              setActiveTab('manager');
-            }
+            setActiveRoleView(user.role);
           }}
           isAccessibilityMode={isAccessibilityMode}
         />
@@ -160,88 +174,203 @@ export default function App() {
     <div className={`min-h-screen flex flex-col selection:bg-cyan-500 selection:text-white ${
       isAccessibilityMode ? 'manager-high-contrast-light bg-slate-100 text-slate-900' : 'bg-slate-950 text-slate-100'
     }`}>
-      {/* Top Universal Mode Bar */}
-      <div className={`border-b px-4 md:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs transition-colors ${
-        isAccessibilityMode ? 'bg-slate-200 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-slate-100'
+      {/* Top Universal Mode Bar: Follows strict 3-zone enterprise contract */}
+      <div className={`border-b px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs transition-colors sticky top-0 z-50 backdrop-blur-md ${
+        isAccessibilityMode ? 'bg-slate-200/95 border-slate-300 text-slate-900' : 'bg-[#090D17]/95 border-slate-800/80 text-slate-100'
       }`}>
-        <div className="flex items-center space-x-2.5">
-          <span className={`font-bold tracking-tight text-sm font-sans ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>Prognosticator</span>
-          <span className="text-slate-400 hidden sm:inline">·</span>
-          <span className={`text-xs hidden sm:inline ${isAccessibilityMode ? 'text-slate-700' : 'text-slate-400'}`}>Workforce Health Early Warning Intelligence</span>
-        </div>
-
-        {/* View Mode Switcher */}
-        <div className={`flex items-center border rounded-lg p-0.5 ${
-          isAccessibilityMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-900 border-slate-800'
-        }`}>
-          <button
-            onClick={() => handleTabChange('manager')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer ${
-              activeTab === 'manager'
-                ? isAccessibilityMode ? 'bg-cyan-700 text-white shadow-xs font-bold' : 'bg-cyan-600 text-white shadow-sm'
-                : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Shield className="h-3.5 w-3.5" />
-            <span>Safety Manager Portal</span>
-          </button>
-          <button
-            onClick={() => handleTabChange('worker')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition cursor-pointer ${
-              activeTab === 'worker'
-                ? isAccessibilityMode ? 'bg-cyan-700 text-white shadow-xs font-bold' : 'bg-cyan-600 text-white shadow-sm'
-                : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <UserCheck className="h-3.5 w-3.5" />
-            <span>Private Worker View</span>
-          </button>
-        </div>
-
-        {/* Right Action Cluster: RBAC Persona, Country Compliance, Accessibility, Architecture, Logout */}
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          {/* Active Persona Pill / Switcher Button */}
-          <button
-            type="button"
-            onClick={() => setIsLoginModalOpen(true)}
-            className={`flex items-center space-x-2 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer shadow-xs ${
-              isAccessibilityMode
-                ? 'bg-slate-100 hover:bg-white text-slate-900 border-slate-300'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
-            }`}
-            title="Click to switch user persona or view credentials"
-          >
-            <div className={`h-5 w-5 rounded-full ${currentUser.avatarColor} text-white font-bold flex items-center justify-center text-[10px]`}>
-              {currentUser.avatarInitials}
-            </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-[11px] font-bold leading-tight flex items-center gap-1">
-                <span>{currentUser.name.split(',')[0]}</span>
-                {getRoleIcon()}
-              </div>
-              <div className="text-[9px] text-slate-400 leading-tight">
-                {currentUser.role.replace(/_/g, ' ')}
-              </div>
-            </div>
-            <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-slate-800 text-cyan-400 border border-slate-700">
-              SWITCH
+        {/* Zone 1: Brand & Operational Status */}
+        <div className="flex items-center space-x-3 shrink-0">
+          <div className="flex items-center space-x-2">
+            <span className={`font-black tracking-tight text-sm font-sans ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>
+              PROGNOSTICATOR
             </span>
-          </button>
+            <span className="font-mono text-[10px] tracking-wider text-cyan-400 border border-cyan-500/30 px-1 py-0.2 rounded bg-cyan-950/40">
+              v2.4
+            </span>
+          </div>
+          <span className="text-slate-600 hidden sm:inline">&middot;</span>
+          <div className="hidden lg:flex items-center space-x-1.5 text-[11px] font-mono text-slate-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            <span>Surveillance Active:</span>
+            <span className="text-cyan-300 font-semibold">{frameworkDetail.countryName.split(' ')[0]}</span>
+          </div>
+        </div>
 
-          {/* RBAC & PBAC Permissions Inspector Button */}
-          <button
-            type="button"
-            onClick={() => setIsRbacModalOpen(true)}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer shadow-xs ${
+        {/* Zone 2: View Mode Indicator & Role Landing Console */}
+        <div className="flex items-center gap-2">
+          {isAdmin ? (
+            /* Admin Console Switcher: Allows enterprise admin to inspect all 5 operational roles */
+            <div className={`flex items-center border rounded-lg p-0.5 ${
+              isAccessibilityMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-900/90 border-slate-800'
+            }`}>
+              <button
+                type="button"
+                onClick={() => handleRoleViewChange('SAFETY_DIRECTOR')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                  activeRoleView === 'SAFETY_DIRECTOR'
+                    ? isAccessibilityMode ? 'bg-cyan-700 text-white shadow-xs font-bold' : 'bg-cyan-600 text-white shadow-xs'
+                    : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Executive Whole-Site Command & Prognostics"
+              >
+                <Shield className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Executive Site Command</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRoleViewChange('OCCUPATIONAL_HEALTH_OFFICER')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                  activeRoleView === 'OCCUPATIONAL_HEALTH_OFFICER'
+                    ? isAccessibilityMode ? 'bg-emerald-700 text-white shadow-xs font-bold' : 'bg-emerald-600 text-white shadow-xs'
+                    : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Occupational Health & Clinical Triage Center"
+              >
+                <Stethoscope className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Clinical Health</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRoleViewChange('FACILITY_ENGINEER')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                  activeRoleView === 'FACILITY_ENGINEER'
+                    ? isAccessibilityMode ? 'bg-amber-700 text-white shadow-xs font-bold' : 'bg-amber-600 text-white shadow-xs'
+                    : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Facility HVAC & Mechanical Reliability Console"
+              >
+                <Wrench className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Facility HVAC</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRoleViewChange('COMPLIANCE_AUDITOR')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                  activeRoleView === 'COMPLIANCE_AUDITOR'
+                    ? isAccessibilityMode ? 'bg-rose-700 text-white shadow-xs font-bold' : 'bg-rose-600 text-white shadow-xs'
+                    : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Statutory Regulatory Compliance & WSH Audit"
+              >
+                <FileCheck className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">WSH Audit</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRoleViewChange('FRONTLINE_WORKER')}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                  activeRoleView === 'FRONTLINE_WORKER'
+                    ? isAccessibilityMode ? 'bg-purple-700 text-white shadow-xs font-bold' : 'bg-purple-600 text-white shadow-xs'
+                    : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Sovereign Worker Private Biometric Terminal"
+              >
+                <HardHat className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Worker Shield</span>
+              </button>
+            </div>
+          ) : (
+            /* Non-Admin Locked Indicator: strictly locked to assigned role */
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
+              isAccessibilityMode ? 'bg-slate-100 border-slate-300 text-slate-800' : 'bg-slate-900/90 border-slate-800 text-slate-200'
+            }`}>
+              <div className="flex items-center gap-1.5">
+                {getRoleIcon(currentUser.role)}
+                <span className="font-bold text-xs">{getRoleLandingTitle(currentUser.role)}</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-700 text-slate-400 flex items-center gap-1">
+                <Lock className="h-2.5 w-2.5" />
+                <span>Role Assigned by Admin</span>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Zone 3: Right Action Cluster: Admin Role Management, Persona, Compliance, A11y, Logout */}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+          {/* Admin Role Management Trigger (Exclusive to Admin) */}
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setIsRbacModalOpen(true)}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs ${
+                isAccessibilityMode
+                  ? 'bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100'
+                  : 'bg-indigo-950/50 text-indigo-300 border-indigo-500/50 hover:bg-indigo-900/40'
+              }`}
+              title="Enterprise Administrator: Manage User Roles and PBAC Policies"
+            >
+              <Key className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Manage User Roles (Admin)</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsRbacModalOpen(true)}
+              className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer shadow-xs ${
+                isAccessibilityMode
+                  ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-white'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+              }`}
+              title="Inspect Your Role Permissions & PBAC Policy evaluation"
+            >
+              <Lock className="h-3 w-3 text-slate-400" />
+              <span className="hidden md:inline">Permissions</span>
+            </button>
+          )}
+
+          {/* Persona Card / Switcher Button: Switcher is accessible to Admin; Non-admin sees locked persona badge */}
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setIsLoginModalOpen(true)}
+              className={`flex items-center space-x-2 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer shadow-xs ${
+                isAccessibilityMode
+                  ? 'bg-slate-100 hover:bg-white text-slate-900 border-slate-300'
+                  : 'bg-slate-900 hover:bg-slate-800/90 text-slate-200 border-slate-700'
+              }`}
+              title="Click to switch test persona"
+            >
+              <div className={`h-5 w-5 rounded-md ${currentUser.avatarColor} text-white font-bold flex items-center justify-center text-[10px]`}>
+                {currentUser.avatarInitials}
+              </div>
+              <div className="text-left hidden sm:block">
+                <div className="text-[11px] font-bold leading-tight flex items-center gap-1">
+                  <span>{currentUser.name.split(',')[0]}</span>
+                  {getRoleIcon()}
+                </div>
+                <div className="text-[9px] text-slate-400 leading-tight">
+                  {currentUser.role.replace(/_/g, ' ')}
+                </div>
+              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400 border border-slate-700">
+                SWITCH
+              </span>
+            </button>
+          ) : (
+            <div className={`flex items-center space-x-2 px-2.5 py-1 rounded-lg text-xs font-medium border ${
               isAccessibilityMode
-                ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-white'
-                : 'bg-slate-900 text-indigo-300 border-indigo-500/30 hover:bg-indigo-950/40'
-            }`}
-            title="Inspect Role-Based & Policy-Based Access Control matrix"
-          >
-            <Key className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="hidden md:inline">RBAC Matrix</span>
-          </button>
+                ? 'bg-slate-100 text-slate-900 border-slate-300'
+                : 'bg-slate-900/90 text-slate-200 border-slate-800'
+            }`}>
+              <div className={`h-5 w-5 rounded-md ${currentUser.avatarColor} text-white font-bold flex items-center justify-center text-[10px]`}>
+                {currentUser.avatarInitials}
+              </div>
+              <div className="text-left hidden sm:block">
+                <div className="text-[11px] font-bold leading-tight flex items-center gap-1">
+                  <span>{currentUser.name.split(',')[0]}</span>
+                  {getRoleIcon()}
+                </div>
+                <div className="text-[9px] text-slate-400 leading-tight">
+                  {currentUser.role.replace(/_/g, ' ')}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Country & Migrant Workforce Compliance Button */}
           <button
@@ -324,13 +453,6 @@ export default function App() {
           <div className="flex items-center space-x-2">
             <button
               type="button"
-              onClick={() => setIsLoginModalOpen(true)}
-              className="bg-rose-900 hover:bg-rose-800 text-white font-bold px-2.5 py-1 rounded text-[11px] transition cursor-pointer border border-rose-500/40"
-            >
-              Switch to Safety Manager Persona
-            </button>
-            <button
-              type="button"
               onClick={() => setAccessDeniedMessage(null)}
               className="text-rose-400 hover:text-white font-bold text-xs p-1"
             >
@@ -340,21 +462,74 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content Area: Strictly renders the dedicated landing dashboard based on role */}
       <main className="flex-1">
-        {activeTab === 'manager' ? (
+        {activeRoleView === 'SAFETY_DIRECTOR' && (
           <ManagerDashboard
             isAccessibilityMode={isAccessibilityMode}
             onToggleAccessibilityMode={toggleAccessibilityMode}
+            currentUser={currentUser}
           />
-        ) : (
-          <div className="p-4 md:p-6 max-w-7xl mx-auto">
-            <Suspense fallback={
-              <div className="flex items-center justify-center p-12 text-cyan-400 font-mono text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping mr-2"></span>
-                Loading private biometric vault...
+        )}
+
+        {activeRoleView === 'OCCUPATIONAL_HEALTH_OFFICER' && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-12 text-emerald-400 font-mono text-sm">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping mr-2"></span>
+                Loading Occupational Health &amp; Clinical Triage Console...
               </div>
-            }>
+            }
+          >
+            <ClinicianHealthDashboard
+              currentUser={currentUser}
+              isAccessibilityMode={isAccessibilityMode}
+            />
+          </Suspense>
+        )}
+
+        {activeRoleView === 'FACILITY_ENGINEER' && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-12 text-amber-400 font-mono text-sm">
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-ping mr-2"></span>
+                Loading Facility Engineering &amp; Mechanical Reliability Console...
+              </div>
+            }
+          >
+            <FacilityEngineeringDashboard
+              currentUser={currentUser}
+              isAccessibilityMode={isAccessibilityMode}
+            />
+          </Suspense>
+        )}
+
+        {activeRoleView === 'COMPLIANCE_AUDITOR' && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-12 text-rose-400 font-mono text-sm">
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-400 animate-ping mr-2"></span>
+                Loading Statutory Regulatory Compliance &amp; WSH Audit Inspectorate...
+              </div>
+            }
+          >
+            <ComplianceAuditorDashboard
+              currentUser={currentUser}
+              isAccessibilityMode={isAccessibilityMode}
+            />
+          </Suspense>
+        )}
+
+        {activeRoleView === 'FRONTLINE_WORKER' && (
+          <div className="p-4 md:p-6 max-w-7xl mx-auto">
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center p-12 text-purple-400 font-mono text-sm">
+                  <span className="h-2.5 w-2.5 rounded-full bg-purple-400 animate-ping mr-2"></span>
+                  Loading sovereign private biometric shield...
+                </div>
+              }
+            >
               <WorkerPrivateDashboard />
             </Suspense>
           </div>
@@ -396,15 +571,13 @@ export default function App() {
             onUserChanged={(user) => {
               setCurrentUser(user);
               setIsAuthenticated(true);
-              if (user.role === 'FRONTLINE_WORKER') {
-                setActiveTab('worker');
-              }
+              setActiveRoleView(user.role);
             }}
           />
         </Suspense>
       )}
 
-      {/* RBAC / PBAC Permissions Matrix Modal */}
+      {/* RBAC / PBAC Permissions Matrix & Role Management Modal */}
       {isRbacModalOpen && (
         <Suspense fallback={null}>
           <UserManagementRbacModal
@@ -413,9 +586,7 @@ export default function App() {
             onSelectPersona={(persona) => {
               setCurrentUser(persona);
               setIsAuthenticated(true);
-              if (persona.role === 'FRONTLINE_WORKER') {
-                setActiveTab('worker');
-              }
+              setActiveRoleView(persona.role);
             }}
           />
         </Suspense>

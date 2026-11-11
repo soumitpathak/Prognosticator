@@ -16,7 +16,7 @@ import {
   Sparkles,
   ArrowRight
 } from 'lucide-react';
-import { UserPersona, UserRole, Permission } from '../types';
+import { UserPersona, UserRole, Permission, ClearanceLevel } from '../types';
 import { authService, TARGET_PERSONAS } from '../services/authService';
 
 interface UserManagementRbacModalProps {
@@ -104,15 +104,35 @@ export default function UserManagementRbacModal({
   const [searchFilter, setSearchFilter] = useState<string>('');
 
   const currentUser = authService.getCurrentUser();
+  const isAdmin = authService.isAdmin();
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState<UserRole>('SAFETY_DIRECTOR');
+  const [selectedClearance, setSelectedClearance] = useState<ClearanceLevel>('LEVEL_4_EXECUTIVE');
+  const [adminNotification, setAdminNotification] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const simulationResult = authService.evaluatePolicy(testAction);
 
+  const handleStartEditRole = (persona: UserPersona) => {
+    setEditingUserId(persona.id);
+    setSelectedRole(persona.role);
+    setSelectedClearance(persona.clearanceLevel);
+  };
+
+  const handleSaveRole = (userId: string) => {
+    const updated = authService.updateUserRole(userId, selectedRole, selectedClearance);
+    if (updated) {
+      setAdminNotification(`Successfully updated role for ${updated.name} to [${selectedRole}] with [${selectedClearance}].`);
+      setEditingUserId(null);
+      setTimeout(() => setAdminNotification(null), 4000);
+    }
+  };
+
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
       case 'SAFETY_DIRECTOR':
-        return <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40">Safety Director</span>;
+        return <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40">Safety Director (Admin)</span>;
       case 'OCCUPATIONAL_HEALTH_OFFICER':
         return <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">Occupational Health</span>;
       case 'FACILITY_ENGINEER':
@@ -134,14 +154,18 @@ export default function UserManagementRbacModal({
               <Shield className="h-6 w-6 text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>Enterprise User Management &amp; RBAC / PBAC Governance</span>
-                <span className="text-[10px] font-mono bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-semibold">
-                  Zero-Trust Architecture
-                </span>
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>Enterprise User Management &amp; Role Governance</span>
+                  <span className="text-[10px] font-mono bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-semibold">
+                    Admin Exclusive
+                  </span>
+                </h2>
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Role-Based &amp; Policy-Based Access Control matrix governing data visibility, supervisory authority, and sovereign worker privacy barriers.
+                {isAdmin
+                  ? 'Administrator Access Granted: You have exclusive authority to assign, modify, and revoke user roles and clearance levels.'
+                  : 'Role Management Restricted: Only Enterprise Administrators (Safety Director) have authority to assign or modify roles.'}
               </p>
             </div>
           </div>
@@ -156,6 +180,18 @@ export default function UserManagementRbacModal({
 
         {/* Tab Strip */}
         <div className="flex border-b border-slate-800 mt-3 text-xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('DIRECTORY')}
+            className={`py-2 px-4 font-semibold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'DIRECTORY'
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>Active Enterprise Directory ({TARGET_PERSONAS.length})</span>
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab('MATRIX')}
@@ -180,22 +216,193 @@ export default function UserManagementRbacModal({
             <Sparkles className="h-3.5 w-3.5" />
             <span>Live PBAC Policy Evaluator</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('DIRECTORY')}
-            className={`py-2 px-4 font-semibold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'DIRECTORY'
-                ? 'border-indigo-500 text-indigo-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Users className="h-3.5 w-3.5" />
-            <span>Active Enterprise Directory ({TARGET_PERSONAS.length})</span>
-          </button>
         </div>
+
+        {/* Notification Toast */}
+        {adminNotification && (
+          <div className="mt-3 p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2 animate-fadeIn">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span>{adminNotification}</span>
+          </div>
+        )}
 
         {/* Main Content Area */}
         <div className="overflow-y-auto flex-1 py-4 pr-1 space-y-4">
+          {activeTab === 'DIRECTORY' && (
+            <div className="space-y-3">
+              {/* Admin vs Non-Admin Notice Banner */}
+              {isAdmin ? (
+                <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/40 text-xs text-cyan-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-cyan-400 shrink-0" />
+                    <span>
+                      <strong>Admin Governance Active:</strong> You can modify any user&apos;s role below. Their post-login landing dashboard will automatically adjust based on their assigned role.
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-900 border border-cyan-500/50 text-white shrink-0">
+                    ADMIN
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/40 text-xs text-amber-200 flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Role Editing Restricted:</strong> Only System Administrators (Safety Director) can modify user roles. Your current role is <strong className="text-white">[{currentUser.role}]</strong>.
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-400">Enterprise user directory with role assignments:</span>
+                <div className="relative w-64">
+                  <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Search persona or department..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {TARGET_PERSONAS.filter(
+                  (p) =>
+                    p.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+                    p.department.toLowerCase().includes(searchFilter.toLowerCase()) ||
+                    p.roleTitle.toLowerCase().includes(searchFilter.toLowerCase())
+                ).map((persona) => {
+                  const isCurrent = currentUser.id === persona.id;
+                  const isEditing = editingUserId === persona.id;
+
+                  return (
+                    <div
+                      key={persona.id}
+                      className={`p-3.5 rounded-xl border transition ${
+                        isCurrent
+                          ? 'bg-slate-800/80 border-indigo-500/80'
+                          : 'bg-slate-950/80 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-center space-x-3">
+                          <div className={`h-9 w-9 rounded-full ${persona.avatarColor} text-white font-bold flex items-center justify-center text-xs shadow-xs`}>
+                            {persona.avatarInitials}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-white">{persona.name}</span>
+                              {getRoleBadge(persona.role)}
+                              {isCurrent && (
+                                <span className="text-[9px] font-mono bg-indigo-900 text-indigo-200 px-1.5 py-0.2 rounded font-bold">
+                                  YOU
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              {persona.email} &middot; {persona.department}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-500 mt-0.5">
+                              Clearance: <span className="text-amber-400">{persona.clearanceLevel}</span> &middot; Permissions: <span className="text-cyan-400">{persona.permissions.length}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          {isAdmin && !isEditing && (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditRole(persona)}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-semibold text-[11px] transition cursor-pointer flex items-center gap-1"
+                            >
+                              <Key className="h-3 w-3" />
+                              <span>Manage Role</span>
+                            </button>
+                          )}
+
+                          {isAdmin && onSelectPersona && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                authService.switchPersona(persona.id);
+                                onSelectPersona(persona);
+                                onClose();
+                              }}
+                              className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] transition cursor-pointer"
+                            >
+                              Switch View
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Admin In-line Role Editor */}
+                      {isAdmin && isEditing && (
+                        <div className="mt-3 pt-3 border-t border-slate-800 bg-slate-900/90 p-3 rounded-lg space-y-3">
+                          <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <Shield className="h-3.5 w-3.5 text-cyan-400" />
+                            <span>Assign New Role &amp; Clearance Level for {persona.name}</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[11px] text-slate-400 mb-1">Assigned Role</label>
+                              <select
+                                value={selectedRole}
+                                onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                              >
+                                <option value="SAFETY_DIRECTOR">SAFETY_DIRECTOR (Admin / Whole-Site Command)</option>
+                                <option value="OCCUPATIONAL_HEALTH_OFFICER">OCCUPATIONAL_HEALTH_OFFICER (Clinical Physician)</option>
+                                <option value="FACILITY_ENGINEER">FACILITY_ENGINEER (HVAC & Mechanical)</option>
+                                <option value="COMPLIANCE_AUDITOR">COMPLIANCE_AUDITOR (Statutory WSH Inspector)</option>
+                                <option value="FRONTLINE_WORKER">FRONTLINE_WORKER (Sovereign Private Shield)</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] text-slate-400 mb-1">Clearance Level</label>
+                              <select
+                                value={selectedClearance}
+                                onChange={(e) => setSelectedClearance(e.target.value as ClearanceLevel)}
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                              >
+                                <option value="LEVEL_1_BASIC">LEVEL_1_BASIC (Frontline Worker)</option>
+                                <option value="LEVEL_2_CLINICAL">LEVEL_2_CLINICAL (Medical / Physician)</option>
+                                <option value="LEVEL_3_TECHNICAL">LEVEL_3_TECHNICAL (Engineering / Automation)</option>
+                                <option value="LEVEL_4_EXECUTIVE">LEVEL_4_EXECUTIVE (Safety Director / Administrator)</option>
+                                <option value="LEVEL_5_AUDITOR">LEVEL_5_AUDITOR (Statutory Government Inspector)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingUserId(null)}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRole(persona.id)}
+                              className="px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              <span>Save Role Assignment</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'MATRIX' && (
             <div className="space-y-3">
               <div className="text-xs text-slate-400">
@@ -342,85 +549,12 @@ export default function UserManagementRbacModal({
               </div>
             </div>
           )}
-
-          {activeTab === 'DIRECTORY' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-slate-400">Targeted enterprise test directory with active roles and permissions:</span>
-                <div className="relative w-64">
-                  <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500" />
-                  <input
-                    type="text"
-                    placeholder="Search persona or department..."
-                    value={searchFilter}
-                    onChange={(e) => setSearchFilter(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2.5">
-                {TARGET_PERSONAS.filter(
-                  (p) =>
-                    p.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-                    p.department.toLowerCase().includes(searchFilter.toLowerCase()) ||
-                    p.roleTitle.toLowerCase().includes(searchFilter.toLowerCase())
-                ).map((persona) => {
-                  const isCurrent = currentUser.id === persona.id;
-                  return (
-                    <div
-                      key={persona.id}
-                      className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                        isCurrent
-                          ? 'bg-slate-800/80 border-indigo-500/80'
-                          : 'bg-slate-950/80 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`h-8 w-8 rounded-full ${persona.avatarColor} text-white font-bold flex items-center justify-center text-xs shadow-xs`}>
-                          {persona.avatarInitials}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-white">{persona.name}</span>
-                            {getRoleBadge(persona.role)}
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            {persona.email} · {persona.department}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 self-end sm:self-center">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
-                          {persona.permissions.length} perms
-                        </span>
-                        {onSelectPersona && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              authService.switchPersona(persona.id);
-                              onSelectPersona(persona);
-                              onClose();
-                            }}
-                            className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] transition cursor-pointer"
-                          >
-                            Switch To
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
           <span>Policy Evaluation Engine: OPA Rego-Compatible RBAC Specification</span>
-          <span className="font-mono">Audit Trails Digitally Logged</span>
+          <span className="font-mono">User Roles Managed Exclusively by Administrator</span>
         </div>
       </div>
     </div>

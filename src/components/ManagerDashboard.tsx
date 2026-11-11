@@ -50,7 +50,8 @@ import {
   Lstm12hForecastResult,
   Lstm12hForecastHour,
   IncidentAssignment,
-  TelemetryRiskBreachEvent
+  TelemetryRiskBreachEvent,
+  UserPersona
 } from '../types';
 import {
   INITIAL_ACTIVE_ALERTS,
@@ -326,11 +327,13 @@ export const generateUniqueId = (prefix = 'ID') => {
 export interface ManagerDashboardProps {
   isAccessibilityMode?: boolean;
   onToggleAccessibilityMode?: () => void;
+  currentUser?: UserPersona;
 }
 
 export default function ManagerDashboard({
   isAccessibilityMode: propIsAccessibilityMode,
-  onToggleAccessibilityMode: propOnToggleAccessibilityMode
+  onToggleAccessibilityMode: propOnToggleAccessibilityMode,
+  currentUser
 }: ManagerDashboardProps = {}) {
   const [selectedZone, setSelectedZone] = useState<string>('Outdoor-Construction-Sector-4');
   const [loading, setLoading] = useState<boolean>(false);
@@ -618,13 +621,40 @@ export default function ManagerDashboard({
     return () => unsub();
   }, []);
 
-  // Modals & Primary View Tabs
+  // Modals & Primary View Tabs (initialized based on role)
   const [managerTab, setManagerTab] = useState<
     'live' | 'resourceUtilization' | 'compliance' | 'complianceAudit' | 'predictiveMaintenance' | 'correlationEngine' | 'density' | 'patterns'
-  >('live');
+  >(() => {
+    if (currentUser) {
+      if (currentUser.role === 'OCCUPATIONAL_HEALTH_OFFICER') return 'correlationEngine';
+      if (currentUser.role === 'FACILITY_ENGINEER') return 'predictiveMaintenance';
+      if (currentUser.role === 'COMPLIANCE_AUDITOR') return 'complianceAudit';
+    }
+    return 'live';
+  });
 
   // Team Member View Role Toggle State: Safety Compliance Officer vs Maintenance Crew vs Operations Lead
-  const [activeRole, setActiveRole] = useState<TeamMemberRole>('SAFETY_OFFICER');
+  const [activeRole, setActiveRole] = useState<TeamMemberRole>(() => {
+    if (currentUser?.role === 'FACILITY_ENGINEER') return 'MAINTENANCE_CREW';
+    return 'SAFETY_OFFICER';
+  });
+
+  // Automatically sync role-tailored analytical tabs when authenticated user changes
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.role === 'OCCUPATIONAL_HEALTH_OFFICER') {
+        setManagerTab('correlationEngine');
+      } else if (currentUser.role === 'FACILITY_ENGINEER') {
+        setManagerTab('predictiveMaintenance');
+        setActiveRole('MAINTENANCE_CREW');
+      } else if (currentUser.role === 'COMPLIANCE_AUDITOR') {
+        setManagerTab('complianceAudit');
+      } else if (currentUser.role === 'SAFETY_DIRECTOR') {
+        setManagerTab('live');
+        setActiveRole('SAFETY_OFFICER');
+      }
+    }
+  }, [currentUser?.id, currentUser?.role]);
 
   // Real-Time Alert Mute State (Persisted in localStorage)
   const [isAlertsMuted, setIsAlertsMuted] = useState<boolean>(() => {
@@ -4470,17 +4500,27 @@ export default function ManagerDashboard({
         </div>
       </div>
 
-      {/* Top Navigation Bar */}
-      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg gap-4">
+      {/* Operational Command Header & Search Bar */}
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 border border-slate-800 p-3.5 rounded-xl mb-5 shadow-lg gap-3">
         <div className="flex items-center space-x-3 shrink-0">
           <div className="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded-lg">
-            <Activity className="text-cyan-400 h-6 w-6 animate-pulse" />
+            <Activity className="text-cyan-400 h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              PROGNOSTICATOR <span className="text-cyan-400 text-sm font-normal">| Azure IoT Hub Stream</span>
-            </h1>
-            <p className="text-xs text-slate-400">Population &amp; Workforce Health Early Warning Platform</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">
+                Surveillance Command
+              </span>
+              <span className="text-slate-600">/</span>
+              <span className="text-xs font-bold text-cyan-300 font-mono">
+                {activeZoneObj.name}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 font-mono">
+              <span>{activeZoneObj.count} Monitored Personnel</span>
+              <span>&middot;</span>
+              <span className="text-emerald-400">Kalman Active (Q={kalmanConfig.processVarianceQ.toFixed(2)})</span>
+            </p>
           </div>
         </div>
 

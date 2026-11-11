@@ -1117,6 +1117,8 @@ export type Permission =
   | 'REQUEST_ANONYMOUS_REST_BREAK'  // Send anonymous fatigue/heat rest signal
   | 'MANAGE_USER_ROLES';            // Administer users and inspect PBAC policies
 
+export type ClearanceLevel = 'LEVEL_1_BASIC' | 'LEVEL_2_CLINICAL' | 'LEVEL_3_TECHNICAL' | 'LEVEL_4_EXECUTIVE' | 'LEVEL_5_AUDITOR';
+
 export interface UserPersona {
   id: string;
   name: string;
@@ -1129,7 +1131,7 @@ export interface UserPersona {
   jurisdiction: RegulatoryJurisdiction;
   avatarInitials: string;
   avatarColor: string;
-  clearanceLevel: 'LEVEL_1_BASIC' | 'LEVEL_2_CLINICAL' | 'LEVEL_3_TECHNICAL' | 'LEVEL_4_EXECUTIVE' | 'LEVEL_5_AUDITOR';
+  clearanceLevel: ClearanceLevel;
   primaryLanguage: 'en' | 'bn' | 'ta' | 'zh' | 'tl' | 'ar' | 'hi';
   languageLabel: string;
   permissions: Permission[];
