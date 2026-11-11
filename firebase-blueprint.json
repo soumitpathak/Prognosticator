@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile with role-based access attributes",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth user UID" },
+        "email": { "type": "string", "description": "User corporate email" },
+        "displayName": { "type": "string", "description": "Full display name" },
+        "role": { "type": "string", "description": "RBAC user role" },
+        "roleTitle": { "type": "string", "description": "User title" },
+        "department": { "type": "string", "description": "Department or facility unit" },
+        "workforceType": { "type": "string", "description": "Domestic, Migrant, Supervisory, Auditor" },
+        "jurisdiction": { "type": "string", "description": "Regulatory jurisdiction (MOM, MoHRE, OSHA, GDPR)" },
+        "createdAt": { "type": "string", "description": "Account registration timestamp" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "IncidentAlert": {
+      "title": "IncidentAlert",
+      "description": "Active population and workplace anomaly alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique incident identifier" },
+        "zoneId": { "type": "string", "description": "Facility zone ID" },
+        "riskTier": { "type": "string", "description": "CRITICAL_RISK or MODERATE_RISK" },
+        "riskScore": { "type": "number", "description": "0-100 composite risk score" },
+        "primaryDriver": { "type": "string", "description": "Leading anomaly contributor" },
+        "timestamp": { "type": "string", "description": "Detection timestamp" },
+        "status": { "type": "string", "description": "ACTIVE, MITIGATED, RESOLVED" }
+      },
+      "required": ["id", "zoneId", "riskTier"]
+    },
+    "RestBreakRequest": {
+      "title": "RestBreakRequest",
+      "description": "Anonymous frontline and migrant worker thermal cooling requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique request ID" },
+        "zoneId": { "type": "string", "description": "Workplace zone where break is requested" },
+        "timestamp": { "type": "string", "description": "Submission timestamp" },
+        "language": { "type": "string", "description": "Worker primary language code" },
+        "status": { "type": "string", "description": "DISPATCHED, COMPLETED" }
+      },
+      "required": ["id", "zoneId", "timestamp"]
+    },
+    "AuditLogEntry": {
+      "title": "AuditLogEntry",
+      "description": "Cryptographic HIPAA and OSHA access and remediation log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Log record ID" },
+        "timestamp": { "type": "string", "description": "Event timestamp" },
+        "userId": { "type": "string", "description": "Actor user UID" },
+        "userRole": { "type": "string", "description": "Actor role" },
+        "action": { "type": "string", "description": "Operation performed" },
+        "resource": { "type": "string", "description": "Resource identifier" }
+      },
+      "required": ["id", "timestamp", "action"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile document keyed by auth UID"
+    },
+    "/alerts/{alertId}": {
+      "schema": "IncidentAlert",
+      "description": "Workplace hazard and health anomaly alerts"
+    },
+    "/rest_breaks/{breakId}": {
+      "schema": "RestBreakRequest",
+      "description": "Anonymous worker rest and hydration break dispatches"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLogEntry",
+      "description": "Tamper-evident system audit log records"
+    }
+  }
+}

@@ -357,6 +357,85 @@ export class AuthService {
     return this.switchPersona('user_safety_director');
   }
 
+  public loginWithFirebaseUser(firebaseUser: {
+    uid: string;
+    email?: string | null;
+    displayName?: string | null;
+    photoURL?: string | null;
+  }): UserPersona {
+    const email = firebaseUser.email || `${firebaseUser.uid}@firebase.user`;
+    const normalized = email.trim().toLowerCase();
+    const existingPersona = TARGET_PERSONAS.find((p) => p.email.toLowerCase() === normalized);
+
+    if (existingPersona) {
+      return this.switchPersona(existingPersona.id);
+    }
+
+    // Generate authenticated persona for Google/Firebase user
+    const initials = (firebaseUser.displayName || email)
+      .split(' ')
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || 'GU';
+
+    const customGooglePersona: UserPersona = {
+      id: `firebase_${firebaseUser.uid}`,
+      name: firebaseUser.displayName || email.split('@')[0],
+      email,
+      role: 'SAFETY_DIRECTOR',
+      roleTitle: 'Enterprise Safety Director (Google SSO Verified)',
+      department: 'Corporate Occupational Health & Safety',
+      organization: 'Cloud Identity Federated Organization',
+      workforceType: 'SUPERVISORY_STAFF',
+      jurisdiction: this.currentJurisdiction,
+      avatarInitials: initials,
+      avatarColor: 'bg-emerald-600',
+      clearanceLevel: 'LEVEL_4_EXECUTIVE',
+      primaryLanguage: 'en',
+      languageLabel: 'English',
+      bioSummary: `Authenticated via Google Cloud Identity & Firebase Auth. Granted full supervisory and early-warning management privileges.`,
+      permissions: [
+        'VIEW_AGGREGATE_ANALYTICS',
+        'CONFIGURE_GLOBAL_THRESHOLDS',
+        'ACTUATE_HVAC_REMEDIATION',
+        'DISPATCH_MEDICAL_EMERGENCY',
+        'SCHEDULE_IOT_MAINTENANCE',
+        'EXPORT_CERTIFIED_REPORTS',
+        'VIEW_COMPLIANCE_AUDIT_LOGS',
+        'RUN_WHAT_IF_SIMULATIONS',
+        'MANAGE_USER_ROLES'
+      ]
+    };
+
+    // Add to active personas list if not already present
+    const existingIndex = TARGET_PERSONAS.findIndex((p) => p.id === customGooglePersona.id);
+    if (existingIndex >= 0) {
+      TARGET_PERSONAS[existingIndex] = customGooglePersona;
+    } else {
+      TARGET_PERSONAS.unshift(customGooglePersona);
+    }
+
+    this.currentUser = customGooglePersona;
+    this.loggedIn = true;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY_USER, customGooglePersona.id);
+        localStorage.setItem(STORAGE_KEY_AUTH_STATUS, 'true');
+        window.dispatchEvent(
+          new CustomEvent(AUTH_EVENT_NAME, {
+            detail: { user: customGooglePersona, jurisdiction: this.currentJurisdiction, isAuthenticated: true }
+          })
+        );
+      } catch (e) {
+        console.error('Failed to persist Firebase user session:', e);
+      }
+    }
+
+    return this.currentUser;
+  }
+
   public logout(): void {
     this.loggedIn = false;
     if (typeof window !== 'undefined') {

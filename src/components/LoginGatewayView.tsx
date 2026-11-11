@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { UserPersona, UserRole, WorkforceType, RegulatoryJurisdiction } from '../types';
 import { authService, TARGET_PERSONAS, REGULATORY_FRAMEWORKS } from '../services/authService';
+import { signInWithGoogle } from '../services/firebase';
 
 interface LoginGatewayViewProps {
   onLoginSuccess: (user: UserPersona) => void;
@@ -63,6 +64,30 @@ export default function LoginGatewayView({
       setIsLoading(false);
       onLoginSuccess(loggedUser);
     }, 450);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setLoginFeedback('Launching Google Cloud & Firebase Authentication...');
+    try {
+      const user = await signInWithGoogle();
+      const loggedPersona = authService.loginWithFirebaseUser({
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL
+      });
+      setLoginFeedback(`Authenticated as ${user.displayName || user.email}! Launching portal...`);
+      setTimeout(() => {
+        setIsLoading(false);
+        onLoginSuccess(loggedPersona);
+      }, 400);
+    } catch (err: any) {
+      console.error('Firebase Google sign-in failed:', err);
+      setIsLoading(false);
+      setLoginFeedback(`Firebase sign-in notice: ${err?.message || 'Authentication flow closed or cancelled.'}`);
+      setTimeout(() => setLoginFeedback(null), 4000);
+    }
   };
 
   const getRoleIcon = (role: UserRole) => {
@@ -198,6 +223,45 @@ export default function LoginGatewayView({
                 <span>Email &amp; Password</span>
               </button>
             </div>
+          </div>
+
+          {/* Cloud Identity & Firebase Auth Provider Bar */}
+          <div className="mt-4 p-3.5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-inner">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 rounded-xl bg-white/10 text-white shrink-0">
+                <svg className="h-5 w-5" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </svg>
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>Google Cloud Identity &amp; Firebase Authentication</span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                    LIVE CLOUD AUTH
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Authenticate securely using federated Google OAuth via Firebase Auth.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-sm shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </svg>
+              <span>Sign In with Google</span>
+            </button>
           </div>
 
           {/* Loading / Feedback Banner */}
