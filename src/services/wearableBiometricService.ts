@@ -520,7 +520,7 @@ class WearableBiometricManager {
    * Continuous live telemetry simulator to animate real-time HR and HRV dynamics
    */
   private startStreamingSimulation() {
-    if (this.intervalId) return;
+    if (this.intervalId || typeof window === 'undefined') return;
 
     this.intervalId = window.setInterval(() => {
       if (!this.isStreaming) return;

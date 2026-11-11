@@ -49,6 +49,15 @@ export default function KalmanSettingsModal({
   const [localVoiceEnabled, setLocalVoiceEnabled] = useState<boolean>(voiceSettings?.enabled ?? true);
   const [testStatus, setTestStatus] = useState<string>('');
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSelectPreset = (preset: SensitivityPreset) => {
@@ -128,7 +137,14 @@ export default function KalmanSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-fadeIn"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-center pb-4 border-b border-slate-800">

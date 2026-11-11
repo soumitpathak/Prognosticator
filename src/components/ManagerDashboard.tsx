@@ -24,8 +24,8 @@ import {
   Filter,
   Thermometer,
   RotateCcw,
-  Eye,
-  Minus
+  Minus,
+  UploadCloud
 } from 'lucide-react';
 import {
   ActiveAnomalyAlert,
@@ -73,6 +73,7 @@ import TelemetryCharts from './TelemetryCharts';
 import ActiveAlertsSection from './ActiveAlertsSection';
 import SensorCorrelationScatterPlot from './SensorCorrelationScatterPlot';
 import ReportExportModal from './ReportExportModal';
+import TelemetryUploadModal from './TelemetryUploadModal';
 import HealthMetricsPdfExportModal from './HealthMetricsPdfExportModal';
 import DownloadOptionsModal from './DownloadOptionsModal';
 import SafetyCommitteePdfExportModal from './SafetyCommitteePdfExportModal';
@@ -713,6 +714,7 @@ export default function ManagerDashboard({
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [isHealthMetricsPdfModalOpen, setIsHealthMetricsPdfModalOpen] = useState<boolean>(false);
   const [isDownloadOptionsModalOpen, setIsDownloadOptionsModalOpen] = useState<boolean>(false);
   const [isSafetyCommitteePdfModalOpen, setIsSafetyCommitteePdfModalOpen] = useState<boolean>(false);
@@ -4202,6 +4204,38 @@ export default function ManagerDashboard({
     }
   };
 
+  // Ingest custom parsed telemetry or benchmark scenario dataset
+  const handleIngestUploadedDataset = (uploadedData: TelemetryDataPoint[], sourceName: string) => {
+    if (!uploadedData || uploadedData.length === 0) return;
+    setTelemetryStream(uploadedData);
+
+    // Compute updated alert prediction from the latest ingested telemetry data point
+    const slice = uploadedData.slice(-12);
+    const latest = uploadedData[uploadedData.length - 1];
+    const syntheticPacket: TelemetryPacket = {
+      timestamp: latest.timestamp || new Date().toISOString(),
+      worker_id: 'INGESTED_COHORT',
+      location_zone: activeZoneObj.name,
+      cohort_size: activeZoneObj.count,
+      hrv_series: slice.map((p) => p.smoothed_hrv || p.raw_hrv || 55),
+      skin_temp_series: slice.map((p) => p.smoothed_skin_temp || p.skin_temp_c || 36.8),
+      heat_index: latest.ambient_temp_c ? latest.ambient_temp_c + 3.0 : 38.0,
+      sleep_deficit_hours: 2.5,
+      twl_index: latest.twl_index,
+      ambient_temp_c: latest.ambient_temp_c,
+      aqi: latest.aqi,
+      sick_leave_rate_deviation: latest.sick_leave_rate_deviation || 0
+    };
+
+    const res = predictWorkforceAnomaly(syntheticPacket, undefined, kalmanConfig);
+    setTelemetryAlert(res);
+
+    setProtocolActiveNotice(`Active Telemetry Switched: Ingested ${uploadedData.length} records from ${sourceName}`);
+    setTimeout(() => {
+      setProtocolActiveNotice(null);
+    }, 8000);
+  };
+
   // Direct Client-Side Executive Safety PDF Report Export
   const handleDirectPdfExport = async () => {
     setIsDirectPdfExporting(true);
@@ -4752,6 +4786,16 @@ export default function ManagerDashboard({
           >
             <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
             <span>What-If Simulator</span>
+          </button>
+
+          {/* Telemetry Ingest & Industry Benchmarks */}
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/50 transition cursor-pointer shadow-xs"
+            title="Upload custom CSV/JSON telemetry or load industry benchmark datasets (Foundry, Mining, Solar, Cold-Chain)"
+          >
+            <UploadCloud className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Ingest &amp; Benchmarks</span>
           </button>
 
           {/* Reports & Export Dropdown */}
@@ -8084,6 +8128,19 @@ export default function ManagerDashboard({
               `Field engineer acknowledged incident ${alert.incidentId || alert.id}: ${alert.fieldNotes || 'Status updated to En Route.'}`
             );
             setTimeout(() => setProtocolActiveNotice(null), 6000);
+          }}
+        />
+      )}
+
+      {/* Telemetry Ingest & Industry Benchmarks Upload Modal */}
+      {isUploadModalOpen && (
+        <TelemetryUploadModal
+          isOpen={true}
+          onClose={() => setIsUploadModalOpen(false)}
+          onIngestDataset={handleIngestUploadedDataset}
+          onNotice={(msg) => {
+            setProtocolActiveNotice(msg);
+            setTimeout(() => setProtocolActiveNotice(null), 8000);
           }}
         />
       )}

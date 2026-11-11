@@ -264,27 +264,28 @@ export function downloadAnomalyReportJson({
   };
 
   const jsonStr = JSON.stringify(reportPayload, null, 2);
-  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-
   const dateStamp = now.toISOString().slice(0, 10);
   const timeStamp = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
   const sanitizedZone = zone.name.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Prognosticator_24H_Anomaly_Report_${sanitizedZone}_${dateStamp}_${timeStamp}.json`;
 
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 
   return {
     success: true,
     filename,
-    sizeBytes: blob.size
+    sizeBytes: jsonStr.length
   };
 }
 
@@ -480,22 +481,23 @@ export function downloadAnomalyReportCsv({
   ];
 
   const csvContent = [...metadataLines, headers.join(','), ...rows, ...anomalySectionLines].join('\r\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-
   const dateStamp = now.toISOString().slice(0, 10);
   const timeStamp = `${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
   const sanitizedZone = zone.name.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Prognosticator_Anonymized_Health_Compliance_Report_${sanitizedZone}_${dateStamp}_${timeStamp}.csv`;
 
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 
   return {
     success: true,

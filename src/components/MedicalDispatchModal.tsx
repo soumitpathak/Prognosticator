@@ -47,6 +47,15 @@ export default function MedicalDispatchModal({
     'DISPATCH DIRECTIVE: Extreme wet-bulb heat index exceedance (44°C). Escort affected cohort to Shaded Shelter C and administer chilled oral electrolyte packs.'
   );
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleCreateNew = (e: React.FormEvent) => {
@@ -68,7 +77,14 @@ export default function MedicalDispatchModal({
   const acknowledgedCount = dispatches.filter((d) => d.status === 'ACKNOWLEDGED_BY_TEAM').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fadeIn"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/80">

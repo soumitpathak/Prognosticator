@@ -156,13 +156,26 @@ export default function WorkerPrivateDashboard() {
             </p>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-slate-300">
-              Logged Today: <strong className="text-cyan-400 font-mono text-sm">{loggedGlasses} / 8</strong> portions
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-xs text-slate-300 flex items-center gap-2">
+              <span>Logged Today:</span>
+              <strong className="text-cyan-400 font-mono text-sm">{loggedGlasses} / 8</strong>
+              <span className="text-[11px] text-slate-400">portions</span>
+              {loggedGlasses > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLoggedGlasses((g) => Math.max(0, g - 1))}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded border border-slate-700 hover:border-slate-500 cursor-pointer transition"
+                  title="Decrement portion"
+                >
+                  -1
+                </button>
+              )}
             </div>
             <button
+              type="button"
               onClick={() => setLoggedGlasses((g) => g + 1)}
-              className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center gap-1.5"
+              className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <Droplets className="h-3.5 w-3.5" /> Log 250ml Consumed
             </button>
@@ -179,10 +192,22 @@ export default function WorkerPrivateDashboard() {
               Under OSHA / ISO 7243 Heat Stress Regulations, every worker has an unconditional right to take immediate shaded relief if experiencing dizziness, heat exhaustion, or rapid heartbeat.
             </p>
             {requestedBreak ? (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex items-start gap-2.5">
-                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-                <div>
-                  <strong>Cooling Break Dispatched:</strong> Medical liaison and shaded hydration tent notified. You may immediately stand down without penalty.
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex flex-col gap-3">
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-semibold">Cooling Break Dispatched:</strong>
+                    <span>Medical liaison and shaded hydration tent notified. You may immediately stand down without penalty.</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-emerald-500/20 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setRequestedBreak(false)}
+                    className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 font-medium"
+                  >
+                    <span>Cool-Down Completed &bull; Resume Active Shift</span>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -196,8 +221,9 @@ export default function WorkerPrivateDashboard() {
 
           {!requestedBreak && (
             <button
+              type="button"
               onClick={() => setRequestedBreak(true)}
-              className="mt-4 w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition flex items-center justify-center gap-2"
+              className="mt-4 w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-2.5 px-4 rounded-lg text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
             >
               <AlertCircle className="h-4 w-4" /> Request Immediate Shaded Cool-Down (Non-Punitive)
             </button>
