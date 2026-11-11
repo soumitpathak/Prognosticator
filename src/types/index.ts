@@ -1087,3 +1087,87 @@ export interface CausalIncidentChainEvent {
   delayFromOriginMins: number;
   confidencePct: number;
 }
+
+// -------------------------------------------------------------
+// USER MANAGEMENT & ROLE-BASED / POLICY-BASED ACCESS CONTROL (RBAC / PBAC)
+// -------------------------------------------------------------
+export type UserRole =
+  | 'SAFETY_DIRECTOR'             // Enterprise / Site Safety Director
+  | 'OCCUPATIONAL_HEALTH_OFFICER' // Medical Doctor / Industrial Hygienist
+  | 'FACILITY_ENGINEER'           // Lead Mechanical & IoT Engineer
+  | 'FRONTLINE_WORKER'            // Frontline / Migrant / Resident Worker
+  | 'COMPLIANCE_AUDITOR';         // WSH / MOM / OSHA Regulatory Auditor
+
+export type WorkforceType =
+  | 'MIGRANT_WORKFORCE'   // Expatriate / foreign worker on work permit/pass (special heat, language & dorm rights)
+  | 'DOMESTIC_WORKFORCE'  // Resident / local workforce
+  | 'SUPERVISORY_STAFF'   // EHS & engineering management
+  | 'INDEPENDENT_AUDITOR'; // Government / external inspection officer
+
+export type Permission =
+  | 'VIEW_AGGREGATE_ANALYTICS'      // View population heatmaps & zone risk scores
+  | 'VIEW_PRIVATE_BIOMETRICS'       // View personal sovereign biometrics (Worker only)
+  | 'CONFIGURE_GLOBAL_THRESHOLDS'   // Modify Kalman & OSHA/ISO baseline thresholds
+  | 'ACTUATE_HVAC_REMEDIATION'      // Trigger chiller offsets & HVAC dampers
+  | 'DISPATCH_MEDICAL_EMERGENCY'    // Trigger SMS/radio rapid cooling response
+  | 'SCHEDULE_IOT_MAINTENANCE'      // Dispatch technician work orders for ISO 10816 equipment
+  | 'EXPORT_CERTIFIED_REPORTS'      // Generate Executive PDF, HIPAA dossiers & CSVs
+  | 'VIEW_COMPLIANCE_AUDIT_LOGS'    // Read tamper-evident cryptographic access logs
+  | 'RUN_WHAT_IF_SIMULATIONS'       // Simulate thermal & ventilation scenarios
+  | 'REQUEST_ANONYMOUS_REST_BREAK'  // Send anonymous fatigue/heat rest signal
+  | 'MANAGE_USER_ROLES';            // Administer users and inspect PBAC policies
+
+export interface UserPersona {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  roleTitle: string;
+  department: string;
+  organization: string;
+  workforceType: WorkforceType;
+  jurisdiction: RegulatoryJurisdiction;
+  avatarInitials: string;
+  avatarColor: string;
+  clearanceLevel: 'LEVEL_1_BASIC' | 'LEVEL_2_CLINICAL' | 'LEVEL_3_TECHNICAL' | 'LEVEL_4_EXECUTIVE' | 'LEVEL_5_AUDITOR';
+  primaryLanguage: 'en' | 'bn' | 'ta' | 'zh' | 'tl' | 'ar' | 'hi';
+  languageLabel: string;
+  permissions: Permission[];
+  assignedZoneOrDorm?: string;
+  bioSummary: string;
+}
+
+// -------------------------------------------------------------
+// COUNTRY & MIGRANT WORKFORCE REGULATORY COMPLIANCE TYPES
+// -------------------------------------------------------------
+export type RegulatoryJurisdiction =
+  | 'SINGAPORE_MOM' // Singapore Ministry of Manpower (WSH Act 2024, Heat Stress Framework & EFMA)
+  | 'GCC_MOHRE'     // GCC / UAE / Saudi Arabia (MoHRE Midday Work Ban 12:30-15:00, Heat Stress Standards)
+  | 'US_OSHA_NIOSH' // United States OSHA 1910, NIOSH Criteria & Heat NEP (CPL 03-00-024)
+  | 'EU_GDPR_OSHA'; // European Union EU-OSHA Directives & GDPR Article 9 Biometric Protection
+
+export interface RegulatoryFrameworkDetail {
+  jurisdiction: RegulatoryJurisdiction;
+  countryName: string;
+  regionLabel: string;
+  regulatoryBody: string;
+  keyActs: string[];
+  wbgtThresholds: {
+    moderateRestMinsPerHour: number; // e.g. 15 mins
+    highRestMinsPerHour: number;     // e.g. 30 mins
+    stopWorkWbgtC: number;           // e.g. 33.0°C
+  };
+  migrantWorkforceProtections: {
+    mandatoryLanguages: string[];
+    coolingStationsRequired: boolean;
+    middayWorkBanApplies: boolean;
+    middayBanHours?: string;
+    dormitoryThermalStandard: string;
+    nonPunitiveFatigueReportingClause: string;
+    employerMedicalLiabilityClause: string;
+  };
+  complianceStatus: 'FULLY_COMPLIANT' | 'WARNING_ATTENTION' | 'NON_COMPLIANT';
+  lastAuditDate: string;
+  activeEnforcementAlerts: string[];
+}
+

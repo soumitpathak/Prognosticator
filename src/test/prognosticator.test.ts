@@ -21,6 +21,7 @@ import {
 import { systemComplianceService } from '../services/systemComplianceService';
 import { nlpAnomalyInsightsService } from '../services/nlpAnomalyInsightsService';
 import { generateLstm12hForecast } from '../services/lstm12hForecastingService';
+import { authService, TARGET_PERSONAS, REGULATORY_FRAMEWORKS } from '../services/authService';
 
 describe('1. Kalman Filter & Signal Processing', () => {
   it('should return an empty array when smoothing an empty or null array', () => {
@@ -439,4 +440,89 @@ describe('11. Rolling 30-Day Health Signals vs. Baseline Metrics', () => {
     expect(result.summary.meanThermalWorkLimit).toBeGreaterThan(90);
   });
 });
+
+describe('11. Enterprise User Personas & RBAC / PBAC Authorization', () => {
+  it('loads all targeted challenge personas with assigned workforce categories', () => {
+    const personas = authService.getAllPersonas();
+    expect(personas.length).toBeGreaterThanOrEqual(5);
+
+    const roles = personas.map((p) => p.role);
+    expect(roles).toContain('SAFETY_DIRECTOR');
+    expect(roles).toContain('OCCUPATIONAL_HEALTH_OFFICER');
+    expect(roles).toContain('FACILITY_ENGINEER');
+    expect(roles).toContain('FRONTLINE_WORKER');
+    expect(roles).toContain('COMPLIANCE_AUDITOR');
+
+    const migrantWorkers = personas.filter((p) => p.workforceType === 'MIGRANT_WORKFORCE');
+    expect(migrantWorkers.length).toBeGreaterThanOrEqual(2);
+    expect(migrantWorkers.some((w) => w.primaryLanguage === 'bn')).toBe(true); // Bengali
+    expect(migrantWorkers.some((w) => w.primaryLanguage === 'ta')).toBe(true); // Tamil
+  });
+
+  it('permits safety directors to actuate HVAC and configure thresholds', () => {
+    authService.switchPersona('user_safety_director');
+    expect(authService.hasPermission('ACTUATE_HVAC_REMEDIATION')).toBe(true);
+    expect(authService.hasPermission('CONFIGURE_GLOBAL_THRESHOLDS')).toBe(true);
+    expect(authService.hasPermission('DISPATCH_MEDICAL_EMERGENCY')).toBe(true);
+
+    const policy = authService.evaluatePolicy('ACTUATE_HVAC_REMEDIATION');
+    expect(policy.allowed).toBe(true);
+    expect(policy.policyCode).toBe('PBAC_PERMIT_200');
+  });
+
+  it('enforces sovereign privacy shield on frontline migrant workers (denies manager surveillance)', () => {
+    authService.switchPersona('user_migrant_worker_tariq');
+    expect(authService.hasPermission('VIEW_PRIVATE_BIOMETRICS')).toBe(true);
+    expect(authService.hasPermission('REQUEST_ANONYMOUS_REST_BREAK')).toBe(true);
+
+    // Frontline worker cannot access aggregate managerial surveillance
+    expect(authService.hasPermission('VIEW_AGGREGATE_ANALYTICS')).toBe(false);
+    expect(authService.hasPermission('ACTUATE_HVAC_REMEDIATION')).toBe(false);
+
+    const policy = authService.evaluatePolicy('VIEW_AGGREGATE_ANALYTICS');
+    expect(policy.allowed).toBe(false);
+    expect(policy.policyCode).toBe('PBAC_DENY_WORKER_SOVEREIGN_ISOLATION');
+  });
+
+  it('restricts government compliance auditors to read-only oversight', () => {
+    authService.switchPersona('user_compliance_auditor');
+    expect(authService.hasPermission('VIEW_COMPLIANCE_AUDIT_LOGS')).toBe(true);
+    expect(authService.hasPermission('EXPORT_CERTIFIED_REPORTS')).toBe(true);
+    expect(authService.hasPermission('ACTUATE_HVAC_REMEDIATION')).toBe(false);
+
+    const policy = authService.evaluatePolicy('ACTUATE_HVAC_REMEDIATION');
+    expect(policy.allowed).toBe(false);
+    expect(policy.policyCode).toBe('PBAC_DENY_AUDITOR_READONLY');
+  });
+});
+
+describe('12. Country & Migrant Workforce Regulatory Compliance', () => {
+  it('validates Singapore MOM WSH Act and Heat Stress 2024 parameters', () => {
+    const sg = REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
+    expect(sg.countryName).toBe('Singapore');
+    expect(sg.regulatoryBody).toContain('Ministry of Manpower');
+    expect(sg.wbgtThresholds.moderateRestMinsPerHour).toBe(15);
+    expect(sg.wbgtThresholds.highRestMinsPerHour).toBe(30);
+    expect(sg.wbgtThresholds.stopWorkWbgtC).toBe(33.0);
+    expect(sg.migrantWorkforceProtections.mandatoryLanguages).toContain('Bengali (বাংলা)');
+    expect(sg.migrantWorkforceProtections.mandatoryLanguages).toContain('Tamil (தமிழ்)');
+    expect(sg.complianceStatus).toBe('FULLY_COMPLIANT');
+  });
+
+  it('validates GCC MoHRE Midday Summer Work Ban regulations', () => {
+    const gcc = REGULATORY_FRAMEWORKS.GCC_MOHRE;
+    expect(gcc.regulatoryBody).toContain('MoHRE');
+    expect(gcc.migrantWorkforceProtections.middayWorkBanApplies).toBe(true);
+    expect(gcc.migrantWorkforceProtections.middayBanHours).toContain('12:30 PM to 3:00 PM');
+    expect(gcc.migrantWorkforceProtections.coolingStationsRequired).toBe(true);
+  });
+
+  it('validates US OSHA & NIOSH Heat NEP and HIPAA Safe Harbor', () => {
+    const us = REGULATORY_FRAMEWORKS.US_OSHA_NIOSH;
+    expect(us.keyActs.some((act) => act.includes('OSHA National Emphasis Program'))).toBe(true);
+    expect(us.keyActs.some((act) => act.includes('HIPAA'))).toBe(true);
+    expect(us.complianceStatus).toBe('FULLY_COMPLIANT');
+  });
+});
+
 

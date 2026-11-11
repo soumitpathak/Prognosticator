@@ -7,7 +7,7 @@
 ---
 
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=flat-square&logo=vite)](https://vitejs.dev)
-[![Test Suite](https://img.shields.io/badge/SDET%20Tests-56%2F56%20Passing-emerald?style=flat-square&logo=vitest)](https://vitest.dev)
+[![Test Suite](https://img.shields.io/badge/SDET%20Tests-69%2F69%20Passing-emerald?style=flat-square&logo=vitest)](https://vitest.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3%20Strict-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org)
 [![React](https://img.shields.io/badge/React-18.3.1%20SPA-61dafb?style=flat-square&logo=react)](https://react.dev)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4.0.12-38bdf8?style=flat-square&logo=tailwindcss)](https://tailwindcss.com)

@@ -22,7 +22,8 @@ import {
   Layers,
   Sparkles,
   Info,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { FacilityZone, ActiveAnomalyAlert, TelemetryDataPoint } from '../types';
 import { exportDashboardDataCsv } from '../services/dashboardCsvExport';
@@ -186,6 +187,7 @@ export default function DownloadOptionsModal({
   // Download status
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [successFeedback, setSuccessFeedback] = useState<string | null>(null);
+  const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
 
   // Active zone object
   const activeZoneObj = useMemo(() => {
@@ -255,8 +257,9 @@ export default function DownloadOptionsModal({
 
   // Execute download
   const handleDownloadReport = async () => {
+    setErrorFeedback(null);
     if (selectedCount === 0) {
-      alert('Please select at least one metric to include in your export report.');
+      setErrorFeedback('Please select at least one metric to include in your export report.');
       return;
     }
 
@@ -362,7 +365,7 @@ export default function DownloadOptionsModal({
       }, 5000);
     } catch (err: any) {
       console.error('Download options export failed:', err);
-      alert(`Export failed: ${err?.message || 'Unknown error'}`);
+      setErrorFeedback(`Export failed: ${err?.message || 'Unknown error'}`);
     } finally {
       setIsDownloading(false);
     }
@@ -403,6 +406,14 @@ export default function DownloadOptionsModal({
           <div className="mt-3 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
             <span className="font-medium">{successFeedback}</span>
+          </div>
+        )}
+
+        {/* Error Feedback Notification */}
+        {errorFeedback && (
+          <div className="mt-3 p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+            <span className="font-medium">{errorFeedback}</span>
           </div>
         )}
 

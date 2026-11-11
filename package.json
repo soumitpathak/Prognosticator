@@ -2,6 +2,8 @@
   "name": "prognosticator",
   "private": true,
   "version": "2.0.0",
+  "description": "Enterprise Population & Workforce Health Early-Warning Intelligence Platform",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
