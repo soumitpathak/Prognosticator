@@ -607,7 +607,7 @@ export default function RecentAnomalyTriggersRunningLogPanel({
 
             return (
               <div
-                key={trigger.id}
+                key={`${trigger.id}-${idx}`}
                 onClick={() => setSelectedTriggerId(trigger.id)}
                 className={`rounded-xl p-3.5 border transition-all duration-200 cursor-pointer relative overflow-hidden group text-left ${
                   isSelected ? 'ring-2 ring-cyan-400 bg-slate-900 border-cyan-400 shadow-xl' : severityStyles.cardBorder

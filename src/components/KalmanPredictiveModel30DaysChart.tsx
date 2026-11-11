@@ -185,7 +185,7 @@ export default function KalmanPredictiveModel30DaysChart({
 
     const dayNum = selectedPointForNote.dayNumber;
     const newNote: ProjectedAnnotation = {
-      id: `NOTE-PROJ-${dayNum}-${Date.now().toString().slice(-4)}`,
+      id: `NOTE-PROJ-${dayNum}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       dayNumber: dayNum,
       dateLabel: selectedPointForNote.dateLabel,
       fullDate: selectedPointForNote.fullDate,

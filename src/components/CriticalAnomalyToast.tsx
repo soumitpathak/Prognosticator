@@ -209,10 +209,10 @@ export default function CriticalAnomalyToast({
               key={toast.id}
               onMouseEnter={() => setHoveredToastId(toast.id)}
               onMouseLeave={() => setHoveredToastId(null)}
-              className={`pointer-events-auto bg-slate-950/95 border-2 rounded-2xl shadow-2xl p-4 backdrop-blur-md relative overflow-hidden transition-all duration-300 transform translate-y-0 animate-in slide-in-from-top-4 ${
+              className={`pointer-events-auto bg-slate-950 border-2 rounded-2xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] p-4 relative overflow-hidden transition-all duration-300 transform translate-y-0 animate-in slide-in-from-top-4 ${
                 isCritical
-                  ? 'border-rose-500 shadow-rose-950/60 bg-gradient-to-br from-slate-950 via-rose-950/20 to-slate-950'
-                  : 'border-amber-500 shadow-amber-950/50 bg-gradient-to-br from-slate-950 via-amber-950/20 to-slate-950'
+                  ? 'border-rose-500 shadow-rose-950/60 bg-slate-950'
+                  : 'border-amber-500 shadow-amber-950/50 bg-slate-950'
               }`}
             >
               {/* Top Engine & Severity Banner */}

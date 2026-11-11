@@ -253,8 +253,13 @@ export default function ReportExportModal({
   };
 
   const handlePrintPdf = () => {
-    window.print();
-    setDownloadSuccessMessage('Dispatched printable audit stream to browser.');
+    try {
+      window.print();
+      setDownloadSuccessMessage('Dispatched printable audit stream to browser.');
+    } catch (err) {
+      console.warn('Print blocked by iframe context:', err);
+      setDownloadSuccessMessage('Browser print unavailable in embedded frame. Use Direct PDF Download.');
+    }
     setTimeout(() => setDownloadSuccessMessage(null), 4000);
   };
 

@@ -274,7 +274,7 @@ export default function RecentAnomaliesAuditList({
 
             return (
               <div
-                key={alert.id}
+                key={`${alert.id}-${index}`}
                 onClick={() => setSelectedAnomaly(alert)}
                 role="button"
                 tabIndex={0}

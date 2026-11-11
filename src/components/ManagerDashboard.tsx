@@ -85,6 +85,7 @@ import SignalCategoryFilterSidebar, {
 } from './SignalCategoryFilterSidebar';
 import { exportDashboardDataCsv } from '../services/dashboardCsvExport';
 import WorkforceHealth30DaysTrendChart from './WorkforceHealth30DaysTrendChart';
+import D3HealthSignalRollingTrendComparison from './D3HealthSignalRollingTrendComparison';
 import DepartmentHealthComparisonSplitCard from './DepartmentHealthComparisonSplitCard';
 import D3WorkplaceZoneRiskHeatmap from './D3WorkplaceZoneRiskHeatmap';
 import DepartmentZoneSearchLookup, { DepartmentZoneEntity } from './DepartmentZoneSearchLookup';
@@ -315,6 +316,12 @@ export function HealthSignal24hBadge({
   );
 }
 
+let globalSeqCounter = 1000;
+export const generateUniqueId = (prefix = 'ID') => {
+  globalSeqCounter = (globalSeqCounter + 1) % 900000;
+  return `${prefix}-${Date.now()}-${globalSeqCounter}`;
+};
+
 export interface ManagerDashboardProps {
   isAccessibilityMode?: boolean;
   onToggleAccessibilityMode?: () => void;
@@ -488,7 +495,7 @@ export default function ManagerDashboard({
     } catch {}
 
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-THRESH-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-THRESH'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -529,7 +536,7 @@ export default function ManagerDashboard({
       lastRiskBreachAlertRef.current = now;
 
       const delta = Number((currentRisk - telemetryRiskThreshold).toFixed(1));
-      const breachId = `BREACH-${Date.now().toString().slice(-4)}`;
+      const breachId = generateUniqueId('BREACH');
 
       // 1. Spawning browser native notification + audio chime + title flash
       desktopNotificationService.notifyRiskThresholdBreach(
@@ -575,7 +582,7 @@ export default function ManagerDashboard({
 
       // 3. System audit log
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-NOTIF-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-NOTIF'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -848,7 +855,7 @@ export default function ManagerDashboard({
     );
 
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-CSV-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-CSV'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -915,7 +922,7 @@ export default function ManagerDashboard({
     standard: string
   ) => {
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-EXP-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-EXP'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -945,7 +952,7 @@ export default function ManagerDashboard({
     standard: string
   ) => {
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-PDF-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-PDF'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -968,7 +975,7 @@ export default function ManagerDashboard({
 
   const handleHealthMetricsReportExported = (filename: string, recordCount: number) => {
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-PDF-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-PDF'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -1066,7 +1073,7 @@ export default function ManagerDashboard({
   // Handle Staging Pre-emptive Protocols for the 48h Predictive Surge
   const handleStagePreemptive48hMitigation = useCallback(() => {
     const newDispatch: MedicalDispatchNotification = {
-      id: `PREDICT-DSP-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('PREDICT-DSP'),
       alertId: 'PREDICTIVE-48H-SURGE',
       zone: 'Outdoor-Construction-Sector-4',
       severity: 'HIGH',
@@ -1081,7 +1088,7 @@ export default function ManagerDashboard({
 
     // Statutory Audit Log entry
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUDIT-PRED-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUDIT-PRED'),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       userId: 'usr-soc-automaton',
       userName: 'Predictive Trend Analysis Engine',
@@ -1114,10 +1121,38 @@ export default function ManagerDashboard({
 
   // Real-Time Notification Toast System State
   const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
-  const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
   const [criticalAnomalyToasts, setCriticalAnomalyToasts] = useState<CriticalAnomalyToastData[]>([]);
+  const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState<boolean>(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const toolsMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close menus when clicking outside or pressing Escape
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (exportMenuRef.current && !exportMenuRef.current.contains(target)) {
+        setIsExportMenuOpen(false);
+      }
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(target)) {
+        setIsToolsMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsExportMenuOpen(false);
+        setIsToolsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const lastCriticalToastTimestampsRef = useRef<Record<string, number>>({});
 
   const handleDismissCriticalToast = useCallback((id: string) => {
@@ -1138,7 +1173,7 @@ export default function ManagerDashboard({
 
   const handleDispatchActionForCriticalToast = useCallback((toast: CriticalAnomalyToastData) => {
     const newDispatch: MedicalDispatchNotification = {
-      id: `DSP-${Date.now().toString().slice(-4)}-CRIT`,
+      id: generateUniqueId('DSP-CRIT'),
       alertId: toast.anomalyId || toast.id,
       zone: toast.zoneName,
       severity: toast.riskTier === 'HIGH_RISK' ? 'HIGH' : 'CRITICAL',
@@ -2090,7 +2125,7 @@ export default function ManagerDashboard({
     const isNoise = toast.signalKey === 'noise';
 
     const newDispatch: MedicalDispatchNotification = {
-      id: `DSP-${Date.now().toString().slice(-4)}-TOAST`,
+      id: generateUniqueId('DSP-TOAST'),
       alertId: toast.id,
       zone: toast.zoneName,
       severity: toast.severity === 'WARNING' ? 'MODERATE' : toast.severity,
@@ -2284,6 +2319,43 @@ export default function ManagerDashboard({
     setTimeout(() => setProtocolActiveNotice(null), 6000);
   };
 
+  // Download CSV of current workforce telemetry data for offline analysis
+  const handleDownloadWorkforceTelemetryCsv = useCallback(() => {
+    try {
+      const res = exportWorkforceHealthCsv(
+        telemetryStream,
+        activeZoneObj.name,
+        healthThresholds
+      );
+
+      // Record statutory audit log entry
+      const auditEntry: SystemAuditLogEntry = {
+        id: generateUniqueId('AUD-CSV'),
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        userId: 'USR-MGR-2026',
+        userName: 'Alex Mercer',
+        userRole: 'EHS Safety Supervisor',
+        category: 'REPORT_EXPORT',
+        targetModule: 'Workforce Telemetry Data Exporter',
+        parameter: 'Workforce Telemetry CSV Export',
+        previousValue: 'Live In-Memory Stream',
+        newValue: `Exported ${res.recordCount} telemetry records to ${res.filename}`,
+        justification: 'Exported current workforce health and multi-signal telemetry dataset as RFC 4180 CSV for offline occupational health analysis.',
+        approvalStatus: 'VERIFIED'
+      };
+      setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+
+      setProtocolActiveNotice(
+        `Workforce telemetry data exported to CSV (${res.recordCount} records): ${res.filename}`
+      );
+      setTimeout(() => setProtocolActiveNotice(null), 6000);
+    } catch (err: any) {
+      console.error('Workforce CSV export failed:', err);
+      setProtocolActiveNotice('Failed to export workforce CSV: ' + (err?.message || 'Unknown error'));
+      setTimeout(() => setProtocolActiveNotice(null), 5000);
+    }
+  }, [telemetryStream, activeZoneObj, healthThresholds]);
+
   const handleExportWorkforceCsv = () => {
     try {
       const result = downloadAnomalyReportCsv({
@@ -2316,7 +2388,7 @@ export default function ManagerDashboard({
       });
 
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-DASH-CSV-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-DASH-CSV'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -2344,7 +2416,11 @@ export default function ManagerDashboard({
 
   // Dispatches clean print stylesheet for site safety briefings
   const handlePrintDashboard = useCallback(() => {
-    window.print();
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Print blocked by iframe context:', err);
+    }
   }, []);
 
   // Formal Comprehensive Telemetry PDF Report utilizing print-friendly styles
@@ -2361,7 +2437,7 @@ export default function ManagerDashboard({
 
     // Record compliance audit log for formal report generation
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-PDF-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-PDF'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -2399,7 +2475,11 @@ export default function ManagerDashboard({
     });
 
     setTimeout(() => {
-      window.print();
+      try {
+        window.print();
+      } catch (err) {
+        console.warn('Print blocked by iframe context:', err);
+      }
       setTimeout(() => {
         document.title = previousTitle;
         setProtocolActiveNotice('Comprehensive Telemetry PDF Report generated successfully.');
@@ -2459,7 +2539,7 @@ export default function ManagerDashboard({
   const handleSafetyCommitteeExportSuccess = useCallback((filename: string) => {
     setProtocolActiveNotice(`Safety Committee PDF Report successfully generated & downloaded: ${filename}`);
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-JHSC-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-JHSC'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -2594,7 +2674,7 @@ export default function ManagerDashboard({
 
       // Record immutable system audit log entry
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-EXP-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-EXP'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -2611,7 +2691,7 @@ export default function ManagerDashboard({
 
       // Record audit event trail
       const auditEvent: AuditEvent = {
-        id: `AUD-EVT-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-EVT'),
         timestamp: new Date().toLocaleTimeString(),
         eventType: 'EXPORT_AUDIT',
         zone: activeZoneObj.name,
@@ -2684,7 +2764,7 @@ export default function ManagerDashboard({
   const handleAddManualAuditLog = (newEntry: Omit<SystemAuditLogEntry, 'id' | 'timestamp'>) => {
     const entry: SystemAuditLogEntry = {
       ...newEntry,
-      id: `AUD-MAN-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-MAN'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19)
     };
     setSystemAuditLogs((prev) => [entry, ...prev]);
@@ -2777,7 +2857,7 @@ export default function ManagerDashboard({
       setDepartmentRiskThresholds(updated);
       const breachedCount = updated.filter((d) => d.currentRiskScore > d.thresholdPct).length;
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-DTH-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-DTH'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -2814,7 +2894,7 @@ export default function ManagerDashboard({
     });
 
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-CSV-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-CSV'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -2913,7 +2993,7 @@ export default function ManagerDashboard({
     const randomWorkerNum = Math.floor(Math.random() * 8999 + 1000);
     const workerId = pick.alertType === 'PREDICTIVE_MAINTENANCE' ? `EQUIP-DRIVE-${Math.floor(Math.random() * 8 + 1)}` : `W-${randomWorkerNum}`;
     const targetZone = pick.preferredZone || activeZoneObj.name;
-    const testId = `ALR-TEST-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 89 + 10)}`;
+    const testId = generateUniqueId('ALR-TEST');
 
     const newAlert: ActiveAnomalyAlert = {
       id: testId,
@@ -2938,7 +3018,7 @@ export default function ManagerDashboard({
 
     // Register in system audit logs
     const auditEntry: SystemAuditLogEntry = {
-      id: `AUD-TEST-${Date.now().toString().slice(-4)}`,
+      id: generateUniqueId('AUD-TEST'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',
@@ -2974,7 +3054,7 @@ export default function ManagerDashboard({
   const handleStageLstmPreemptiveMitigation = useCallback(
     (forecast: Lstm12hForecastResult, targetHour: Lstm12hForecastHour) => {
       const newDispatch: MedicalDispatchNotification = {
-        id: `LSTM-DSP-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('LSTM-DSP'),
         alertId: `LSTM-PREDICT-${targetHour.hourOffset}H`,
         zone: activeZoneObj.name,
         severity: targetHour.projectedRiskScore >= 80 ? 'CRITICAL' : 'HIGH',
@@ -2988,7 +3068,7 @@ export default function ManagerDashboard({
       setMedicalDispatches((prev) => [newDispatch, ...prev]);
 
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-LSTM-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-LSTM'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -3120,7 +3200,7 @@ export default function ManagerDashboard({
 
       // 3. System Audit Log entry
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-NOTIF-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-NOTIF'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -3176,7 +3256,7 @@ export default function ManagerDashboard({
       });
 
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-CSV-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-CSV'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -3217,7 +3297,7 @@ export default function ManagerDashboard({
       });
 
       const auditEntry: SystemAuditLogEntry = {
-        id: `AUD-COMP-${Date.now().toString().slice(-4)}`,
+        id: generateUniqueId('AUD-COMP'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -4014,7 +4094,7 @@ export default function ManagerDashboard({
           acknowledged: false,
           privacy_status: result.privacy_compliance
         };
-        setActiveAlerts((prev) => [freshAlert, ...prev.slice(0, 7)]);
+        setActiveAlerts((prev) => [freshAlert, ...prev.slice(0, 50)]);
 
         // Trigger real-time anomaly toast notification
         triggerAnomalyToast(
@@ -4617,7 +4697,7 @@ export default function ManagerDashboard({
       </header>
 
       {/* Executive Action & Filter Strip */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg backdrop-blur-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+      <div className="relative z-40 bg-slate-900 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
         {/* Left: Longitudinal Timeframe / Date Range Filter */}
         <div className="flex items-center gap-2">
           <DateRangePicker
@@ -4634,6 +4714,16 @@ export default function ManagerDashboard({
 
         {/* Right: Consolidated Executive Actions & Menus */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Download CSV Button: Exports current workforce telemetry data as CSV file for offline analysis */}
+          <button
+            onClick={handleDownloadWorkforceTelemetryCsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer shadow-sm"
+            title="Download current workforce telemetry data as a CSV file for offline analysis"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Download CSV</span>
+          </button>
+
           {/* Download PDF Report (Print Styles) */}
           <button
             onClick={handleDownloadPdfReport}
@@ -4665,7 +4755,7 @@ export default function ManagerDashboard({
           </button>
 
           {/* Reports & Export Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => {
                 setIsExportMenuOpen((prev) => !prev);
@@ -4680,7 +4770,7 @@ export default function ManagerDashboard({
 
             {isExportMenuOpen && (
               <div
-                className="absolute right-0 mt-1.5 w-64 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+                className="absolute right-0 mt-1.5 w-72 bg-slate-950 border border-slate-700 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.98)] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 ring-1 ring-slate-700"
                 onClick={() => setIsExportMenuOpen(false)}
               >
                 <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
@@ -4735,6 +4825,14 @@ export default function ManagerDashboard({
                   CSV Data Exports
                 </div>
                 <button
+                  onClick={handleDownloadWorkforceTelemetryCsv}
+                  className="w-full text-left px-3 py-2 text-emerald-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition font-semibold"
+                  title="Download current workforce telemetry data as a CSV file for offline analysis"
+                >
+                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">Download Telemetry CSV (Workforce)</span>
+                </button>
+                <button
                   onClick={handleExportDashboardCsv}
                   className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
                 >
@@ -4784,7 +4882,7 @@ export default function ManagerDashboard({
           </div>
 
           {/* Tools & Operations Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={toolsMenuRef}>
             <button
               onClick={() => {
                 setIsToolsMenuOpen((prev) => !prev);
@@ -4799,7 +4897,7 @@ export default function ManagerDashboard({
 
             {isToolsMenuOpen && (
               <div
-                className="absolute right-0 mt-1.5 w-64 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+                className="absolute right-0 mt-1.5 w-72 bg-slate-950 border border-slate-700 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.98)] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 ring-1 ring-slate-700"
                 onClick={() => setIsToolsMenuOpen(false)}
               >
                 <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
@@ -4832,6 +4930,20 @@ export default function ManagerDashboard({
                 >
                   <Volume2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
                   <span>Audio &amp; Voice Config</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const el = document.getElementById('d3-rolling-30d-health-signals-section');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
+                      setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span>D3 30D Trend vs. Baseline</span>
                 </button>
 
                 <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
@@ -4889,7 +5001,7 @@ export default function ManagerDashboard({
       </div>
 
       {/* Category-Based Signal Filter & Historical Moving Average Global Strip */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg backdrop-blur-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="relative z-30 bg-slate-900 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 text-slate-400 font-semibold mr-1">
             <Filter className="h-3.5 w-3.5 text-cyan-400" />
@@ -4988,7 +5100,7 @@ export default function ManagerDashboard({
 
       {/* Role Restriction Banner: Highlighted when Maintenance Crew view is active */}
       {activeRole === 'MAINTENANCE_CREW' && (
-        <div className="bg-amber-950/80 border border-amber-600/50 rounded-xl p-3.5 px-4 mb-4 text-xs font-mono text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in">
+        <div className="relative z-20 bg-amber-950 border border-amber-600/50 rounded-xl p-3.5 px-4 mb-4 text-xs font-mono text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
           <div className="flex items-center gap-2.5">
             <Lock className="h-4 w-4 text-amber-400 shrink-0" />
             <span>
@@ -5005,26 +5117,29 @@ export default function ManagerDashboard({
       )}
 
       {/* Row of Summary Metric Cards at Top of ManagerDashboard: Active Anomalies, Worker Coverage, Engine Uptime, System Latency */}
-      <ManagerSummaryMetricsRow
-        activeAlertsCount={activeAlerts.filter((a) => !a.acknowledged).length}
-        criticalAlertsCount={activeAlerts.filter((a) => !a.acknowledged && a.severity === 'CRITICAL').length}
-        highAlertsCount={activeAlerts.filter((a) => !a.acknowledged && a.severity === 'HIGH').length}
-        totalWorkersCount={144}
-        monitoredWorkersCount={142}
-        engineUptimePct={99.98}
-        systemLatencyMs={18.4}
-        onJumpToAlerts={() => {
-          const el = document.getElementById('active-alerts-section');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onJumpToZones={() => {
-          const el = document.getElementById('floorplan-view-section');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onDownloadPdfReport={handleDownloadDashboardSummaryPdf}
-        isGeneratingPdf={isGeneratingSummaryPdf}
-        className="mb-6"
-      />
+      <div className="relative z-10">
+        <ManagerSummaryMetricsRow
+          activeAlertsCount={activeAlerts.filter((a) => !a.acknowledged).length}
+          criticalAlertsCount={activeAlerts.filter((a) => !a.acknowledged && a.severity === 'CRITICAL').length}
+          highAlertsCount={activeAlerts.filter((a) => !a.acknowledged && a.severity === 'HIGH').length}
+          totalWorkersCount={144}
+          monitoredWorkersCount={142}
+          engineUptimePct={99.98}
+          systemLatencyMs={18.4}
+          onJumpToAlerts={() => {
+            const el = document.getElementById('active-alerts-section');
+            el?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onJumpToZones={() => {
+            const el = document.getElementById('floorplan-view-section');
+            el?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          onDownloadPdfReport={handleDownloadDashboardSummaryPdf}
+          onDownloadCsvReport={handleDownloadWorkforceTelemetryCsv}
+          isGeneratingPdf={isGeneratingSummaryPdf}
+          className="mb-6"
+        />
+      </div>
 
       {/* Primary Dashboard View Mode Tabs: Live Operations, Compliance Audit Log, System Compliance (HIPAA), Predictive IoT, Causal Links, Density, Pattern Library */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-6 bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-lg">
@@ -5658,7 +5773,7 @@ export default function ManagerDashboard({
         }}
         onLogAudit={(action, details) => {
           const entry: SystemAuditLogEntry = {
-            id: `AUD-KALMAN-${Date.now().toString().slice(-4)}`,
+            id: generateUniqueId('AUD-KALMAN'),
             timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
             userId: 'USR-MGR-2026',
             userName: 'Alex Mercer',
@@ -6380,7 +6495,7 @@ export default function ManagerDashboard({
         zones={zones}
         onDeployPrecursorAction={(trendAlert, directive) => {
           const newAudit: AuditEvent = {
-            id: `AUD-TRD-${Date.now().toString().slice(-4)}`,
+            id: generateUniqueId('AUD-TRD'),
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             eventType: 'ALERT_DISPATCH',
             zone: trendAlert.zoneName,
@@ -6437,8 +6552,8 @@ export default function ManagerDashboard({
         }}
         onDispatchAction={(actionData) => {
           const newDispatch: MedicalDispatchNotification = {
-            id: `DSP-MAP-${Date.now().toString().slice(-4)}`,
-            alertId: `ALR-ZONE-${Date.now().toString().slice(-4)}`,
+            id: generateUniqueId('DSP-MAP'),
+            alertId: generateUniqueId('ALR-ZONE'),
             zone: actionData.zoneName,
             severity: actionData.severity,
             recipientRole: 'On-Site Rapid Cooling Evacuation Team',
@@ -6606,7 +6721,7 @@ export default function ManagerDashboard({
             }}
             onApplyPreemptiveProtocol={(scenarioType, details) => {
               const newAudit: AuditEvent = {
-                id: `AUD-PROG-${Date.now().toString().slice(-4)}`,
+                id: generateUniqueId('AUD-PROG'),
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
                 eventType: 'ALERT_DISPATCH',
                 zone: activeZoneObj.name,
@@ -6796,7 +6911,7 @@ export default function ManagerDashboard({
         onUpdateVoiceSettings={setVoiceSettings}
         onLogAuditAction={(cat, action, justification) => {
           const auditEntry: SystemAuditLogEntry = {
-            id: `AUD-AUD-${Date.now().toString().slice(-4)}`,
+            id: generateUniqueId('AUD-AUD'),
             timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
             userId: 'USR-MGR-2026',
             userName: 'Alex Mercer',
@@ -6979,8 +7094,24 @@ export default function ManagerDashboard({
           </div>
         </div>
 
-        {/* Date Range Picker Control */}
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        {/* Quick jump to D3 30D Trend Comparison & Date Range Picker Control */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+          <button
+            onClick={() => {
+              const el = document.getElementById('d3-rolling-30d-health-signals-section');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 transition cursor-pointer shadow-xs"
+            title="Jump to D3 Rolling 30-Day Health Signals vs. Baseline Comparison section"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+            <span>D3 30D Signals vs. Baseline</span>
+          </button>
+
           <DateRangePicker
             value={healthDateRange}
             onChange={(newRange) => {
@@ -7019,6 +7150,25 @@ export default function ManagerDashboard({
           setTelemetryAlert(res);
         }}
       />
+
+      {/* D3 Vector Engine: Rolling 30-Day Health Signals vs. Baseline Averages Trend Comparison Section */}
+      <div id="d3-rolling-30d-health-signals-section" className="scroll-mt-6">
+        <D3HealthSignalRollingTrendComparison
+          selectedZone={activeZoneObj}
+          zones={zones}
+          thresholds={healthThresholds}
+          dateRange={healthDateRange}
+          onSelectZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setAnomalyTrendZoneId(zoneId);
+            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+            setTelemetryAlert(res);
+          }}
+          className="mb-6"
+        />
+      </div>
 
       {/* Historical Trend of Workforce Health Metrics Line Chart (Recharts) */}
       <WorkforceHealth30DaysTrendChart

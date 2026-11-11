@@ -348,13 +348,13 @@ export default function AnomalyAuditLogModal({
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-sans">
               {filteredRecords.length > 0 ? (
-                filteredRecords.map((record) => {
+                filteredRecords.map((record, index) => {
                   const isExpanded = expandedRecordId === record.id;
                   const isCritical = record.severity === 'CRITICAL';
                   const isHigh = record.severity === 'HIGH';
 
                   return (
-                    <React.Fragment key={record.id}>
+                    <React.Fragment key={`${record.id}-${index}`}>
                       <tr
                         className={`hover:bg-slate-800/40 transition group cursor-pointer ${
                           isExpanded ? 'bg-slate-800/30' : ''

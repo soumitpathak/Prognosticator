@@ -195,7 +195,7 @@ class TeamAlertService {
     alert: ActiveAnomalyAlert
   ): TeamAlertNotification {
     const nowIso = new Date().toISOString();
-    const newId = `TA-${Date.now().toString().slice(-4)}-${assignment.assigneeId?.slice(-2) || 'ASG'}`;
+    const newId = `TA-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}-${assignment.assigneeId?.slice(-2) || 'ASG'}`;
 
     const newTeamAlert: TeamAlertNotification = {
       id: newId,

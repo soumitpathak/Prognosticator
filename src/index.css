@@ -17,6 +17,90 @@
   }
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Animation utilities for modals, drawers, toasts, and tooltips */
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0) scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1));
+  }
+}
+
+.animate-in {
+  animation-name: enter;
+  animation-duration: 200ms;
+  --tw-enter-opacity: 1;
+  --tw-enter-scale: 1;
+  --tw-enter-translate-x: 0;
+  --tw-enter-translate-y: 0;
+}
+
+.fade-in {
+  --tw-enter-opacity: 0;
+}
+.fade-in-50 {
+  --tw-enter-opacity: 0.5;
+}
+
+.zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+
+.slide-in-from-top-1 {
+  --tw-enter-translate-y: -0.25rem;
+}
+.slide-in-from-top-2 {
+  --tw-enter-translate-y: -0.5rem;
+}
+.slide-in-from-top-3 {
+  --tw-enter-translate-y: -0.75rem;
+}
+.slide-in-from-top-4 {
+  --tw-enter-translate-y: -1rem;
+}
+.slide-in-from-bottom-2 {
+  --tw-enter-translate-y: 0.5rem;
+}
+.slide-in-from-bottom-3 {
+  --tw-enter-translate-y: 0.75rem;
+}
+.slide-in-from-left {
+  --tw-enter-translate-x: -100%;
+}
+.slide-in-from-right {
+  --tw-enter-translate-x: 100%;
+}
+
+/* Subtle modern scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
 /* =========================================================================
    High-Contrast Light Mode Rules (Scoped exclusively to ManagerDashboard)
    ========================================================================= */
@@ -46,6 +130,21 @@ body.manager-high-contrast-light,
 .manager-high-contrast-light .bg-slate-900\/80,
 .manager-high-contrast-light .bg-slate-900\/90 {
   background-color: #f8fafc !important;
+}
+
+.manager-high-contrast-light .bg-gradient-to-r,
+.manager-high-contrast-light .bg-gradient-to-br,
+.manager-high-contrast-light .bg-gradient-to-b {
+  background-image: none !important;
+  background-color: #f1f5f9 !important;
+}
+
+.manager-high-contrast-light [class*="bg-emerald-950"],
+.manager-high-contrast-light [class*="bg-cyan-950"],
+.manager-high-contrast-light [class*="bg-amber-950"],
+.manager-high-contrast-light [class*="bg-rose-950"],
+.manager-high-contrast-light [class*="bg-indigo-950"] {
+  background-color: #f1f5f9 !important;
 }
 
 .manager-high-contrast-light .bg-slate-800 {

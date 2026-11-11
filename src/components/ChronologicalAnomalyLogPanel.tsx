@@ -542,13 +542,13 @@ function ChronologicalAnomalyLogPanelComponent({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-xs">
-                  {filteredAlerts.map((alert) => {
+                  {filteredAlerts.map((alert, index) => {
                     const isCritical = alert.severity === 'CRITICAL';
                     const isHigh = alert.severity === 'HIGH';
                     const isExpandedRow = expandedAlertId === alert.id;
 
                     return (
-                      <React.Fragment key={alert.id}>
+                      <React.Fragment key={`${alert.id}-${index}`}>
                         <tr
                           className={`transition hover:bg-slate-800/40 ${
                             !alert.acknowledged

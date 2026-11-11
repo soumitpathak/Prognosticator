@@ -299,11 +299,11 @@ export default function SystemAuditLog({ logs, onAddManualLog }: SystemAuditLogP
                 </td>
               </tr>
             ) : (
-              filteredLogs.map((log) => {
+              filteredLogs.map((log, index) => {
                 const isThreshold = log.category === 'THRESHOLD_CHANGE';
 
                 return (
-                  <tr key={log.id} className="hover:bg-slate-900/50 transition">
+                  <tr key={`${log.id}-${index}`} className="hover:bg-slate-900/50 transition">
                     {/* Timestamp */}
                     <td className="py-3 px-3.5 whitespace-nowrap text-slate-300 font-mono text-[11px]">
                       <div className="flex items-center space-x-1.5">

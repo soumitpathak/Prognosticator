@@ -392,3 +392,51 @@ describe('10. LSTM 12-Hour Forward Forecasting', () => {
     expect(mitigatedForecast.projectedPeakRisk).toBeLessThanOrEqual(baselineForecast.projectedPeakRisk);
   });
 });
+
+describe('11. Rolling 30-Day Health Signals vs. Baseline Metrics', () => {
+  it('should generate valid 30-day health telemetry metrics and baseline variance', async () => {
+    const { generate30DayWorkforceHealthMetrics } = await import('../services/workforceHealth30DaysService');
+    const mockZone = {
+      id: 'Outdoor-Construction-Sector-4',
+      name: 'Civil & Structural Construction',
+      status: 'CRITICAL' as const,
+      count: 24,
+      temp: '38.5°C',
+      heatIndex: 43.2,
+      twl: 112,
+      aqi: 72,
+      description: 'Outdoor high heat zone',
+      activeHazards: ['Heat Stress'],
+      latitude: 25.2,
+      longitude: 55.3,
+      customBaselines: {
+        baselineHrv: 68,
+        baselineSkinTemp: 36.4,
+        noiseLimitDb: 85,
+        heatThresholdC: 35
+      }
+    };
+
+    const result = generate30DayWorkforceHealthMetrics(mockZone);
+    expect(result.data.length).toBe(30);
+
+    // Verify day sequence and values
+    result.data.forEach((day, idx) => {
+      expect(day.dayIndex).toBe(idx);
+      expect(day.avgHrv).toBeGreaterThan(20);
+      expect(day.avgHrv).toBeLessThan(120);
+      expect(day.avgSkinTemp).toBeGreaterThan(34);
+      expect(day.avgSkinTemp).toBeLessThan(42);
+      expect(day.thermalWorkLimit).toBeGreaterThan(80);
+      expect(day.thermalWorkLimit).toBeLessThan(250);
+      expect(day.healthSafetyScore).toBeGreaterThanOrEqual(0);
+      expect(day.healthSafetyScore).toBeLessThanOrEqual(100);
+    });
+
+    // Verify summary statistics
+    expect(result.summary.meanHrvMs).toBeGreaterThan(30);
+    expect(result.summary.meanSkinTempC).toBeGreaterThan(35);
+    expect(result.summary.meanThermalWorkLimit).toBeGreaterThan(90);
+  });
+});
+

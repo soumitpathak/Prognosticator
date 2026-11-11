@@ -2,10 +2,26 @@ import React from 'react';
 import { Layers, ShieldCheck, Activity, Cpu, Server, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 export default function ArchitectureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/80">
@@ -24,7 +40,8 @@ export default function ArchitectureModal({ isOpen, onClose }: { isOpen: boolean
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white px-3 py-1 rounded-lg hover:bg-slate-800 text-xs transition"
+            className="text-slate-400 hover:text-white px-3 py-1 rounded-lg hover:bg-slate-800 text-xs transition cursor-pointer"
+            aria-label="Close modal"
           >
             Close
           </button>

@@ -109,7 +109,7 @@ export default function App() {
           >
             <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
             <span>Accessibility Mode</span>
-            <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-bold ${
+            <span className={`text-[9px] font-mono px-1 py-0.5 rounded font-bold ${
               isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400'
             }`}>
               {isAccessibilityMode ? 'ON' : 'OFF'}

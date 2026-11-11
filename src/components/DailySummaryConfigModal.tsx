@@ -142,7 +142,7 @@ export default function DailySummaryConfigModal({
     }
 
     const newRec: DailySummaryRecipient = {
-      id: `REC-${Date.now().toString().slice(-4)}`,
+      id: `REC-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       name: newName.trim(),
       email: newEmail.trim().toLowerCase(),
       role: newRole.trim() || 'EHS Specialist',
@@ -174,7 +174,7 @@ export default function DailySummaryConfigModal({
       setTestSentNotice(`Test Daily Summary Report dispatched to ${activeEmails.length} active recipients.`);
 
       const auditLog: SystemAuditLogEntry = {
-        id: `AUD-TEST-${Date.now().toString().slice(-4)}`,
+        id: `AUD-TEST-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
         userName: 'Alex Mercer',
@@ -211,7 +211,7 @@ export default function DailySummaryConfigModal({
     }
 
     const auditLog: SystemAuditLogEntry = {
-      id: `AUD-CFG-${Date.now().toString().slice(-4)}`,
+      id: `AUD-CFG-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
       userName: 'Alex Mercer',

@@ -209,7 +209,11 @@ export default function QuickSnapshotModal({
   };
 
   const handlePrint = () => {
-    window.print();
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Print blocked by iframe context:', err);
+    }
   };
 
   if (!isOpen) return null;

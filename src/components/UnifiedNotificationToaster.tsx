@@ -17,7 +17,9 @@ import {
   Sparkles,
   Zap,
   Volume2,
-  VolumeX
+  VolumeX,
+  Pin,
+  PinOff
 } from 'lucide-react';
 import { CriticalAnomalyToastData, ThresholdBreachToast } from '../types';
 
@@ -79,6 +81,8 @@ export default function UnifiedNotificationToaster({
   onToggleSound
 }: UnifiedNotificationToasterProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Pinned alerts mode: When false, alerts NEVER automatically disappear!
+  const [isAutoDismissEnabled, setIsAutoDismissEnabled] = useState<boolean>(false);
 
   // Normalize and merge both toast queues, sorting newest first
   const unifiedItems: UnifiedToastItem[] = useMemo(() => {
@@ -174,14 +178,16 @@ export default function UnifiedNotificationToaster({
   const visibleItems = unifiedItems.slice(0, 2);
   const hiddenCount = unifiedItems.length - visibleItems.length;
 
-  // Auto-dismiss management for all visible toasts
+  // Auto-dismiss management: ONLY triggers if user explicitly enabled auto-dismiss (never by default)
   useEffect(() => {
-    if (visibleItems.length === 0) return;
+    if (!isAutoDismissEnabled || visibleItems.length === 0) return;
 
     const interval = setInterval(() => {
       const now = Date.now();
       visibleItems.forEach((item) => {
         if (hoveredId === item.id) return; // Pause countdown on hover
+        // Do not auto-dismiss unacknowledged critical alerts
+        if (item.severity === 'CRITICAL' && !item.acknowledged) return;
 
         const elapsed = now - item.createdAt;
         if (elapsed >= item.autoDismissMs) {
@@ -195,7 +201,7 @@ export default function UnifiedNotificationToaster({
     }, 250);
 
     return () => clearInterval(interval);
-  }, [visibleItems, hoveredId, onDismissCritical, onDismissBreach]);
+  }, [visibleItems, hoveredId, isAutoDismissEnabled, onDismissCritical, onDismissBreach]);
 
   if (unifiedItems.length === 0) {
     return null;
@@ -209,7 +215,7 @@ export default function UnifiedNotificationToaster({
     >
       {/* Multi-Alert Summary Strip when queue has overflow */}
       {hiddenCount > 0 && (
-        <div className="pointer-events-auto flex items-center justify-between gap-3 w-full bg-slate-950/95 border border-slate-700/80 rounded-xl px-3.5 py-1.5 shadow-2xl backdrop-blur-md text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div className="pointer-events-auto flex items-center justify-between gap-3 w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -221,6 +227,19 @@ export default function UnifiedNotificationToaster({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsAutoDismissEnabled((prev) => !prev)}
+              className={`text-[10px] font-semibold transition font-mono cursor-pointer px-2 py-0.5 rounded border flex items-center gap-1 ${
+                !isAutoDismissEnabled
+                  ? 'bg-cyan-950 text-cyan-300 border-cyan-600 shadow-xs'
+                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
+              }`}
+              title={!isAutoDismissEnabled ? 'Alerts are pinned (will not auto-dismiss). Click to enable auto-dismiss' : 'Auto-dismiss is active. Click to pin alerts'}
+            >
+              {!isAutoDismissEnabled ? <Pin className="h-3 w-3 fill-cyan-400" /> : <PinOff className="h-3 w-3" />}
+              <span>{!isAutoDismissEnabled ? 'PINNED' : 'AUTO-DISMISS'}</span>
+            </button>
+
             {onOpenNotificationCenter && (
               <button
                 onClick={onOpenNotificationCenter}
@@ -256,18 +275,18 @@ export default function UnifiedNotificationToaster({
             key={item.id}
             onMouseEnter={() => setHoveredId(item.id)}
             onMouseLeave={() => setHoveredId(null)}
-            className={`pointer-events-auto w-full rounded-xl shadow-2xl backdrop-blur-md relative overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-3 border-2 ${
+            className={`pointer-events-auto w-full rounded-xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] relative overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-3 border-2 ${
               isCritical
-                ? 'bg-slate-950/95 border-rose-500/80 shadow-rose-950/40 text-slate-100'
-                : 'bg-slate-950/95 border-amber-500/80 shadow-amber-950/40 text-slate-100'
+                ? 'bg-slate-950 border-rose-500/90 ring-1 ring-rose-500/40 text-slate-100'
+                : 'bg-slate-950 border-amber-500/90 ring-1 ring-amber-500/40 text-slate-100'
             }`}
           >
             {/* Top Indicator Strip */}
             <div
               className={`px-3 py-1.5 flex items-center justify-between border-b text-[11px] font-mono ${
                 isCritical
-                  ? 'bg-rose-950/70 border-rose-800/60 text-rose-200'
-                  : 'bg-amber-950/70 border-amber-800/60 text-amber-200'
+                  ? 'bg-rose-950 border-rose-800/80 text-rose-200'
+                  : 'bg-amber-950 border-amber-800/80 text-amber-200'
               }`}
             >
               <div className="flex items-center gap-1.5">
@@ -287,7 +306,7 @@ export default function UnifiedNotificationToaster({
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span
                   className={`px-1.5 py-0.2 rounded font-bold uppercase tracking-wider text-[9px] border ${
                     isCritical
@@ -297,6 +316,23 @@ export default function UnifiedNotificationToaster({
                 >
                   {item.severity} RISK ({riskPct}%)
                 </span>
+
+                <button
+                  onClick={() => setIsAutoDismissEnabled((prev) => !prev)}
+                  className={`p-1 rounded text-[10px] transition cursor-pointer flex items-center gap-1 ${
+                    !isAutoDismissEnabled
+                      ? 'text-cyan-300 bg-cyan-950 border border-cyan-600 shadow-xs font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title={!isAutoDismissEnabled ? 'Alert is pinned (Won\'t disappear). Click to toggle auto-dismiss' : 'Auto-dismiss active. Click to pin alert'}
+                >
+                  {!isAutoDismissEnabled ? (
+                    <Pin className="h-3 w-3 fill-cyan-400" />
+                  ) : (
+                    <PinOff className="h-3 w-3" />
+                  )}
+                </button>
+
                 <button
                   onClick={() => handleDismiss(item)}
                   className="text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
@@ -336,7 +372,7 @@ export default function UnifiedNotificationToaster({
 
               {/* Kalman Telemetry Metric Card */}
               {isKalman && (
-                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2 text-[11px] font-mono space-y-1">
+                <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-[11px] font-mono space-y-1">
                   <div className="flex justify-between items-center text-slate-300">
                     <span className="text-slate-400">Telemetry:</span>
                     <span className="text-white font-medium truncate max-w-[240px]">
@@ -358,7 +394,7 @@ export default function UnifiedNotificationToaster({
 
               {/* Threshold Breach details if not kalman */}
               {!isKalman && (
-                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2 text-[11px] font-mono text-slate-300">
+                <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-[11px] font-mono text-slate-300">
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Breach Reading:</span>
                     <span className="text-white font-semibold">{item.metric}</span>
@@ -368,7 +404,7 @@ export default function UnifiedNotificationToaster({
 
               {/* Operational Action Directive */}
               {item.recommendedAction && (
-                <div className="text-[11px] text-slate-200 bg-slate-900/90 border border-slate-700/60 rounded-md p-1.5 flex items-start gap-1.5">
+                <div className="text-[11px] text-slate-200 bg-slate-900 border border-slate-700 rounded-md p-1.5 flex items-start gap-1.5">
                   <Zap className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
                   <p className="line-clamp-2 leading-tight">
                     <strong className="text-amber-300">Directive:</strong> {item.recommendedAction}
@@ -415,12 +451,20 @@ export default function UnifiedNotificationToaster({
               </div>
             </div>
 
-            {/* Visual Auto-Dismiss Progress Countdown Bar */}
-            <div
-              className={`absolute bottom-0 left-0 h-1 transition-all ${
-                isCritical ? 'bg-rose-500' : 'bg-amber-500'
-              } ${isHovered ? 'w-full opacity-40' : 'animate-[toast-progress_9s_linear_forwards]'}`}
-            />
+            {/* Visual Indicator: Countdown Bar when auto-dismiss is on, or solid Pinned badge */}
+            {isAutoDismissEnabled ? (
+              <div
+                className={`absolute bottom-0 left-0 h-1 transition-all ${
+                  isCritical ? 'bg-rose-500' : 'bg-amber-500'
+                } ${isHovered ? 'w-full opacity-40' : 'animate-[toast-progress_14s_linear_forwards]'}`}
+              />
+            ) : (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-900 border-t border-slate-800 flex items-center justify-between px-2">
+                <span className="text-[8px] font-mono font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1">
+                  <Pin className="h-2 w-2 fill-cyan-400" /> PINNED • ACTIVE IN WORKFLOW
+                </span>
+              </div>
+            )}
           </div>
         );
       })}

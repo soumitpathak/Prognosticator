@@ -58,11 +58,11 @@ function ActiveAnomaliesWidgetComponent({
   const criticalCount = alerts.filter((a) => a.severity === 'CRITICAL' && !a.acknowledged).length;
   const highCount = alerts.filter((a) => a.severity === 'HIGH' && !a.acknowledged).length;
 
-  // Filtered alerts list based on selected view mode
+  // Filtered alerts list based on selected view mode (keeps acknowledged alerts visible with clear badge instead of disappearing)
   const displayedAlerts = useMemo(() => {
-    return alerts.filter((alert) => {
+    const list = alerts.filter((alert) => {
       if (filterType === 'URGENT') {
-        return (alert.severity === 'CRITICAL' || alert.severity === 'HIGH') && !alert.acknowledged;
+        return alert.severity === 'CRITICAL' || alert.severity === 'HIGH';
       }
       if (filterType === 'HEALTH') {
         return alert.alert_type !== 'PREDICTIVE_MAINTENANCE';
@@ -71,6 +71,14 @@ function ActiveAnomaliesWidgetComponent({
         return alert.alert_type === 'PREDICTIVE_MAINTENANCE';
       }
       return true;
+    });
+
+    // Sort unacknowledged alerts first so action items stay at the top without hiding resolved ones
+    return [...list].sort((a, b) => {
+      if (a.acknowledged !== b.acknowledged) {
+        return a.acknowledged ? 1 : -1;
+      }
+      return 0;
     });
   }, [alerts, filterType]);
 

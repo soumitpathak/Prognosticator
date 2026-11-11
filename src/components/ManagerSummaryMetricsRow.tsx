@@ -30,6 +30,7 @@ export interface ManagerSummaryMetricsRowProps {
   onJumpToAlerts?: () => void;
   onJumpToZones?: () => void;
   onDownloadPdfReport?: () => void;
+  onDownloadCsvReport?: () => void;
   isGeneratingPdf?: boolean;
   className?: string;
 }
@@ -45,6 +46,7 @@ export default function ManagerSummaryMetricsRow({
   onJumpToAlerts,
   onJumpToZones,
   onDownloadPdfReport,
+  onDownloadCsvReport,
   isGeneratingPdf = false,
   className = ''
 }: ManagerSummaryMetricsRowProps) {
@@ -52,7 +54,7 @@ export default function ManagerSummaryMetricsRow({
 
   return (
     <section aria-label="Executive Health Operations Overview" className={`space-y-3 mb-6 ${className}`}>
-      {/* Executive Row Header with Direct PDF Summary Download */}
+      {/* Executive Row Header with Direct PDF & CSV Summary Downloads */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-2 text-xs">
           <span className="flex h-2 w-2 relative">
@@ -68,28 +70,44 @@ export default function ManagerSummaryMetricsRow({
           </span>
         </div>
 
-        {onDownloadPdfReport && (
-          <button
-            onClick={onDownloadPdfReport}
-            disabled={isGeneratingPdf}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md border cursor-pointer ${
-              isGeneratingPdf
-                ? 'bg-cyan-950 text-cyan-300 border-cyan-500/50 cursor-wait'
-                : 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-400 shadow-cyan-950/40'
-            }`}
-            title="Generate and download a comprehensive 2-page PDF summary report of current dashboard metrics, active anomalies, and zone risk indicators for documentation"
-          >
-            {isGeneratingPdf ? (
-              <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5 text-white" />
-            )}
-            <span>{isGeneratingPdf ? 'Compiling PDF Dossier...' : 'Download PDF Summary Report'}</span>
-            <span className="text-[10px] font-mono bg-cyan-950/80 px-1 rounded text-cyan-200 ml-1">
-              PDF
-            </span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {onDownloadCsvReport && (
+            <button
+              onClick={onDownloadCsvReport}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm border cursor-pointer bg-slate-900 hover:bg-slate-800 text-emerald-300 border-emerald-600/60 hover:border-emerald-500 shadow-emerald-950/30"
+              title="Download current workforce telemetry data as a CSV file for offline analysis"
+            >
+              <Download className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Download CSV</span>
+              <span className="text-[10px] font-mono bg-emerald-950/90 border border-emerald-700/60 px-1 rounded text-emerald-200 ml-1">
+                CSV
+              </span>
+            </button>
+          )}
+
+          {onDownloadPdfReport && (
+            <button
+              onClick={onDownloadPdfReport}
+              disabled={isGeneratingPdf}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-md border cursor-pointer ${
+                isGeneratingPdf
+                  ? 'bg-cyan-950 text-cyan-300 border-cyan-500/50 cursor-wait'
+                  : 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border-cyan-400 shadow-cyan-950/40'
+              }`}
+              title="Generate and download a comprehensive 2-page PDF summary report of current dashboard metrics, active anomalies, and zone risk indicators for documentation"
+            >
+              {isGeneratingPdf ? (
+                <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5 text-white" />
+              )}
+              <span>{isGeneratingPdf ? 'Compiling PDF Dossier...' : 'Download PDF Summary Report'}</span>
+              <span className="text-[10px] font-mono bg-cyan-950/80 px-1 rounded text-cyan-200 ml-1">
+                PDF
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

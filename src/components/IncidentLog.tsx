@@ -1008,7 +1008,7 @@ export default function IncidentLog({
                   </td>
                 </tr>
               ) : (
-                filteredIncidents.map((incident) => {
+                filteredIncidents.map((incident, index) => {
                   const isExpanded = expandedIncidentId === incident.id;
                   const isPending = incident.status === 'PENDING_ACTION';
                   const isSelected = selectedIncidentIds.has(incident.id);
@@ -1038,7 +1038,7 @@ export default function IncidentLog({
                   }
 
                   return (
-                    <React.Fragment key={incident.id}>
+                    <React.Fragment key={`${incident.id}-${index}`}>
                       <tr
                         className={`hover:bg-slate-900/60 transition cursor-pointer ${
                           isSelected ? 'bg-cyan-950/20' : isPending ? 'bg-rose-950/10' : ''

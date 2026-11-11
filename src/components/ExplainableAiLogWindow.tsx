@@ -389,12 +389,12 @@ ${activeAnomaly.recommended_action}
                   No active anomalies matching filter.
                 </div>
               ) : (
-                displayedAnomalies.map((a) => {
+                displayedAnomalies.map((a, idx) => {
                   const isSelected = a.id === selectedAnomalyId;
                   const isCrit = a.severity === 'CRITICAL';
                   return (
                     <button
-                      key={a.id}
+                      key={`${a.id}-${idx}`}
                       onClick={() => setSelectedAnomalyId(a.id)}
                       className={`w-full text-left p-2.5 rounded-lg text-xs border transition cursor-pointer flex flex-col gap-1 ${
                         isSelected

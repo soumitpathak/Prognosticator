@@ -439,7 +439,7 @@ export default function HistoricalPopulationHealthAnomaliesLog({
 
             return (
               <div
-                key={alert.id}
+                key={`${alert.id}-${index}`}
                 className={`p-3.5 rounded-xl border transition-all duration-200 ${getSeverityBorderClass(
                   alert.severity
                 )} ${alert.acknowledged ? 'opacity-85' : 'hover:border-slate-700'}`}

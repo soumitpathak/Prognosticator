@@ -361,12 +361,12 @@ export default function ComplianceAuditLog({
                 </td>
               </tr>
             ) : (
-              filteredRecords.map((r) => {
+              filteredRecords.map((r, index) => {
                 const isManual = r.eventType === 'MANUAL_OVERRIDE';
                 const isAuto = r.eventType === 'AUTOMATED_ADJUSTMENT';
 
                 return (
-                  <tr key={r.id} className="hover:bg-slate-800/40 transition">
+                  <tr key={`${r.id}-${index}`} className="hover:bg-slate-800/40 transition">
                     {/* Event & Timestamp */}
                     <td className="py-2.5 px-3 whitespace-nowrap">
                       <div className="font-mono font-bold text-white text-[11px]">{r.id}</div>

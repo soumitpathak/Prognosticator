@@ -74,8 +74,8 @@ export default function AuditLogModal({ isOpen, onClose, auditEvents }: AuditLog
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {auditEvents.map((evt) => (
-                <tr key={evt.id} className="hover:bg-slate-800/40 transition">
+              {auditEvents.map((evt, index) => (
+                <tr key={`${evt.id}-${index}`} className="hover:bg-slate-800/40 transition">
                   <td className="p-3 font-mono">
                     <div className="text-cyan-400 font-semibold">{evt.id}</div>
                     <div className="text-[10px] text-slate-400">{evt.timestamp}</div>

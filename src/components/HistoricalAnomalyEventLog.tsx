@@ -936,14 +936,14 @@ export default function HistoricalAnomalyEventLog({
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-sans">
             {paginatedEvents.length > 0 ? (
-              paginatedEvents.map((event) => {
+              paginatedEvents.map((event, index) => {
                 const isCritical = event.severityTier === 'CRITICAL';
                 const isHigh = event.severityTier === 'HIGH';
                 const isExpanded = expandedEventId === event.id;
                 const badge = getSeverityBadge(event.severityTier, event.severityScore);
 
                 return (
-                  <React.Fragment key={event.id}>
+                  <React.Fragment key={`${event.id}-${index}`}>
                     <tr
                       className={`transition hover:bg-slate-800/40 ${
                         !event.acknowledged
