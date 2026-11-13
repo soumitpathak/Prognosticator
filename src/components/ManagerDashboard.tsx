@@ -198,7 +198,7 @@ import GlobalThresholdAlertBanner, { ActiveSignalBreach } from './GlobalThreshol
 import { complianceAuditService } from '../services/complianceAuditService';
 import { chartAnnotationService } from '../services/chartAnnotationService';
 import { generateDashboardSummaryPdfReport } from '../services/dashboardSummaryPdfGenerator';
-import { FileText, Loader2, Navigation, ShieldCheck, Shield, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind, GitCompare, Sun, Moon, AlertOctagon } from 'lucide-react';
+import { FileText, Loader2, Navigation, ShieldCheck, Shield, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, ChevronUp, MoreHorizontal, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind, GitCompare, Sun, Moon, AlertOctagon } from 'lucide-react';
 import { useTranslation } from '../services/i18nService';
 import { crossRoleOperationsService, useCrossRoleOperations } from '../services/crossRoleOperationsService';
 import LanguageAutocomplete from './LanguageAutocomplete';
@@ -1172,8 +1172,12 @@ export default function ManagerDashboard({
   const [toastSoundEnabled, setToastSoundEnabled] = useState<boolean>(true);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState<boolean>(false);
+  const [isSignalStripExpanded, setIsSignalStripExpanded] = useState<boolean>(false);
+  const [isXaiMoreMenuOpen, setIsXaiMoreMenuOpen] = useState<boolean>(false);
+  const [commandAlertsMode, setCommandAlertsMode] = useState<'URGENT' | 'QUEUE'>('URGENT');
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const xaiMoreMenuRef = useRef<HTMLDivElement>(null);
 
   // Close menus when clicking outside or pressing Escape
   useEffect(() => {
@@ -1185,11 +1189,15 @@ export default function ManagerDashboard({
       if (toolsMenuRef.current && !toolsMenuRef.current.contains(target)) {
         setIsToolsMenuOpen(false);
       }
+      if (xaiMoreMenuRef.current && !xaiMoreMenuRef.current.contains(target)) {
+        setIsXaiMoreMenuOpen(false);
+      }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsExportMenuOpen(false);
         setIsToolsMenuOpen(false);
+        setIsXaiMoreMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -4461,168 +4469,158 @@ export default function ManagerDashboard({
         </div>
       </div>
 
-      {/* Operational Command Header & Search Bar */}
-      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 border border-slate-800 p-3.5 rounded-xl mb-5 shadow-lg gap-3">
+      {/* Operational Command Header */}
+      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4 shadow-sm gap-3">
         <div className="flex items-center space-x-3 shrink-0">
           <div className="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded-lg">
             <Activity className="text-cyan-400 h-5 w-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">
-                {m.surveillanceCommand}
+            <h1 className="text-sm sm:text-base font-bold text-white tracking-tight">
+              {activeZoneObj.name}
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+              <span>{m.surveillanceCommand}</span>
+              <span className="text-slate-600">&middot;</span>
+              <span className="font-mono tabular-nums text-slate-300">{activeZoneObj.count}</span>
+              <span>{m.monitoredPersonnel}</span>
+              <span className="text-slate-600">&middot;</span>
+              <span className="text-emerald-400 font-medium">
+                {m.kalmanActive} <span className="font-mono tabular-nums text-slate-400">(Q={kalmanConfig.processVarianceQ.toFixed(2)})</span>
               </span>
-              <span className="text-slate-600">/</span>
-              <span className="text-xs font-bold text-cyan-300 font-mono">
-                {activeZoneObj.name}
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 font-mono">
-              <span>{activeZoneObj.count} {m.monitoredPersonnel}</span>
-              <span>&middot;</span>
-              <span className="text-emerald-400">{m.kalmanActive} (Q={kalmanConfig.processVarianceQ.toFixed(2)})</span>
             </p>
           </div>
         </div>
 
-        {/* Right Header Controls Group: Aligned together on the right */}
-        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto lg:ml-auto justify-start lg:justify-end">
-          {/* Global Search Bar: Queries specific alert logs, worker IDs, telemetry, or facility zones */}
-          <div className="w-full sm:w-64 md:w-72 lg:w-80">
+        {/* Right Header Controls Group */}
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto lg:ml-auto justify-start lg:justify-end">
+          <div className="w-full sm:w-64 md:w-72">
             <GlobalSearchBar
-            zones={zones}
-            alerts={activeAlerts}
-            theme={dashboardTheme}
-            onSelectZone={(zoneId) => {
-              setSelectedZone(zoneId);
-              setSelectedComparisonDeptId(zoneId);
-              setAnomalyTrendZoneId(zoneId);
-              const z = zones.find((item) => item.id === zoneId) || activeZoneObj;
-              if (z) {
-                const newPacket = generatePacketForZone(z, z.status === 'CRITICAL');
-                const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-                setTelemetryAlert(res);
-              }
-              setProtocolActiveNotice(`Global Search: Focused on Facility Zone [${zoneId}]`);
-              setTimeout(() => setProtocolActiveNotice(null), 5000);
-            }}
-            onSelectAlert={(alertId) => {
-              const matchedAlert = activeAlerts.find((a) => a.id === alertId);
-              if (matchedAlert) {
-                handleOpenAnomalyDetails(matchedAlert);
-              } else {
-                setProtocolActiveNotice(`Global Search: Selected Alert Log [${alertId}]. Navigating to Incident Records.`);
-                setTimeout(() => setProtocolActiveNotice(null), 5000);
-                jumpToLiveSection('GOVERNANCE', 'incident-log-section');
-              }
-            }}
-            onSelectWorker={(workerId, zoneId) => {
-              if (zoneId) {
+              zones={zones}
+              alerts={activeAlerts}
+              theme={dashboardTheme}
+              onSelectZone={(zoneId) => {
                 setSelectedZone(zoneId);
                 setSelectedComparisonDeptId(zoneId);
                 setAnomalyTrendZoneId(zoneId);
-              }
-              // Broadcast worker selection to BiometricSyncModule
-              window.dispatchEvent(
-                new CustomEvent('prognosticator:select-worker', {
-                  detail: { workerId }
-                })
-              );
-              setProtocolActiveNotice(`Global Search: Located Worker [${workerId}] in ${zoneId || activeZoneObj.name}. Live wearable telemetry focused.`);
-              setTimeout(() => setProtocolActiveNotice(null), 5000);
-              jumpToLiveSection('FORECASTS', 'biometric-sync-section');
-            }}
-            onSelectTelemetryCategory={(categoryKey) => {
-              setIsolatedHealthSignal(categoryKey);
-              setProtocolActiveNotice(`Global Search: Isolated Telemetry Category [${categoryKey.toUpperCase()}]. Highlighting multi-signal stream.`);
-              setTimeout(() => setProtocolActiveNotice(null), 5000);
-              jumpToLiveSection('ANALYTICS', 'historical-workforce-health-chart');
-            }}
-            onSelectReport={(reportKey) => {
-              if (reportKey === 'DOWNLOAD_PDF_REPORT') {
-                handleDownloadPdfReport();
-              } else if (reportKey === 'EXPORT_DATA') {
-                setIsReportModalOpen(true);
-              } else if (reportKey === 'EXPORT_ALL_ANALYTICS_CSV') {
-                handleExportAnomalyLogsAndTrendDataCsv();
-              } else if (reportKey === 'DASHBOARD_SUMMARY_PDF') {
-                handleDownloadDashboardSummaryPdf();
-              } else if (reportKey === 'PREDICTIVE_SURGE_48H') {
-                handleScrollToForecastChart();
-              } else if (reportKey === 'SIGNED_COMPLIANCE_PDF') {
-                setIsSignedCompliancePdfModalOpen(true);
-              } else if (reportKey === 'DAILY_SUMMARY_REPORT') {
-                setIsDailySummaryReportOpen(true);
-              } else if (reportKey === 'COMPLIANCE_AUDIT_LOG') {
-                setManagerTab('complianceAudit');
-              } else if (reportKey === 'HEALTH_METRICS_PDF') {
-                setIsHealthMetricsPdfModalOpen(true);
-              } else if (reportKey === 'ANOMALY_TREND_30D') {
-                jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
-              } else if (reportKey === 'PREDICTIVE_MAINTENANCE_TAB') {
-                setManagerTab('predictiveMaintenance');
-              } else if (reportKey === 'RESOURCE_UTILIZATION_HEATMAP') {
-                setManagerTab('resourceUtilization');
-                const el = document.getElementById('resource-utilization-panel');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              } else if (reportKey === 'COHORT_COMPARISON_VIEW') {
-                jumpToLiveSection('ANALYTICS', 'cohort-health-comparison-line-view');
-              } else if (reportKey === 'PREDICTIVE_30D_MODEL') {
-                jumpToLiveSection('ANALYTICS', 'kalman-predictive-model-30days-chart');
-              } else if (reportKey === 'INCIDENT_LOG') {
-                jumpToLiveSection('GOVERNANCE', 'incident-log-section');
-              }
-            }}
-          />
-        </div>
+                const z = zones.find((item) => item.id === zoneId) || activeZoneObj;
+                if (z) {
+                  const newPacket = generatePacketForZone(z, z.status === 'CRITICAL');
+                  const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+                  setTelemetryAlert(res);
+                }
+                setProtocolActiveNotice(`Global Search: Focused on Facility Zone [${zoneId}]`);
+                setTimeout(() => setProtocolActiveNotice(null), 5000);
+              }}
+              onSelectAlert={(alertId) => {
+                const matchedAlert = activeAlerts.find((a) => a.id === alertId);
+                if (matchedAlert) {
+                  handleOpenAnomalyDetails(matchedAlert);
+                } else {
+                  setProtocolActiveNotice(`Global Search: Selected Alert Log [${alertId}]. Navigating to Incident Records.`);
+                  setTimeout(() => setProtocolActiveNotice(null), 5000);
+                  jumpToLiveSection('GOVERNANCE', 'incident-log-section');
+                }
+              }}
+              onSelectWorker={(workerId, zoneId) => {
+                if (zoneId) {
+                  setSelectedZone(zoneId);
+                  setSelectedComparisonDeptId(zoneId);
+                  setAnomalyTrendZoneId(zoneId);
+                }
+                window.dispatchEvent(
+                  new CustomEvent('prognosticator:select-worker', {
+                    detail: { workerId }
+                  })
+                );
+                setProtocolActiveNotice(`Global Search: Located Worker [${workerId}] in ${zoneId || activeZoneObj.name}. Live wearable telemetry focused.`);
+                setTimeout(() => setProtocolActiveNotice(null), 5000);
+                jumpToLiveSection('FORECASTS', 'biometric-sync-section');
+              }}
+              onSelectTelemetryCategory={(categoryKey) => {
+                setIsolatedHealthSignal(categoryKey);
+                setProtocolActiveNotice(`Global Search: Isolated Telemetry Category [${categoryKey.toUpperCase()}]. Highlighting multi-signal stream.`);
+                setTimeout(() => setProtocolActiveNotice(null), 5000);
+                jumpToLiveSection('ANALYTICS', 'historical-workforce-health-chart');
+              }}
+              onSelectReport={(reportKey) => {
+                if (reportKey === 'DOWNLOAD_PDF_REPORT') {
+                  handleDownloadPdfReport();
+                } else if (reportKey === 'EXPORT_DATA') {
+                  setIsReportModalOpen(true);
+                } else if (reportKey === 'EXPORT_ALL_ANALYTICS_CSV') {
+                  handleExportAnomalyLogsAndTrendDataCsv();
+                } else if (reportKey === 'DASHBOARD_SUMMARY_PDF') {
+                  handleDownloadDashboardSummaryPdf();
+                } else if (reportKey === 'PREDICTIVE_SURGE_48H') {
+                  handleScrollToForecastChart();
+                } else if (reportKey === 'SIGNED_COMPLIANCE_PDF') {
+                  setIsSignedCompliancePdfModalOpen(true);
+                } else if (reportKey === 'DAILY_SUMMARY_REPORT') {
+                  setIsDailySummaryReportOpen(true);
+                } else if (reportKey === 'COMPLIANCE_AUDIT_LOG') {
+                  setManagerTab('complianceAudit');
+                } else if (reportKey === 'HEALTH_METRICS_PDF') {
+                  setIsHealthMetricsPdfModalOpen(true);
+                } else if (reportKey === 'ANOMALY_TREND_30D') {
+                  jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+                } else if (reportKey === 'PREDICTIVE_MAINTENANCE_TAB') {
+                  setManagerTab('predictiveMaintenance');
+                } else if (reportKey === 'RESOURCE_UTILIZATION_HEATMAP') {
+                  setManagerTab('resourceUtilization');
+                  const el = document.getElementById('resource-utilization-panel');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                } else if (reportKey === 'COHORT_COMPARISON_VIEW') {
+                  jumpToLiveSection('ANALYTICS', 'cohort-health-comparison-line-view');
+                } else if (reportKey === 'PREDICTIVE_30D_MODEL') {
+                  jumpToLiveSection('ANALYTICS', 'kalman-predictive-model-30days-chart');
+                } else if (reportKey === 'INCIDENT_LOG') {
+                  jumpToLiveSection('GOVERNANCE', 'incident-log-section');
+                }
+              }}
+            />
+          </div>
 
-        {/* Team Member View Role Toggle: Filters visible data and controls based on specific user role, restricting sensitive forecast data */}
-        <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0 h-9">
-          <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 flex items-center gap-1">
-            <Users className="h-3 w-3 text-cyan-400" />
-            <span className="hidden sm:inline">{m.roleView}</span>
-          </span>
-          <button
-            onClick={() => handleSwitchRole('SAFETY_OFFICER')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-              activeRole === 'SAFETY_OFFICER'
-                ? 'bg-cyan-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Safety Compliance Officer: Unrestricted access to all forecast models, biometric telemetry, and HIPAA audit trails"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>{m.safetyOfficer}</span>
-          </button>
-          <button
-            onClick={() => handleSwitchRole('MAINTENANCE_CREW')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-              activeRole === 'MAINTENANCE_CREW'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Maintenance Crew: Focus on HVAC, environmental sensors, and equipment health. Sensitive worker biometric forecasts restricted."
-          >
-            <Wrench className="h-3.5 w-3.5" />
-            <span>{m.maintenanceCrew}</span>
-            <span className="text-[9px] font-mono bg-amber-950 text-amber-200 px-1 rounded uppercase">Restricted</span>
-          </button>
-          <button
-            onClick={() => handleSwitchRole('OPERATIONS_LEAD')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-              activeRole === 'OPERATIONS_LEAD'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Site Operations Lead: Operational throughput, worker coverage, and shift health overview"
-          >
-            <UserCheck className="h-3.5 w-3.5" />
-            <span>{m.opsLead}</span>
-          </button>
-        </div>
+          {/* Role View Switcher (PBAC) */}
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0 h-9">
+            <button
+              onClick={() => handleSwitchRole('SAFETY_OFFICER')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                activeRole === 'SAFETY_OFFICER'
+                  ? 'bg-cyan-600 text-white'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Safety Compliance Officer: Unrestricted access to all forecast models, biometric telemetry, and HIPAA audit trails"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>{m.safetyOfficer}</span>
+            </button>
+            <button
+              onClick={() => handleSwitchRole('MAINTENANCE_CREW')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                activeRole === 'MAINTENANCE_CREW'
+                  ? 'bg-amber-600 text-white'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Maintenance Crew (Restricted): Focus on HVAC, environmental sensors, and equipment health."
+            >
+              <Wrench className="h-3.5 w-3.5" />
+              <span>{m.maintenanceCrew}</span>
+            </button>
+            <button
+              onClick={() => handleSwitchRole('OPERATIONS_LEAD')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                activeRole === 'OPERATIONS_LEAD'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Site Operations Lead: Operational throughput, worker coverage, and shift health overview"
+            >
+              <UserCheck className="h-3.5 w-3.5" />
+              <span>{m.opsLead}</span>
+            </button>
+          </div>
 
-        {/* Top Right Quick Actions */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <LanguageAutocomplete
             dropDirection="down"
             compact
@@ -4630,12 +4628,11 @@ export default function ManagerDashboard({
             idPrefix="manager-landing-lang"
           />
 
-          {/* Mute Alerts Quick Toggle */}
           <button
             onClick={handleToggleMuteAlerts}
             className={`h-9 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-xs font-medium transition border cursor-pointer ${
               isAlertsMuted
-                ? 'bg-amber-950 text-amber-300 border-amber-500 animate-pulse'
+                ? 'bg-amber-950 text-amber-300 border-amber-500/70'
                 : 'bg-slate-950 text-slate-300 border-slate-700 hover:text-white'
             }`}
             title={isAlertsMuted ? 'Health anomaly alerts are MUTED — Click to unmute' : 'Mute health anomaly alert notifications'}
@@ -4645,10 +4642,9 @@ export default function ManagerDashboard({
             ) : (
               <Volume2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
             )}
-            <span>{isAlertsMuted ? m.alertsMuted : m.mute}</span>
+            <span className="hidden sm:inline">{isAlertsMuted ? m.alertsMuted : m.mute}</span>
           </button>
 
-          {/* Top-Right Notification Center anchored in top right */}
           <TopRightNotificationCenter
             alerts={activeAlerts}
             onViewDetails={handleOpenAnomalyDetails}
@@ -4717,414 +4713,437 @@ export default function ManagerDashboard({
             }}
           />
         </div>
-        </div>
       </header>
 
-      {/* Executive Action & Filter Strip */}
-      <div className="relative z-40 bg-slate-900 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
-        {/* Left: Longitudinal Timeframe / Date Range Filter */}
-        <div className="flex items-center gap-2">
-          <DateRangePicker
-            value={healthDateRange}
-            onChange={(newRange) => {
-              setHealthDateRange(newRange);
-              setProtocolActiveNotice(
-                `Timeframe filter updated: ${newRange.label} (${newRange.daysCount} days applied)`
-              );
-              setTimeout(() => setProtocolActiveNotice(null), 6000);
-            }}
-          />
-        </div>
-
-        {/* Right: Consolidated Executive Actions & Menus */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Download CSV Button: Exports current workforce telemetry data as CSV file for offline analysis */}
-          <button
-            onClick={handleDownloadWorkforceTelemetryCsv}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer shadow-sm"
-            title="Download current workforce telemetry data as a CSV file for offline analysis"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>{m.downloadCsv}</span>
-          </button>
-
-          {/* Download PDF Report (Print Styles) */}
-          <button
-            onClick={handleDownloadPdfReport}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition cursor-pointer shadow-sm"
-            title="Download comprehensive PDF report of current telemetry data leveraging print-friendly styles"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            <span>{m.downloadPdfReport}</span>
-          </button>
-
-          {/* Simulate Kalman Anomaly Alert Toast */}
-          <button
-            onClick={() => triggerKalmanAnomalySimulation()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-700/60 transition cursor-pointer shadow-xs"
-            title="Trigger visual toast alert for a significant Kalman filtering health telemetry anomaly"
-          >
-            <Cpu className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-            <span>{m.simulateKalman}</span>
-          </button>
-
-          {/* What-If Simulator Trigger */}
-          <button
-            onClick={handleOpenWhatIfSimulator}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-700/50 transition cursor-pointer shadow-xs"
-            title="Launch What-If Environmental & Physical Stress Simulation"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            <span>{m.whatIfSimulator}</span>
-          </button>
-
-          {/* Telemetry Ingest & Industry Benchmarks */}
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/50 transition cursor-pointer shadow-xs"
-            title="Upload custom CSV/JSON telemetry or load industry benchmark datasets (Foundry, Mining, Solar, Cold-Chain)"
-          >
-            <UploadCloud className="h-3.5 w-3.5 text-emerald-400" />
-            <span>{m.ingestBenchmarks}</span>
-          </button>
-
-          {/* Reports & Export Dropdown */}
-          <div className="relative" ref={exportMenuRef}>
-            <button
-              onClick={() => {
-                setIsExportMenuOpen((prev) => !prev);
-                setIsToolsMenuOpen(false);
+      {/* Consolidated Executive Toolbar */}
+      <div className="relative z-40 bg-slate-900 border border-slate-800 rounded-xl p-3 mb-4 shadow-sm">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+          {/* Left: Timeframe, Signal Filter Drawer Toggle & Kalman Settings */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <DateRangePicker
+              value={healthDateRange}
+              onChange={(newRange) => {
+                setHealthDateRange(newRange);
+                setProtocolActiveNotice(
+                  `Timeframe filter updated: ${newRange.label} (${newRange.daysCount} days applied)`
+                );
+                setTimeout(() => setProtocolActiveNotice(null), 6000);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer shadow-xs"
+            />
+
+            <button
+              type="button"
+              onClick={() => setIsSignalStripExpanded((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                isSignalStripExpanded || !signalCategories.cardiac || !signalCategories.environmental || !signalCategories.performance
+                  ? 'bg-cyan-600/15 border-cyan-500/40 text-cyan-300'
+                  : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-700'
+              }`}
+              title="Toggle signal visibility filters and moving average baseline controls"
+              aria-expanded={isSignalStripExpanded}
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
-              <span>{m.reportsExport}</span>
-              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+              <Filter className="h-3.5 w-3.5 text-cyan-400" />
+              <span>{m.signalVisibility}</span>
+              <span className="font-mono tabular-nums text-[11px] text-slate-400">
+                ({[signalCategories.cardiac, signalCategories.environmental, signalCategories.performance].filter(Boolean).length}/3)
+              </span>
+              {isSignalStripExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
 
-            {isExportMenuOpen && (
-              <div
-                className="absolute right-0 mt-1.5 w-72 bg-slate-950 border border-slate-700 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.98)] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 ring-1 ring-slate-700"
-                onClick={() => setIsExportMenuOpen(false)}
-              >
-                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
-                  Executive PDF Reports
-                </div>
-                <button
-                  onClick={handleDownloadPdfReport}
-                  className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition font-semibold"
-                  title="Download comprehensive PDF report of current telemetry data leveraging print-friendly styles"
-                >
-                  <Printer className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                  <span className="truncate">Download PDF Report (Print Styles)</span>
-                </button>
-                <button
-                  onClick={handleDownloadDashboardSummaryPdf}
-                  disabled={isGeneratingSummaryPdf}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition disabled:opacity-50"
-                >
-                  <FileText className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                  <span className="truncate">Executive PDF Summary</span>
-                </button>
-                <button
-                  onClick={() => setIsSignedCompliancePdfModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                  <span className="truncate">Signed Compliance PDF</span>
-                </button>
-                <button
-                  onClick={() => setIsHealthMetricsPdfModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Activity className="h-3.5 w-3.5 text-rose-400 shrink-0" />
-                  <span className="truncate">Health Metrics Audit PDF</span>
-                </button>
-                <button
-                  onClick={() => setIsSafetyCommitteePdfModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Users className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                  <span className="truncate">Safety Committee Report</span>
-                </button>
-                <button
-                  onClick={() => setIsCompliancePdfExportModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                  <span className="truncate">OSHA/ISO Compliance PDF</span>
-                </button>
-
-                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
-                  CSV Data Exports
-                </div>
-                <button
-                  onClick={handleDownloadWorkforceTelemetryCsv}
-                  className="w-full text-left px-3 py-2 text-emerald-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition font-semibold"
-                  title="Download current workforce telemetry data as a CSV file for offline analysis"
-                >
-                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span className="truncate">Download Telemetry CSV (Workforce)</span>
-                </button>
-                <button
-                  onClick={handleExportDashboardCsv}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span className="truncate">Telemetry &amp; Dashboard CSV</span>
-                </button>
-                <button
-                  onClick={handleExportCurrentAnomalyCsvDirect}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span className="truncate">Anomaly Event Log CSV</span>
-                </button>
-                <button
-                  onClick={handleExportWorkforceCsv}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span className="truncate">Workforce Cohort CSV</span>
-                </button>
-                <button
-                  onClick={() => setIsComplianceCsvExportModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span className="truncate">Compliance Audit CSV</span>
-                </button>
-
-                <div className="border-t border-slate-800 mt-1 pt-1">
-                  <button
-                    onClick={() => setIsReportModalOpen(true)}
-                    className="w-full text-left px-3 py-2 text-cyan-400 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
-                  >
-                    <Sliders className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                    <span>Custom Export Wizard...</span>
-                  </button>
-                  <button
-                    onClick={handlePrintDashboard}
-                    className="w-full text-left px-3 py-2 text-slate-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                  >
-                    <Printer className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span>Print for Site Safety Meeting</span>
-                  </button>
-                </div>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 transition cursor-pointer"
+              title="Algorithm Sensitivity & Kalman Filter Parameters"
+            >
+              <Settings className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Settings</span>
+            </button>
           </div>
 
-          {/* Tools & Operations Dropdown */}
-          <div className="relative" ref={toolsMenuRef}>
+          {/* Right: Streamlined Primary CTA & Organized Dropdown Menus */}
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => {
-                setIsToolsMenuOpen((prev) => !prev);
-                setIsExportMenuOpen(false);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer shadow-xs"
+              type="button"
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer"
+              title="Upload custom CSV/JSON telemetry or load industry benchmark datasets"
             >
-              <Wrench className="h-3.5 w-3.5 text-amber-400" />
-              <span>Tools &amp; Ops</span>
-              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isToolsMenuOpen ? 'rotate-180' : ''}`} />
+              <UploadCloud className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{m.ingestBenchmarks}</span>
             </button>
 
-            {isToolsMenuOpen && (
-              <div
-                className="absolute right-0 mt-1.5 w-72 bg-slate-950 border border-slate-700 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.98)] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 ring-1 ring-slate-700"
-                onClick={() => setIsToolsMenuOpen(false)}
+            <button
+              type="button"
+              onClick={handleOpenWhatIfSimulator}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 hover:bg-slate-800 text-cyan-300 border border-slate-700 transition cursor-pointer"
+              title="Launch What-If Environmental & Physical Stress Simulation"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+              <span>{m.whatIfSimulator}</span>
+            </button>
+
+            {/* Reports & Export Dropdown */}
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsExportMenuOpen((prev) => !prev);
+                  setIsToolsMenuOpen(false);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition cursor-pointer"
               >
-                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
-                  Operations &amp; Dispatch
-                </div>
-                <button
-                  onClick={() => setIsDispatchModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-rose-300 hover:bg-rose-950/30 flex items-center gap-2 cursor-pointer transition font-medium"
+                <Download className="h-3.5 w-3.5" />
+                <span>{m.reportsExport}</span>
+                <ChevronDown className={`h-3 w-3 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isExportMenuOpen && (
+                <div
+                  className="absolute right-0 mt-1.5 w-72 bg-slate-950 border border-slate-700 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.92)] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 ring-1 ring-slate-700"
+                  onClick={() => setIsExportMenuOpen(false)}
                 >
-                  <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
-                  <span>Medical Dispatch Liaison</span>
-                </button>
-                <button
-                  onClick={() => setIsTeamAlertModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                    <span>Team Mobile Alerts</span>
+                  <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+                    Executive PDF Reports
                   </div>
-                  {unreadTeamAlertCount > 0 && (
-                    <span className="text-[10px] font-bold bg-cyan-600 text-white px-1.5 py-0.5 rounded-full">
-                      {unreadTeamAlertCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setIsVoiceModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Volume2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                  <span>Audio &amp; Voice Config</span>
-                </button>
-                <button
-                  onClick={() =>
-                    jumpToLiveSection('ANALYTICS', 'd3-rolling-30d-health-signals-section', 'ring-2 ring-cyan-500')
-                  }
-                  className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                  <span>D3 30D Trend vs. Baseline</span>
-                </button>
+                  <button
+                    onClick={handleDownloadPdfReport}
+                    className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition font-semibold"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span className="truncate">{m.downloadPdfReport} (Print Styles)</span>
+                  </button>
+                  <button
+                    onClick={handleDownloadDashboardSummaryPdf}
+                    disabled={isGeneratingSummaryPdf}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition disabled:opacity-50"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span className="truncate">Executive PDF Summary</span>
+                  </button>
+                  <button
+                    onClick={() => setIsSignedCompliancePdfModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    <span className="truncate">Signed Compliance PDF</span>
+                  </button>
+                  <button
+                    onClick={() => setIsHealthMetricsPdfModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Activity className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                    <span className="truncate">Health Metrics Audit PDF</span>
+                  </button>
+                  <button
+                    onClick={() => setIsSafetyCommitteePdfModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Users className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <span className="truncate">Safety Committee Report</span>
+                  </button>
+                  <button
+                    onClick={() => setIsCompliancePdfExportModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span className="truncate">OSHA/ISO Compliance PDF</span>
+                  </button>
 
-                <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
-                  Configuration &amp; Audit
+                  <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
+                    CSV Data Exports
+                  </div>
+                  <button
+                    onClick={handleDownloadWorkforceTelemetryCsv}
+                    className="w-full text-left px-3 py-2 text-emerald-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition font-semibold"
+                  >
+                    <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">{m.downloadCsv} (Workforce)</span>
+                  </button>
+                  <button
+                    onClick={handleExportDashboardCsv}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">Telemetry &amp; Dashboard CSV</span>
+                  </button>
+                  <button
+                    onClick={handleExportCurrentAnomalyCsvDirect}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">Anomaly Event Log CSV</span>
+                  </button>
+                  <button
+                    onClick={handleExportWorkforceCsv}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">Workforce Cohort CSV</span>
+                  </button>
+                  <button
+                    onClick={() => setIsComplianceCsvExportModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">Compliance Audit CSV</span>
+                  </button>
+
+                  <div className="border-t border-slate-800 mt-1 pt-1">
+                    <button
+                      onClick={() => setIsReportModalOpen(true)}
+                      className="w-full text-left px-3 py-2 text-cyan-400 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
+                    >
+                      <Sliders className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                      <span>Custom Export Wizard...</span>
+                    </button>
+                    <button
+                      onClick={handlePrintDashboard}
+                      className="w-full text-left px-3 py-2 text-slate-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                    >
+                      <Printer className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <span>Print for Site Safety Meeting</span>
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setIsQuickSnapshotModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+              )}
+            </div>
+
+            {/* Tools & Operations Dropdown */}
+            <div className="relative" ref={toolsMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsToolsMenuOpen((prev) => !prev);
+                  setIsExportMenuOpen(false);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer"
+              >
+                <Wrench className="h-3.5 w-3.5 text-amber-400" />
+                <span>Tools &amp; Ops</span>
+                {unreadTeamAlertCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-cyan-600 text-white font-mono text-[10px] leading-none tabular-nums">
+                    {unreadTeamAlertCount}
+                  </span>
+                )}
+                <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isToolsMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isToolsMenuOpen && (
+                <div
+                  className="absolute right-0 mt-1.5 w-76 bg-slate-950 border border-slate-700 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.92)] py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 ring-1 ring-slate-700"
+                  onClick={() => setIsToolsMenuOpen(false)}
                 >
-                  <Camera className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                  <span>Executive Quick Snapshot</span>
-                </button>
-                <button
-                  onClick={() => setIsAnomalyAuditModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 text-teal-400 shrink-0" />
-                  <span>HIPAA Anomaly Audit Log</span>
-                </button>
-                <button
-                  onClick={() => setIsHealthThresholdsModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <Sliders className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                  <span>Health &amp; Vital Thresholds</span>
-                </button>
-                <button
-                  onClick={() => setIsGlobalThresholdModalOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <AlertOctagon className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                  <span>Global Risk Thresholds</span>
-                </button>
-                <button
-                  onClick={() => setIsZoneBuilderOpen(true)}
-                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
-                >
-                  <MapPin className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span>Custom Zone Builder</span>
-                </button>
-              </div>
-            )}
+                  <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+                    Operations &amp; Simulations
+                  </div>
+                  <button
+                    onClick={() => setIsDispatchModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-rose-300 hover:bg-rose-950/30 flex items-center gap-2 cursor-pointer transition font-medium"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                    <span>Medical Dispatch Liaison</span>
+                  </button>
+                  <button
+                    onClick={() => triggerKalmanAnomalySimulation()}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Cpu className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                    <span>{m.simulateKalman}</span>
+                  </button>
+                  <button
+                    onClick={() => setIsScenarioSimulationOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Sliders className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    <span>Scenario Stress Simulator</span>
+                  </button>
+                  <button
+                    onClick={() => setIsDailySummaryReportOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Mail className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span>Daily Email Digest (Top 5)</span>
+                  </button>
+                  <button
+                    onClick={() => setIsDailySummaryConfigOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Settings className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span>Auto-Delivery Config</span>
+                  </button>
+
+                  <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
+                    Notifications &amp; Voice
+                  </div>
+                  <button
+                    onClick={() => setIsTeamAlertModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                      <span>Team Mobile Alerts</span>
+                    </div>
+                    {unreadTeamAlertCount > 0 && (
+                      <span className="text-[10px] font-bold bg-cyan-600 text-white px-1.5 py-0.5 rounded-full">
+                        {unreadTeamAlertCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={requestDesktopNotificationPermission}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Bell className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <span>Desktop OS Alerts</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {desktopNotificationPermission === 'granted' ? 'Active' : 'Enable'}
+                    </span>
+                  </button>
+                  <button
+                    onClick={handleTestDesktopNotification}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <BellRing className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span>Test OS Alert Chime</span>
+                  </button>
+                  <button
+                    onClick={() => setIsVoiceModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Volume2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    <span>Audio &amp; Voice Config</span>
+                  </button>
+
+                  <div className="px-3 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider font-semibold border-y border-slate-800 mt-1">
+                    Configuration &amp; Audit
+                  </div>
+                  <button
+                    onClick={() =>
+                      jumpToLiveSection('ANALYTICS', 'd3-rolling-30d-health-signals-section', 'ring-2 ring-cyan-500')
+                    }
+                    className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span>D3 30D Trend vs. Baseline</span>
+                  </button>
+                  <button
+                    onClick={() => setIsQuickSnapshotModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Camera className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <span>Executive Quick Snapshot</span>
+                  </button>
+                  <button
+                    onClick={() => setIsAnomalyAuditModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5 text-teal-400 shrink-0" />
+                    <span>HIPAA Anomaly Audit Log</span>
+                  </button>
+                  <button
+                    onClick={() => setIsHealthThresholdsModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <Sliders className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <span>Health &amp; Vital Thresholds</span>
+                  </button>
+                  <button
+                    onClick={() => setIsGlobalThresholdModalOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <AlertOctagon className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                    <span>Global Risk Thresholds</span>
+                  </button>
+                  <button
+                    onClick={() => setIsZoneBuilderOpen(true)}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <MapPin className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span>Custom Zone Builder</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-
-          {/* Kalman & Algorithm Settings */}
-          <button
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 transition cursor-pointer shadow-xs"
-            title="Algorithm Sensitivity &amp; Kalman Filter Parameters"
-          >
-            <Settings className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Settings</span>
-          </button>
         </div>
-      </div>
 
-      {/* Category-Based Signal Filter & Historical Moving Average Global Strip */}
-      <div className="relative z-30 bg-slate-900 border border-slate-800 rounded-xl p-3 mb-5 shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-slate-400 font-semibold mr-1">
-            <Filter className="h-3.5 w-3.5 text-cyan-400" />
-            <span className="uppercase tracking-wider text-[11px] font-mono">{m.signalVisibility}</span>
+        {/* Collapsible Signal Filter & Moving Average Strip */}
+        {isSignalStripExpanded && (
+          <div className="pt-3 mt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs animate-fadeIn">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => handleToggleSignalCategory('cardiac')}
+                className={`px-2.5 py-1 rounded-md font-medium border transition cursor-pointer flex items-center gap-1.5 ${
+                  signalCategories.cardiac
+                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                    : 'bg-slate-950 text-slate-500 border-slate-800 line-through'
+                }`}
+              >
+                <Heart className="h-3 w-3" />
+                <span>{m.cardiacSignals}</span>
+              </button>
+
+              <button
+                onClick={() => handleToggleSignalCategory('environmental')}
+                className={`px-2.5 py-1 rounded-md font-medium border transition cursor-pointer flex items-center gap-1.5 ${
+                  signalCategories.environmental
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                    : 'bg-slate-950 text-slate-500 border-slate-800 line-through'
+                }`}
+              >
+                <Thermometer className="h-3 w-3" />
+                <span>{m.environmentalSignals}</span>
+              </button>
+
+              <button
+                onClick={() => handleToggleSignalCategory('performance')}
+                className={`px-2.5 py-1 rounded-md font-medium border transition cursor-pointer flex items-center gap-1.5 ${
+                  signalCategories.performance
+                    ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
+                    : 'bg-slate-950 text-slate-500 border-slate-800 line-through'
+                }`}
+              >
+                <ShieldAlert className="h-3 w-3" />
+                <span>{m.performanceSignals}</span>
+              </button>
+
+              <button
+                onClick={() => setShowGlobalMovingAverages((prev) => !prev)}
+                className={`px-2.5 py-1 rounded-md font-medium border transition cursor-pointer flex items-center gap-1.5 ${
+                  showGlobalMovingAverages
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-950 text-slate-500 border-slate-800'
+                }`}
+              >
+                <TrendingUp className="h-3 w-3" />
+                <span>{m.historicalMovingAvg}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {(!signalCategories.cardiac || !signalCategories.environmental || !signalCategories.performance) && (
+                <button
+                  onClick={handleResetSignalFilters}
+                  className="px-2.5 py-1 rounded-md text-xs text-amber-300 hover:text-white bg-slate-950 border border-slate-700 cursor-pointer flex items-center gap-1"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>{m.resetFilters}</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => setIsSignalFilterSidebarOpen(true)}
+                className="px-2.5 py-1 rounded-md text-xs font-medium text-cyan-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-700 cursor-pointer flex items-center gap-1.5"
+              >
+                <Sliders className="h-3 w-3 text-cyan-400" />
+                <span>{m.configureSignals}</span>
+              </button>
+            </div>
           </div>
-
-          {/* Cardiac Signals Category Toggle */}
-          <button
-            onClick={() => handleToggleSignalCategory('cardiac')}
-            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
-              signalCategories.cardiac
-                ? 'bg-rose-950/80 text-rose-300 border-rose-500/50 shadow-rose-950/30'
-                : 'bg-slate-950 text-slate-500 border-slate-800 line-through opacity-70'
-            }`}
-            title="Toggle visibility of Cardiac telemetry signals (Heart Rate, Kalman HRV, HRV Drops, Blood Pressure)"
-          >
-            <Heart className={`h-3 w-3 ${signalCategories.cardiac ? 'text-rose-400' : 'text-slate-600'}`} />
-            <span>{m.cardiacSignals}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.cardiac ? 'bg-rose-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
-              {signalCategories.cardiac ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          {/* Environmental Signals Category Toggle */}
-          <button
-            onClick={() => handleToggleSignalCategory('environmental')}
-            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
-              signalCategories.environmental
-                ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-amber-950/30'
-                : 'bg-slate-950 text-slate-500 border-slate-800 line-through opacity-70'
-            }`}
-            title="Toggle visibility of Environmental telemetry signals (Skin Temp, Ambient Temp, TWL, Noise dB, AQI)"
-          >
-            <Thermometer className={`h-3 w-3 ${signalCategories.environmental ? 'text-amber-400' : 'text-slate-600'}`} />
-            <span>{m.environmentalSignals}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.environmental ? 'bg-amber-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
-              {signalCategories.environmental ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          {/* Performance Signals Category Toggle */}
-          <button
-            onClick={() => handleToggleSignalCategory('performance')}
-            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
-              signalCategories.performance
-                ? 'bg-purple-950/80 text-purple-300 border-purple-500/50 shadow-purple-950/30'
-                : 'bg-slate-950 text-slate-500 border-slate-800 line-through opacity-70'
-            }`}
-            title="Toggle visibility of Performance & Operational risk metrics (Risk Score, Stress Index, Vibration, Projections)"
-          >
-            <ShieldAlert className={`h-3 w-3 ${signalCategories.performance ? 'text-purple-400' : 'text-slate-600'}`} />
-            <span>{m.performanceSignals}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.performance ? 'bg-purple-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
-              {signalCategories.performance ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          {/* Historical Moving Average Baseline Master Toggle */}
-          <button
-            onClick={() => setShowGlobalMovingAverages((prev) => !prev)}
-            className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
-              showGlobalMovingAverages
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-emerald-950/30'
-                : 'bg-slate-950 text-slate-500 border-slate-800 opacity-70'
-            }`}
-            title="Toggle historical rolling moving averages across all charts to identify long-term signal degradation trends"
-          >
-            <TrendingUp className={`h-3 w-3 ${showGlobalMovingAverages ? 'text-emerald-400' : 'text-slate-600'}`} />
-            <span>{m.historicalMovingAvg}</span>
-            <span className={`text-[10px] font-mono px-1 rounded ${showGlobalMovingAverages ? 'bg-emerald-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
-              {showGlobalMovingAverages ? 'ACTIVE' : 'OFF'}
-            </span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {(!signalCategories.cardiac || !signalCategories.environmental || !signalCategories.performance) && (
-            <button
-              onClick={handleResetSignalFilters}
-              className="px-2 py-1 rounded text-xs text-amber-300 hover:text-white bg-amber-950/60 border border-amber-600/40 cursor-pointer flex items-center gap-1 font-mono"
-            >
-              <RotateCcw className="h-3 w-3" />
-              <span>{m.resetFilters}</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setIsSignalFilterSidebarOpen(true)}
-            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-cyan-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-700 cursor-pointer flex items-center gap-1.5"
-          >
-            <Sliders className="h-3 w-3 text-cyan-400" />
-            <span>{m.configureSignals} &rarr;</span>
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Role Restriction Banner: Highlighted when Maintenance Crew view is active */}
@@ -5168,173 +5187,106 @@ export default function ManagerDashboard({
         />
       </div>
 
-      {/* Primary Dashboard View Mode Tabs: Live Operations, Compliance Audit Log, System Compliance (HIPAA), Predictive IoT, Causal Links, Density, Pattern Library */}
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-6 bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-lg">
-        <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-slate-800 flex-wrap gap-1">
+      {/* Primary Dashboard View Mode Tabs (Clean, Single-Row Scannable Navigation) */}
+      <nav aria-label="Console Views" className="mb-5 bg-slate-900 border border-slate-800 p-1.5 rounded-xl shadow-sm overflow-x-auto">
+        <div className="flex items-center gap-1 min-w-max">
           <button
             onClick={() => setManagerTab('live')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               managerTab === 'live'
-                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
           >
-            <Activity className="h-4 w-4" />
+            <Activity className="h-3.5 w-3.5" />
             <span>{m.tabLive}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-900 text-cyan-300 font-mono">
-              Real-Time
-            </span>
           </button>
 
-          {/* Resource Utilization (Heatmap Overlay) Tab Button */}
           <button
             onClick={() => setManagerTab('resourceUtilization')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               managerTab === 'resourceUtilization'
-                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white shadow-md shadow-orange-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
           >
-            <Users className="h-4 w-4 text-amber-300" />
+            <Users className="h-3.5 w-3.5" />
             <span>{m.tabResources}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 font-mono font-bold border border-amber-500/40">
-              Heatmap
-            </span>
-          </button>
-
-          {/* New Compliance Audit Log Tab Button */}
-          <button
-            onClick={() => setManagerTab('complianceAudit')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
-              managerTab === 'complianceAudit'
-                ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-md shadow-emerald-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <ShieldAlert className="h-4 w-4 text-emerald-400" />
-            <span>{m.tabComplianceAudit}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
-              CSV Export
-            </span>
-          </button>
-
-          <button
-            onClick={() => setManagerTab('compliance')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
-              managerTab === 'compliance'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <ShieldCheck className="h-4 w-4 text-emerald-300" />
-            <span>{m.tabHipaaLog}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
-              Security
-            </span>
           </button>
 
           <button
             onClick={() => setManagerTab('predictiveMaintenance')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               managerTab === 'predictiveMaintenance'
-                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md shadow-cyan-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
           >
-            <Cpu className="h-4 w-4 text-cyan-300" />
+            <Cpu className="h-3.5 w-3.5" />
             <span>{m.tabPredictiveMaint}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 font-mono font-bold border border-cyan-500/40">
-              IoT Forecast
-            </span>
           </button>
 
           <button
             onClick={() => setManagerTab('correlationEngine')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               managerTab === 'correlationEngine'
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
           >
-            <GitMerge className="h-4 w-4 text-indigo-300" />
+            <GitMerge className="h-3.5 w-3.5" />
             <span>{m.tabCorrelation}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 font-mono font-bold border border-indigo-500/40">
-              Causal Links
-            </span>
           </button>
 
           <button
             onClick={() => setManagerTab('density')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               managerTab === 'density'
-                ? 'bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 text-white shadow-md shadow-rose-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
           >
-            <Users className="h-4 w-4 text-amber-300" />
+            <BarChart3 className="h-3.5 w-3.5" />
             <span>{m.tabWorkerDensity}</span>
           </button>
 
           <button
             onClick={() => setManagerTab('patterns')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-md text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               managerTab === 'patterns'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
           >
-            <Layers className="h-4 w-4 text-purple-300" />
+            <Layers className="h-3.5 w-3.5" />
             <span>{m.tabPatternLibrary}</span>
           </button>
-        </div>
 
-        <div className="flex items-center space-x-2 flex-wrap gap-2">
-          {/* Desktop Notification Armed Status Button */}
           <button
-            onClick={requestDesktopNotificationPermission}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
-              desktopNotificationPermission === 'granted'
-                ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/60'
-                : 'bg-amber-950/70 border-amber-500/50 text-amber-300 hover:bg-amber-900/60'
+            onClick={() => setManagerTab('complianceAudit')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+              managerTab === 'complianceAudit'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
             }`}
-            title="Desktop alerts trigger OS notifications for critical anomalies when tabbed out"
           >
-            {desktopNotificationPermission === 'granted' ? (
-              <>
-                <Bell className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Desktop Alerts: Active (Tabbed-Out OS Detection)</span>
-              </>
-            ) : (
-              <>
-                <BellRing className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
-                <span>Enable Desktop Alerts</span>
-              </>
-            )}
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span>{m.tabComplianceAudit}</span>
           </button>
 
           <button
-            onClick={handleTestDesktopNotification}
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition cursor-pointer"
-            title="Dispatch test notification with audio chime to verify operating system alerts"
+            onClick={() => setManagerTab('compliance')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+              managerTab === 'compliance'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
+            }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Test OS Alert</span>
-          </button>
-
-          <button
-            onClick={() => setIsTeamAlertModalOpen(true)}
-            className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-xs font-semibold transition cursor-pointer"
-          >
-            <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Team Mobile</span>
-            {unreadTeamAlertCount > 0 ? (
-              <span className="px-1.5 py-0.2 rounded-full bg-cyan-500 text-slate-950 font-black text-[10px] animate-pulse">
-                {unreadTeamAlertCount}
-              </span>
-            ) : null}
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>{m.tabHipaaLog}</span>
           </button>
         </div>
-      </div>
+      </nav>
 
       {/* Global Notification System: Visual Alert Banner triggered when any health signal breaches thresholds defined in Global Threshold Settings */}
       <GlobalThresholdAlertBanner
@@ -5465,45 +5417,45 @@ export default function ManagerDashboard({
         </div>
       )}
 
-{/* Cross-Role Live Operations Sync Strip (Zero-PII Aggregate Bus) */}
-      <div className="mb-5 p-3.5 rounded-xl bg-slate-900 border border-cyan-500/30 shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          <div className="flex items-center gap-2 font-bold text-white">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Live Cross-Role Operations Bus</span>
+      {/* Cross-Role Live Operations Sync Strip */}
+      <div className="mb-4 p-3 rounded-xl bg-slate-900 border border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <div className="flex items-center gap-2 font-semibold text-white">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span>Cross-Role Operations Bus</span>
           </div>
-          <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-300">
+          <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-400">
             <span>
               Anonymous Breaks:{' '}
-              <strong className={crossRoleOps.restBreaks.some((b) => b.status === 'DISPATCHED') ? 'text-amber-400' : 'text-emerald-400'}>
+              <strong className={`font-mono tabular-nums ${crossRoleOps.restBreaks.some((b) => b.status === 'DISPATCHED') ? 'text-amber-400' : 'text-emerald-400'}`}>
                 {crossRoleOps.restBreaks.filter((b) => b.status !== 'COMPLETED').length}
               </strong>
             </span>
             <span className="text-slate-600">&middot;</span>
             <span>
-              Clinical Triage Pending:{' '}
-              <strong className="text-emerald-300">
+              Clinical Triage:{' '}
+              <strong className="font-mono tabular-nums text-emerald-400">
                 {crossRoleOps.triageQueue.filter((q) => q.status === 'PENDING').length}
               </strong>
             </span>
             <span className="text-slate-600">&middot;</span>
             <span>
-              HVAC Critical Zones:{' '}
-              <strong className={crossRoleOps.hvacZones.some((z) => z.status === 'CRITICAL') ? 'text-rose-400' : 'text-emerald-400'}>
+              HVAC Critical:{' '}
+              <strong className={`font-mono tabular-nums ${crossRoleOps.hvacZones.some((z) => z.status === 'CRITICAL') ? 'text-rose-400' : 'text-emerald-400'}`}>
                 {crossRoleOps.hvacZones.filter((z) => z.status === 'CRITICAL').length}
               </strong>
             </span>
             <span className="text-slate-600">&middot;</span>
             <span>
-              Audit Ledger:{' '}
-              <strong className="text-cyan-300">
+              Ledger{' '}
+              <strong className="font-mono tabular-nums text-cyan-300">
                 #{(99820 + crossRoleOps.ledgerBlocks.length).toLocaleString()}
               </strong>
             </span>
           </div>
           {crossRoleOps.activityFeed[0] && (
-            <span className="text-[11px] text-cyan-300 truncate max-w-md">
-              Latest: {crossRoleOps.activityFeed[0].headline}
+            <span className="text-xs text-slate-300 truncate max-w-md hidden xl:inline">
+              &middot; {crossRoleOps.activityFeed[0].headline}
             </span>
           )}
         </div>
@@ -5517,9 +5469,9 @@ export default function ManagerDashboard({
                   currentUser?.name || 'Safety Director'
                 )
               }
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer transition shadow-xs"
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer transition"
             >
-              Acknowledge Shaded Relief ({crossRoleOps.restBreaks.filter((b) => b.status === 'DISPATCHED').length})
+              Acknowledge Relief ({crossRoleOps.restBreaks.filter((b) => b.status === 'DISPATCHED').length})
             </button>
           )}
           <button
@@ -5529,7 +5481,7 @@ export default function ManagerDashboard({
                 currentUser?.name || 'Safety Director'
               )
             }
-            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold cursor-pointer transition shadow-xs"
+            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold cursor-pointer transition"
           >
             Trigger Heat Surge Drill
           </button>
@@ -5545,28 +5497,24 @@ export default function ManagerDashboard({
         </div>
       </div>
 
-      {/* Consolidated Live Operations Executive Sub-View Switcher (4 Focused Operational Views) */}
-      <div className="mb-6 bg-slate-900/95 border border-slate-800 rounded-xl p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-md">
-        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Live Operations Sub-Views">
+      {/* Live Operations Sub-View Switcher */}
+      <div className="mb-5 bg-slate-900 border border-slate-800 rounded-xl p-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+        <div className="flex items-center gap-1 overflow-x-auto" role="tablist" aria-label="Live Operations Sub-Views">
           <button
             type="button"
             role="tab"
             aria-selected={liveSection === 'COMMAND'}
             onClick={() => setLiveSection('COMMAND')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               liveSection === 'COMMAND'
-                ? 'bg-cyan-600 text-white shadow-sm'
+                ? 'bg-cyan-600 text-white'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Activity className="h-3.5 w-3.5" />
             <span>Command Overview</span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
-              activeAlerts.filter((a) => !a.acknowledged).length > 0
-                ? 'bg-rose-500/20 text-rose-300'
-                : 'bg-slate-800 text-slate-300'
-            }`}>
-              {activeAlerts.filter((a) => !a.acknowledged).length}
+            <span className={`font-mono tabular-nums text-[11px] ${liveSection === 'COMMAND' ? 'text-cyan-100' : 'text-rose-400'}`}>
+              ({activeAlerts.filter((a) => !a.acknowledged).length})
             </span>
           </button>
 
@@ -5575,15 +5523,15 @@ export default function ManagerDashboard({
             role="tab"
             aria-selected={liveSection === 'FORECASTS'}
             onClick={() => setLiveSection('FORECASTS')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               liveSection === 'FORECASTS'
-                ? 'bg-cyan-600 text-white shadow-sm'
+                ? 'bg-cyan-600 text-white'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <TrendingUp className="h-3.5 w-3.5" />
             <span>Forecasts &amp; Telemetry</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/70 text-cyan-300">
+            <span className={`font-mono text-[11px] ${liveSection === 'FORECASTS' ? 'text-cyan-100' : 'text-slate-500'}`}>
               12–48h
             </span>
           </button>
@@ -5593,15 +5541,15 @@ export default function ManagerDashboard({
             role="tab"
             aria-selected={liveSection === 'ANALYTICS'}
             onClick={() => setLiveSection('ANALYTICS')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               liveSection === 'ANALYTICS'
-                ? 'bg-cyan-600 text-white shadow-sm'
+                ? 'bg-cyan-600 text-white'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <LineChart className="h-3.5 w-3.5" />
             <span>Trends &amp; Heatmaps</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/70 text-slate-300">
+            <span className={`font-mono text-[11px] ${liveSection === 'ANALYTICS' ? 'text-cyan-100' : 'text-slate-500'}`}>
               30D
             </span>
           </button>
@@ -5611,627 +5559,496 @@ export default function ManagerDashboard({
             role="tab"
             aria-selected={liveSection === 'GOVERNANCE'}
             onClick={() => setLiveSection('GOVERNANCE')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               liveSection === 'GOVERNANCE'
-                ? 'bg-cyan-600 text-white shadow-sm'
+                ? 'bg-cyan-600 text-white'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <ShieldAlert className="h-3.5 w-3.5" />
             <span>Thresholds, Staffing &amp; Audits</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/70 text-slate-300">
-              {systemAuditLogs.length}
+            <span className={`font-mono tabular-nums text-[11px] ${liveSection === 'GOVERNANCE' ? 'text-cyan-100' : 'text-slate-500'}`}>
+              ({systemAuditLogs.length})
             </span>
           </button>
         </div>
 
-        <span className="text-[11px] font-mono text-slate-400 px-2 hidden lg:inline">
-          Zone Focus: <strong className="text-cyan-300">{activeZoneObj.name}</strong>
+        <span className="text-xs text-slate-400 px-2.5 hidden lg:inline truncate">
+          Zone: <strong className="text-white">{activeZoneObj.name}</strong>
         </span>
       </div>
 
       {liveSection === 'COMMAND' && (
-        <div className="space-y-2 animate-fadeIn">
-{/* Top-Level Summary Section: Real-Time Critical KPIs & Status Cards */}
-      <div id="top-level-summary-kpis" className="mb-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-          <div>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
-              <Activity className="h-4 w-4 text-cyan-400" />
-              Real-Time Workforce Intelligence &bull; Core Operational KPIs
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Live multi-signal aggregate risk health, anomaly telemetry velocity, and edge IoT connectivity
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Export Report Mock PDF Button for Health Metrics Display */}
-            <button
-              onClick={() => setIsHealthMetricsPdfModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs transition shadow-md shadow-cyan-900/40 cursor-pointer border border-cyan-400/50"
-              title="Trigger mock PDF generation process for current health metrics display"
-            >
-              <FileText className="h-3.5 w-3.5 text-white" />
-              <span>Export Report</span>
-            </button>
-
-            <button
-              onClick={handleExportDailySummaryCsv}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white font-bold text-xs transition shadow-xs cursor-pointer"
-              title="Export current 24-hour summary dataset as CSV for external analysis (Excel, Tableau, Python)"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Export CSV (24h)</span>
-            </button>
-
-            <button
-              onClick={() => setIsDailySummaryReportOpen(true)}
-              className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs transition shadow-md shadow-cyan-900/40 cursor-pointer"
-              title="Open Automated Daily Email Digest summarizing the Top 5 most critical anomalies detected over the last 24 hours"
-            >
-              <Mail className="h-3.5 w-3.5 text-white" />
-              <span>Automated Daily Email Digest</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-extrabold bg-rose-500/30 text-rose-200 border border-rose-400/40 shadow-xs">
-                Top 5 Critical
-              </span>
-            </button>
-
-            <button
-              onClick={() => setIsDailySummaryConfigOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-cyan-300 font-semibold text-xs transition shadow-xs cursor-pointer"
-              title="Configure authorized email recipients and automated delivery triggers for high-risk anomalies"
-            >
-              <Settings className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Auto-Delivery Config</span>
-            </button>
-
-            <button
-              onClick={() => setIsScenarioSimulationOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs transition shadow-md shadow-indigo-900/40 cursor-pointer"
-              title="Open Scenario Simulation to adjust variables (humidity, noise, traffic) and observe real-time model impact"
-            >
-              <Sliders className="h-3.5 w-3.5 text-white" />
-              <span>Scenario Simulation</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 5 Primary Critical KPI Status Cards (Including Real-Time Health Anomaly Trend Sparkline) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          {/* Card 1: Average Workforce Risk Score */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Average Workforce Risk Score
-                </span>
-                <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                  <Activity className="h-4 w-4" />
-                </div>
+        <div className="space-y-5 animate-fadeIn">
+          {/* Streamlined Telemetry Pulse Strip (3 non-redundant live trajectory cards) */}
+          <section id="top-level-summary-kpis">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-cyan-400" />
+                  <span>Live Telemetry Trajectories</span>
+                </h2>
               </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold font-mono text-cyan-400 tabular-nums">
-                  28.4%
-                </span>
-                <span className="text-xs text-emerald-400 font-mono font-medium">
-                  -1.2% vs 1h
-                </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDailySummaryReportOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
+                >
+                  <Mail className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Daily Digest</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsScenarioSimulationOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition cursor-pointer"
+                >
+                  <Sliders className="h-3.5 w-3.5" />
+                  <span>Scenario Simulation</span>
+                </button>
               </div>
             </div>
 
-            {/* 24-Hour Signal Trend Mini-Sparkline */}
-            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
-              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                <span className="text-slate-400 font-medium">24h Risk Trajectory</span>
-                <div className="flex items-center gap-1.5">
-                  <HealthSignal24hBadge
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Trajectory 1: Average Workforce Risk Score */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-slate-700 transition flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-start mb-1.5">
+                    <span className="text-xs font-medium text-slate-400">
+                      Average Workforce Risk Score
+                    </span>
+                    <span className="text-xs text-emerald-400 font-mono tabular-nums font-medium">
+                      -1.2% vs 1h
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-2xl font-bold font-mono text-cyan-400 tabular-nums">
+                      28.4%
+                    </span>
+                    <span className="text-xs text-slate-400">Normal baseline</span>
+                  </div>
+                </div>
+
+                <div className="py-1">
+                  <MiniSparkline
                     data={telemetryStream.slice(-24).map((p) => p.risk_score || 0)}
-                    lowerIsBetter={true}
-                    label="24h"
+                    color="#06b6d4"
+                    unit="%"
+                    height={32}
+                    showMinMax={true}
+                    showCurrentDot={true}
+                    ariaLabel="24-hour average workforce risk score trend"
                   />
-                  <span className="text-cyan-400 font-bold">Hourly LSTM</span>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                  <span>Hourly LSTM</span>
+                  <span className="font-mono tabular-nums">Peak 78.2%</span>
                 </div>
               </div>
-              <MiniSparkline
-                data={telemetryStream.slice(-24).map((p) => p.risk_score || 0)}
-                color="#06b6d4"
-                unit="%"
-                height={28}
-                showMinMax={true}
-                showCurrentDot={true}
-                ariaLabel="24-hour average workforce risk score trend"
+
+              {/* Trajectory 2: Real-Time Anomaly Trend Sparkline */}
+              <AnomalyTrendSparklineWidget
+                alerts={activeAlerts}
+                telemetryStream={telemetryStream}
+                onClickInspect={() => {
+                  jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+                }}
               />
-            </div>
 
-            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>Status: <strong className="text-emerald-400">Normal Baseline</strong></span>
-              <span className="text-slate-500">Peak: 78.2%</span>
-            </div>
-          </div>
+              {/* Trajectory 3: Connected IoT Endpoints */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-slate-700 transition flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-start mb-1.5">
+                    <span className="text-xs font-medium text-slate-400">
+                      Connected IoT Endpoints
+                    </span>
+                    <span className="text-xs text-emerald-400 font-mono tabular-nums font-medium">
+                      100% Online
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
+                      184 / 184
+                    </span>
+                    <span className="text-xs text-slate-400">Edge sensor mesh</span>
+                  </div>
+                </div>
 
-          {/* Card 2: Real-Time Anomaly Trend Sparkline Component */}
-          <AnomalyTrendSparklineWidget
-            alerts={activeAlerts}
+                <div className="py-1">
+                  <MiniSparkline
+                    data={telemetryStream.slice(-24).map((_, i) => 184 - (i === 4 ? 1 : 0))}
+                    color="#10b981"
+                    unit=" dev"
+                    height={32}
+                    showMinMax={false}
+                    showCurrentDot={true}
+                    ariaLabel="24-hour IoT endpoint connectivity stability"
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                  <span className="font-mono tabular-nums">Ping: 15s</span>
+                  <span>0 Dropouts</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Real-Time Population Health Score Fluctuation Sparkline */}
+          <PopulationHealthSparkline
             telemetryStream={telemetryStream}
-            onClickInspect={() => {
-              jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+            selectedZone={activeZoneObj}
+            zones={zones}
+            onScrollToFullChart={() => {
+              jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
             }}
           />
 
-          {/* Card 3: Anomalies Detected (24h) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Anomalies Detected (24h)
-                </span>
-                <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
-                  <AlertTriangle className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold font-mono text-rose-400 tabular-nums">
-                  14 Events
-                </span>
-                <span className="text-xs text-amber-300 font-mono font-medium">
-                  {activeAlerts.length} Active
-                </span>
-              </div>
-            </div>
+          {/* Proximity Alert Warning System */}
+          <ProximityAlertBanner
+            zones={zones}
+            alerts={activeAlerts}
+            onAcknowledgeZone={(zoneId) => {
+              setProtocolActiveNotice(`Proximity warning acknowledged for ${zoneId}. Field safety steward notified.`);
+              setTimeout(() => setProtocolActiveNotice(null), 6000);
+            }}
+            onDeploySupport={(zoneId, actionType) => {
+              setProtocolActiveNotice(`Rapid mitigation protocol activated: ${actionType} in ${zoneId}.`);
+              setTimeout(() => setProtocolActiveNotice(null), 7000);
+            }}
+          />
 
-            {/* 24-Hour Anomaly Frequency Mini-Sparkline */}
-            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
-              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                <span className="text-slate-400 font-medium">24h Anomaly Velocity</span>
-                <div className="flex items-center gap-1.5">
-                  <HealthSignal24hBadge
-                    data={telemetryStream.slice(-24).map((p, idx) => {
-                      const base = p.is_anomaly ? 3 : p.risk_score > 60 ? 2 : p.risk_score > 40 ? 1 : 0;
-                      return Math.max(0, base + (idx % 4 === 0 && p.risk_score > 50 ? 1 : 0));
-                    })}
-                    lowerIsBetter={true}
-                    label="24h"
-                  />
-                  <span className="text-rose-400 font-bold">Peaks Flagged</span>
-                </div>
-              </div>
-              <MiniSparkline
-                data={telemetryStream.slice(-24).map((p, idx) => {
-                  const base = p.is_anomaly ? 3 : p.risk_score > 60 ? 2 : p.risk_score > 40 ? 1 : 0;
-                  return Math.max(0, base + (idx % 4 === 0 && p.risk_score > 50 ? 1 : 0));
-                })}
-                color="#f43f5e"
-                unit=" ev"
-                height={28}
-                showMinMax={true}
-                showCurrentDot={true}
-                ariaLabel="24-hour anomaly frequency trend"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span className="text-rose-300">4 Critical &bull; 7 High</span>
-              <span className="text-emerald-400">11 Mitigated</span>
-            </div>
-          </div>
-
-          {/* Card 4: Connected IoT Endpoints */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Connected IoT Endpoints
-                </span>
-                <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                  <Radio className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
-                  184 / 184
-                </span>
-                <span className="text-xs text-emerald-400 font-mono font-medium">
-                  100% Online
-                </span>
-              </div>
-            </div>
-
-            {/* 24-Hour IoT Connectivity Mini-Sparkline */}
-            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
-              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                <span className="text-slate-400 font-medium">24h Signal Mesh</span>
-                <div className="flex items-center gap-1.5">
-                  <HealthSignal24hBadge
-                    data={telemetryStream.slice(-24).map((_, i) => 184 - (i === 4 ? 1 : 0))}
-                    lowerIsBetter={false}
-                    label="24h"
-                  />
-                  <span className="text-emerald-400 font-bold">100% SLA</span>
-                </div>
-              </div>
-              <MiniSparkline
-                data={telemetryStream.slice(-24).map((_, i) => 184 - (i === 4 ? 1 : 0))}
-                color="#10b981"
-                unit=" dev"
-                height={28}
-                showMinMax={false}
-                showCurrentDot={true}
-                ariaLabel="24-hour IoT endpoint connectivity stability"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>Telemetry Ping: 15s</span>
-              <span className="text-slate-500">0 Dropouts</span>
-            </div>
-          </div>
-
-          {/* Card 5: Safety Personnel Allocation */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Safety Personnel Allocation
-                </span>
-                <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
-                  <Users className="h-4 w-4" />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold font-mono text-white tabular-nums">
-                  12 Officers
-                </span>
-                <span className="text-xs text-cyan-300 font-mono font-medium">
-                  Ratio 1:12
-                </span>
-              </div>
-            </div>
-
-            {/* 24-Hour Personnel Deployment Mini-Sparkline */}
-            <div className="my-2 py-1 bg-slate-950/60 rounded-lg px-2 border border-slate-850">
-              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-0.5">
-                <span className="text-slate-400 font-medium">24h Shift Staffing</span>
-                <div className="flex items-center gap-1.5">
-                  <HealthSignal24hBadge
-                    data={telemetryStream.slice(-24).map((p) => (p.risk_score > 60 ? 12 : p.risk_score > 40 ? 11 : 10))}
-                    lowerIsBetter={false}
-                    label="24h"
-                  />
-                  <span className="text-indigo-400 font-bold">Active Ratio</span>
-                </div>
-              </div>
-              <MiniSparkline
-                data={telemetryStream.slice(-24).map((p) => (p.risk_score > 60 ? 12 : p.risk_score > 40 ? 11 : 10))}
-                color="#818cf8"
-                unit=" staff"
-                height={28}
-                showMinMax={false}
-                showCurrentDot={true}
-                ariaLabel="24-hour safety personnel deployment trend"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>9 Deployed Across Zones</span>
-              <span className="text-amber-300 font-bold">3 Standby</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-{/* Real-Time Population Health Score Fluctuation Sparkline (Powered by Recharts) */}
-      <PopulationHealthSparkline
-        telemetryStream={telemetryStream}
-        selectedZone={activeZoneObj}
-        zones={zones}
-        onScrollToFullChart={() => {
-          jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
-        }}
-        className="mb-6"
-      />
-
-{/* Proximity Alert Warning System: Triggers if High-Risk Anomaly Overlaps High-Density Worker Cluster */}
-      <ProximityAlertBanner
-        zones={zones}
-        alerts={activeAlerts}
-        onAcknowledgeZone={(zoneId) => {
-          setProtocolActiveNotice(`Proximity warning acknowledged for ${zoneId}. Field safety steward notified.`);
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-        onDeploySupport={(zoneId, actionType) => {
-          setProtocolActiveNotice(`Rapid mitigation protocol activated: ${actionType} in ${zoneId}.`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-      />
-
-{/* High-Priority Active Anomalies Widget (Using Real-Time Telemetry to Highlight Urgent Health & Safety Deviations) */}
-      <ActiveAnomaliesWidget
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onSpeakAlert={handleSpeakAlert}
-        isSpeaking={isSpeaking}
-      />
-
-{/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap & Predictive Maintenance) */}
-      <ActiveAlertsSection
-        alerts={activeAlerts}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onOpenVoiceSettings={() => setIsVoiceModalOpen(true)}
-        onSpeakAlert={handleSpeakAlert}
-        isSpeaking={isSpeaking}
-        voiceEnabled={voiceSettings.enabled}
-        onExportData={() => setIsReportModalOpen(true)}
-        onInspectAnomaly={handleOpenAnomalyDetails}
-      />
-
-{/* Main Operational Section: Split View */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Col: Geospatial Zone Selector / Heatmap & Custom Zone Builder */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center">
-                <MapPin className="h-4 w-4 mr-2 text-cyan-400" /> Industrial Facility Zones
-              </h2>
-              <button
-                onClick={() => setIsZoneBuilderOpen(true)}
-                className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold px-2.5 py-1 rounded-md transition shadow-xs"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Custom Zone</span>
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {zones.map((zone) => (
-                <div
-                  key={zone.id}
-                  onClick={() => {
-                    setSelectedZone(zone.id);
-                    const newPacket = generatePacketForZone(zone, zone.status === 'CRITICAL');
-                    const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-                    setTelemetryAlert(res);
-                  }}
-                  className={`p-3.5 rounded-lg border cursor-pointer transition-all ${
-                    selectedZone === zone.id
-                      ? 'bg-cyan-500/10 border-cyan-500/50 text-white shadow-md'
-                      : 'bg-slate-800/50 border-slate-700/50 text-slate-300 hover:bg-slate-800'
+          {/* Unified Alert Triage Workspace (Switches cleanly between Urgent Deviations and Full Queue + Heatmap) */}
+          <section id="active-alerts-section" aria-label="Active Anomaly Triage">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div className="inline-flex items-center bg-slate-900 border border-slate-800 p-1 rounded-lg text-xs">
+                <button
+                  type="button"
+                  onClick={() => setCommandAlertsMode('URGENT')}
+                  className={`px-3 py-1.5 rounded-md font-semibold transition cursor-pointer ${
+                    commandAlertsMode === 'URGENT'
+                      ? 'bg-cyan-600 text-white'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-medium text-sm truncate mr-2">{zone.name}</span>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                        zone.status === 'CRITICAL'
-                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          : zone.status === 'MODERATE'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  Urgent Triage &amp; Deviations ({activeAlerts.filter((a) => a.severity === 'CRITICAL' || a.severity === 'HIGH').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommandAlertsMode('QUEUE')}
+                  className={`px-3 py-1.5 rounded-md font-semibold transition cursor-pointer ${
+                    commandAlertsMode === 'QUEUE'
+                      ? 'bg-cyan-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Full Alert Queue &amp; Weekly Heatmap ({activeAlerts.length})
+                </button>
+              </div>
+            </div>
+
+            {commandAlertsMode === 'URGENT' ? (
+              <ActiveAnomaliesWidget
+                alerts={activeAlerts}
+                telemetryStream={telemetryStream}
+                onAcknowledgeAlert={handleAcknowledgeAlert}
+                onDispatchAction={handleDispatchAction}
+                onSelectZone={(zoneId) => {
+                  setSelectedZone(zoneId);
+                  const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+                  const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+                  const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+                  setTelemetryAlert(res);
+                }}
+                onSpeakAlert={handleSpeakAlert}
+                isSpeaking={isSpeaking}
+              />
+            ) : (
+              <ActiveAlertsSection
+                alerts={activeAlerts}
+                onAcknowledgeAlert={handleAcknowledgeAlert}
+                onDispatchAction={handleDispatchAction}
+                onOpenVoiceSettings={() => setIsVoiceModalOpen(true)}
+                onSpeakAlert={handleSpeakAlert}
+                isSpeaking={isSpeaking}
+                voiceEnabled={voiceSettings.enabled}
+                onExportData={() => setIsReportModalOpen(true)}
+                onInspectAnomaly={handleOpenAnomalyDetails}
+              />
+            )}
+          </section>
+
+          {/* Main Operational Section: Split View */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Col: Facility Zones */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between shadow-sm">
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-cyan-400" />
+                    <span>Industrial Facility Zones</span>
+                  </h2>
+                  <button
+                    onClick={() => setIsZoneBuilderOpen(true)}
+                    className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-2.5 py-1 rounded-md transition cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Custom Zone</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {zones.map((zone) => (
+                    <div
+                      key={zone.id}
+                      onClick={() => {
+                        setSelectedZone(zone.id);
+                        const newPacket = generatePacketForZone(zone, zone.status === 'CRITICAL');
+                        const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+                        setTelemetryAlert(res);
+                      }}
+                      className={`p-3.5 rounded-lg border cursor-pointer transition-colors ${
+                        selectedZone === zone.id
+                          ? 'bg-cyan-500/10 border-cyan-500/50 text-white'
+                          : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:border-slate-700'
                       }`}
                     >
-                      {zone.status}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs text-slate-400 mt-2">
-                    <span>
-                      Active Cohort:{' '}
-                      {zone.count < 12 ? (
-                        <span className="text-amber-400 font-bold">N = {zone.count} (Suppressed)</span>
-                      ) : (
-                        `N = ${zone.count} (Protected)`
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-semibold text-sm truncate mr-2">{zone.name}</span>
+                        <span
+                          className={`text-[11px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${
+                            zone.status === 'CRITICAL'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/35'
+                              : zone.status === 'MODERATE'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/35'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/35'
+                          }`}
+                        >
+                          {zone.status}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs text-slate-400 mt-1.5">
+                        <span>
+                          Cohort:{' '}
+                          {zone.count < 12 ? (
+                            <span className="text-amber-400 font-semibold font-mono tabular-nums">N = {zone.count} (Suppressed)</span>
+                          ) : (
+                            <span className="font-mono tabular-nums">N = {zone.count}</span>
+                          )}
+                        </span>
+                        <span className="font-mono tabular-nums">Heat: {zone.temp}</span>
+                      </div>
+                      {zone.customBaselines && (
+                        <div className="text-[11px] text-cyan-400 font-mono mt-1">
+                          Baselines: HRV {zone.customBaselines.baselineHrv}ms &middot; Noise {zone.customBaselines.noiseLimitDb}dB
+                        </div>
                       )}
-                    </span>
-                    <span>Heat Load: {zone.temp}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800 text-xs text-slate-300 flex items-start space-x-2">
+                  <Lock className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <p>
+                    <strong className="text-white">k-Anonymity Privacy:</strong> Small-cell suppression masks cohorts below <span className="font-mono">N=12</span> to protect individual identity.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setIsInspectorOpen(true)}
+                  className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-semibold py-2 rounded-lg transition cursor-pointer"
+                >
+                  <LineChart className="h-3.5 w-3.5" />
+                  <span>Inspect Kalman Waveform</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Right 2 Cols: Real-Time Explainable AI Triage & SHAP Breakdown */}
+            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
+                  <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-cyan-400" />
+                    <span>Real-Time LSTM Anomaly &amp; Explainable AI Drilldown</span>
+                  </h2>
+                  <button
+                    onClick={handleRefreshStream}
+                    className="flex items-center space-x-1.5 bg-slate-950 hover:bg-slate-800 text-xs px-3 py-1.5 rounded-lg text-slate-200 transition border border-slate-700 cursor-pointer font-medium"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    <span>Simulate Stream Packet</span>
+                  </button>
+                </div>
+
+                {/* Anomaly Details Body */}
+                <div className="border-t border-slate-800 pt-4 mb-5">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-4 border-b border-slate-800/80 gap-2">
+                    <div>
+                      <span className="text-xs text-slate-400 font-mono">
+                        {telemetryAlert.worker_id} &middot; {telemetryAlert.location_zone}
+                      </span>
+                      <h3 className="text-lg font-bold text-white flex items-center mt-1 flex-wrap gap-2">
+                        <span>Cohort Risk Probability:</span>
+                        {telemetryAlert.is_suppressed ? (
+                          <span className="text-amber-400 font-mono text-base">[SUPPRESSED: N &lt; 12]</span>
+                        ) : (
+                          <span
+                            className={`font-mono tabular-nums ${
+                              telemetryAlert.risk_tier === 'CRITICAL_RISK'
+                                ? 'text-rose-400'
+                                : telemetryAlert.risk_tier === 'MODERATE_RISK'
+                                ? 'text-amber-400'
+                                : 'text-emerald-400'
+                            }`}
+                          >
+                            {(telemetryAlert.risk_probability * 100).toFixed(1)}% ({telemetryAlert.risk_tier.replace('_', ' ')})
+                          </span>
+                        )}
+                      </h3>
+                    </div>
+                    <div className="bg-rose-500/10 border border-rose-500/30 px-3 py-1 rounded-lg text-rose-300 text-xs font-mono tabular-nums">
+                      Reconstruction MSE: {telemetryAlert.reconstruction_mse.toFixed(3)}
+                    </div>
                   </div>
-                  {zone.customBaselines && (
-                    <div className="text-[10px] text-cyan-400/80 font-mono mt-1">
-                      Custom Baselines: HRV {zone.customBaselines.baselineHrv}ms | Noise {zone.customBaselines.noiseLimitDb}dB
+
+                  {/* Explainable AI Feature Contributions */}
+                  <div className="mt-4">
+                    <h4 className="text-xs font-semibold text-slate-300 mb-3">
+                      Feature Attribution Breakdown (Integrated Gradients)
+                    </h4>
+                    <div className="space-y-3">
+                      {Object.entries(telemetryAlert.explainable_attributions).map(([feature, weight]) => (
+                        <div key={feature} className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-200 font-medium">{feature}</span>
+                            <span className="text-cyan-400 font-mono tabular-nums">
+                              {telemetryAlert.is_suppressed ? 'Masked' : `${(weight * 100).toFixed(0)}%`}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-cyan-500 h-full rounded-full transition-all duration-500"
+                              style={{ width: telemetryAlert.is_suppressed ? '0%' : `${weight * 100}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Recommended Action Banner */}
+                  <div className="mt-5 bg-cyan-950/30 border border-cyan-500/30 p-3.5 rounded-lg">
+                    <p className="text-xs text-cyan-300 font-semibold mb-1">
+                      Recommended Operational Action
+                    </p>
+                    <p className="text-sm text-white font-medium">{telemetryAlert.recommended_operational_action}</p>
+                  </div>
+
+                  {/* Privacy Notice */}
+                  <div className="mt-3 text-xs text-slate-400 flex items-center gap-1.5">
+                    <Lock className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span>{telemetryAlert.privacy_compliance}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Focused Action Triggers + Clean Exports/Audits Overflow */}
+              <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-slate-800">
+                <button
+                  onClick={handleTriggerHydrationProtocol}
+                  className="flex-1 min-w-[210px] bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Trigger Zone Hydration Protocol</span>
+                </button>
+                <button
+                  onClick={() => setIsDispatchModalOpen(true)}
+                  className="bg-rose-600/20 hover:bg-rose-600/30 text-rose-200 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-rose-500/40 flex items-center gap-2 cursor-pointer"
+                >
+                  <Radio className="h-4 w-4 text-rose-400" />
+                  <span>Stage Medical Dispatch ({stagedDispatchCount})</span>
+                </button>
+
+                {/* Overflow Menu consolidating secondary PDF, CSV & Audit actions */}
+                <div className="relative" ref={xaiMoreMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsXaiMoreMenuOpen((prev) => !prev)}
+                    className="bg-slate-950 hover:bg-slate-800 text-slate-200 font-medium py-2.5 px-3.5 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <MoreHorizontal className="h-4 w-4 text-slate-400" />
+                    <span>Exports &amp; Audits</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${isXaiMoreMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isXaiMoreMenuOpen && (
+                    <div
+                      className="absolute right-0 bottom-full mb-1.5 w-64 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs ring-1 ring-slate-700"
+                      onClick={() => setIsXaiMoreMenuOpen(false)}
+                    >
+                      <button
+                        onClick={handleDownloadPdfReport}
+                        className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Printer className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span>Download PDF Report</span>
+                      </button>
+                      <button
+                        onClick={handleDirectPdfExport}
+                        disabled={isDirectPdfExporting}
+                        className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
+                      </button>
+                      <button
+                        onClick={handleExportWorkforceCsv}
+                        className="w-full text-left px-3 py-2 text-emerald-300 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Download className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <span>Export Health CSV (24h)</span>
+                      </button>
+                      <button
+                        onClick={() => handleExportViewAuditReport('PDF')}
+                        disabled={isExportingAuditReport}
+                        className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span>Export View Audit Report</span>
+                      </button>
+                      <button
+                        onClick={() => setIsReportModalOpen(true)}
+                        className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span>Compliance Reports Wizard</span>
+                      </button>
+                      <div className="border-t border-slate-800 my-1" />
+                      <button
+                        onClick={() => setIsAuditModalOpen(true)}
+                        className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                        <span>System Audit Log</span>
+                      </button>
+                      <button
+                        onClick={() => setIsAnomalyAuditModalOpen(true)}
+                        className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800/80 flex items-center gap-2 cursor-pointer"
+                      >
+                        <History className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span>Anomaly Audit Log</span>
+                      </button>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-3">
-            <div className="bg-slate-800/60 p-3 rounded-lg border border-slate-700/50 text-xs text-slate-300 flex items-start space-x-2">
-              <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-              <p>
-                <strong>Regulatory Notice:</strong> k-Anonymity small-cell suppression enforces strict masking on cohorts
-                under N=12 to shield individual worker identity.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setIsInspectorOpen(true)}
-              className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-medium py-2 rounded-lg transition"
-            >
-              <LineChart className="h-3.5 w-3.5" />
-              <span>Inspect Multi-Signal Kalman Waveform</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Right 2 Cols: Real-Time Explainable AI Triage & SHAP Breakdown */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center">
-              <Activity className="h-4 w-4 mr-2 text-cyan-400" /> Real-Time LSTM Anomaly &amp; Explainable AI (XAI) Drilldown
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRefreshStream}
-                className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded-lg text-slate-200 transition border border-slate-700/80"
-              >
-                <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
-                <span>Simulate Stream Packet</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Anomaly Card */}
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 mb-4">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-4 border-b border-slate-800 gap-2">
-              <div>
-                <span className="text-xs text-slate-400 font-mono">
-                  ANOMALY ID: {telemetryAlert.worker_id} | ZONE: {telemetryAlert.location_zone}
-                </span>
-                <h3 className="text-lg font-bold text-white flex items-center mt-1">
-                  Cohort Risk Probability:
-                  {telemetryAlert.is_suppressed ? (
-                    <span className="text-amber-400 ml-2">[SUPPRESSED DUE TO N &lt; 12 CELL LIMIT]</span>
-                  ) : (
-                    <span
-                      className={`ml-2 ${
-                        telemetryAlert.risk_tier === 'CRITICAL_RISK'
-                          ? 'text-rose-400'
-                          : telemetryAlert.risk_tier === 'MODERATE_RISK'
-                          ? 'text-amber-400'
-                          : 'text-emerald-400'
-                      }`}
-                    >
-                      {(telemetryAlert.risk_probability * 100).toFixed(1)}% ({telemetryAlert.risk_tier})
-                    </span>
-                  )}
-                </h3>
-              </div>
-              <div className="bg-rose-500/10 border border-rose-500/30 px-3 py-1 rounded-lg text-rose-400 text-xs font-mono">
-                Reconstruction MSE: {telemetryAlert.reconstruction_mse.toFixed(3)}
               </div>
             </div>
-
-            {/* Explainable AI Attribute Weights */}
-            <div className="mt-4">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-                Integrated Gradients / Feature Attribution (Why did this alert trigger?)
-              </h4>
-              <div className="space-y-2.5">
-                {Object.entries(telemetryAlert.explainable_attributions).map(([feature, weight]) => (
-                  <div key={feature} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">{feature}</span>
-                      <span className="text-cyan-400 font-mono">
-                        {telemetryAlert.is_suppressed ? 'Masked' : `${(weight * 100).toFixed(0)}% contribution`}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-cyan-500 to-indigo-500 h-full rounded-full transition-all duration-500"
-                        style={{ width: telemetryAlert.is_suppressed ? '0%' : `${weight * 100}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Recommended Action Box */}
-            <div className="mt-5 bg-cyan-950/30 border border-cyan-500/30 p-3.5 rounded-lg">
-              <p className="text-xs text-cyan-300 font-semibold uppercase tracking-wider mb-1">
-                Recommended Operational Action
-              </p>
-              <p className="text-sm text-white font-medium">{telemetryAlert.recommended_operational_action}</p>
-            </div>
-
-            {/* Privacy Compliance Footer Tag */}
-            <div className="mt-3 text-[11px] text-slate-400 flex items-center gap-1.5 font-mono">
-              <Lock className="h-3 w-3 text-cyan-400 shrink-0" />
-              <span>{telemetryAlert.privacy_compliance}</span>
-            </div>
           </div>
-
-          {/* Action Triggers */}
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleTriggerHydrationProtocol}
-              className="flex-1 min-w-[200px] bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition shadow-lg shadow-cyan-600/20 flex items-center justify-center"
-            >
-              <CheckCircle2 className="h-4 w-4 mr-2" /> Trigger Zone Hydration Protocol
-            </button>
-            <button
-              onClick={() => setIsDispatchModalOpen(true)}
-              className="bg-rose-900/40 hover:bg-rose-800/60 text-rose-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-rose-600/40 flex items-center gap-1.5 shadow-sm"
-            >
-              <Radio className="h-4 w-4 text-rose-400" />
-              <span>Stage Medical Dispatch ({stagedDispatchCount})</span>
-            </button>
-            <button
-              onClick={handleDownloadPdfReport}
-              className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition shadow-lg shadow-cyan-600/20 flex items-center gap-1.5 cursor-pointer"
-              title="Download comprehensive telemetry PDF report leveraging print-friendly styles"
-            >
-              <Printer className="h-4 w-4" />
-              <span>Download PDF Report</span>
-            </button>
-            <button
-              onClick={handleDirectPdfExport}
-              disabled={isDirectPdfExporting}
-              className={`font-medium py-2.5 px-4 rounded-lg text-sm transition border flex items-center gap-1.5 shadow-sm ${
-                isDirectPdfExporting
-                  ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 animate-pulse'
-                  : 'bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-200 border-cyan-500/40'
-              }`}
-            >
-              {isDirectPdfExporting ? (
-                <Loader2 className="h-4 w-4 text-cyan-400 animate-spin" />
-              ) : (
-                <FileText className="h-4 w-4 text-cyan-400" />
-              )}
-              <span>{isDirectPdfExporting ? 'Generating PDF...' : 'Executive Safety PDF'}</span>
-            </button>
-            <button
-              onClick={handleExportWorkforceCsv}
-              className="bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-emerald-500/50 flex items-center gap-1.5 shadow-sm"
-              title="Download 24-hour historical health telemetry as CSV"
-            >
-              <Download className="h-4 w-4 text-emerald-400" />
-              <span>Export Health CSV (24h)</span>
-            </button>
-            <button
-              onClick={() => handleExportViewAuditReport('PDF')}
-              disabled={isExportingAuditReport}
-              className="bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-200 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-cyan-500/50 flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
-              title="Export current view anomaly report as a simulated PDF/CSV file for audit logging purposes"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
-              <span>Export View Audit Report</span>
-            </button>
-            <button
-              onClick={() => setIsReportModalOpen(true)}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
-              <span>Compliance Reports</span>
-            </button>
-            <button
-              onClick={() => setIsAuditModalOpen(true)}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-lg text-sm transition border border-slate-700 flex items-center gap-1.5"
-            >
-              <ShieldCheck className="h-4 w-4 text-indigo-400" />
-              <span>Audit Log</span>
-            </button>
-            <button
-              onClick={() => setIsAnomalyAuditModalOpen(true)}
-              className="bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-200 font-semibold py-2.5 px-4 rounded-lg text-sm transition border border-cyan-500/50 flex items-center gap-1.5 shadow-sm"
-              title="Open Anomaly Audit Log: Historical timestamp, confidence score, and corrective action taken"
-            >
-              <History className="h-4 w-4 text-cyan-400" />
-              <span>Anomaly Audit Log</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
 {/* 2D Floor Plan Visualization Component with Zone Hotspots & Sensor Telemetry Stream Toggles */}
       <FloorPlan2DView

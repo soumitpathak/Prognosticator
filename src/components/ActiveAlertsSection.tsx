@@ -364,28 +364,28 @@ function ActiveAlertsSectionComponent({
     switch (severity) {
       case 'CRITICAL':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-xs shadow-rose-500/10 animate-pulse">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40">
             <span className="h-1.5 w-1.5 rounded-full bg-rose-400"></span>
             CRITICAL
           </span>
         );
       case 'HIGH':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40 shadow-xs shadow-orange-500/10">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-orange-500/20 text-orange-300 border border-orange-500/40">
             <span className="h-1.5 w-1.5 rounded-full bg-orange-400"></span>
-            HIGH (MEDIUM)
+            HIGH
           </span>
         );
       case 'MODERATE':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
-            MODERATE (MEDIUM)
+            MODERATE
           </span>
         );
       case 'LOW':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
             LOW
           </span>
@@ -408,58 +408,48 @@ function ActiveAlertsSectionComponent({
   };
 
   return (
-    <div id="active-alerts-section" className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6 shadow-lg">
+    <div id="active-alerts-section" className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-5 shadow-sm">
       {/* Section Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-800">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200 flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-rose-400" />
-              Active Anomalies &amp; Predictive Maintenance Alerts
-            </h2>
-            <span className="text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full font-mono font-bold">
-              {alerts.filter((a) => !a.acknowledged).length} Pending Triage
-            </span>
-            <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
-              <Wrench className="h-3 w-3" />
-              {counts.predictive} Equipment Alerts
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Real-time biometric Kalman anomaly vetting, ISO 10816 equipment diagnostics, and departmental triage
+          <h2 className="text-base font-bold text-white flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-rose-400" />
+            <span>Active Anomalies &amp; Predictive Maintenance</span>
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            <span className="font-mono tabular-nums text-rose-300 font-semibold">{alerts.filter((a) => !a.acknowledged).length}</span> pending triage &middot;{' '}
+            <span className="font-mono tabular-nums text-amber-300 font-semibold">{counts.predictive}</span> equipment alerts &middot; Kalman &amp; ISO 10816 verified
           </p>
         </div>
 
         {/* View Mode & Heatmap / Voice Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Audible Voice Alerts Toggle & Settings */}
           {onOpenVoiceSettings && (
             <button
               onClick={onOpenVoiceSettings}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
                 isSpeaking
-                  ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 animate-pulse shadow-md shadow-cyan-500/20'
+                  ? 'bg-cyan-600 border-cyan-500 text-white'
                   : voiceEnabled
-                  ? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300 hover:bg-cyan-900/60'
-                  : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'
+                  ? 'bg-slate-950 border-slate-700 text-cyan-300 hover:bg-slate-800'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
               }`}
-              title="Configure audible synthesized voice alerts for on-site supervisors"
+              title="Configure audible voice alerts for on-site supervisors"
             >
               {voiceEnabled ? (
-                <Volume2 className={`h-3.5 w-3.5 ${isSpeaking ? 'text-cyan-300 animate-ping' : 'text-cyan-400'}`} />
+                <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
               ) : (
                 <VolumeX className="h-3.5 w-3.5 text-slate-500" />
               )}
-              <span>Voice Alerts: {isSpeaking ? 'Speaking...' : voiceEnabled ? 'ON' : 'OFF'}</span>
+              <span>Voice: {isSpeaking ? 'Speaking' : voiceEnabled ? 'On' : 'Off'}</span>
             </button>
           )}
 
-          {/* Weekly Heatmap Toggle */}
           <button
             onClick={() => setShowHeatmap((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
               showHeatmap
-                ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
+                ? 'bg-cyan-600/20 border-cyan-500/40 text-cyan-300'
                 : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -468,14 +458,13 @@ function ActiveAlertsSectionComponent({
             {showHeatmap ? <ChevronUp className="h-3.5 w-3.5 ml-0.5" /> : <ChevronDown className="h-3.5 w-3.5 ml-0.5" />}
           </button>
 
-          {/* Export Anomaly Reports Button */}
           {onExportData && (
             <button
               onClick={onExportData}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold transition cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-200 text-xs font-medium transition cursor-pointer"
               title="Export active anomaly reports as CSV or PDF"
             >
-              <Download className="h-3.5 w-3.5 text-rose-400" />
+              <Download className="h-3.5 w-3.5 text-cyan-400" />
               <span>Export Anomalies</span>
             </button>
           )}
@@ -722,44 +711,32 @@ function ActiveAlertsSectionComponent({
             return (
               <div
                 key={alert.id}
-                className={`transition-all rounded-xl p-4 border ${
+                className={`transition-colors rounded-xl p-4 border bg-slate-950/40 ${
                   isPredictive
                     ? alert.severity === 'CRITICAL'
-                      ? 'border-amber-500/50 bg-gradient-to-r from-amber-950/30 via-slate-900 to-slate-900/90 shadow-md shadow-amber-950/20'
-                      : 'border-amber-600/30 bg-gradient-to-r from-amber-950/20 via-slate-900 to-slate-900/80 shadow-xs'
+                      ? 'border-amber-500/45 border-l-2 border-l-amber-500'
+                      : 'border-amber-600/30 border-l-2 border-l-amber-500'
                     : alert.severity === 'CRITICAL'
-                    ? 'border-rose-500/30 bg-rose-950/10'
-                    : 'border-slate-800 bg-slate-950/40 hover:bg-slate-800/30'
-                } ${alert.acknowledged ? 'opacity-70' : ''}`}
+                    ? 'border-rose-500/40 border-l-2 border-l-rose-500'
+                    : 'border-slate-800 hover:border-slate-700'
+                } ${alert.acknowledged ? 'opacity-65' : ''}`}
               >
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                   {/* Left side: Alert title, meta, department, zone, severity */}
                   <div className="space-y-2 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* Department Category Badge */}
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${dept.badgeClass}`}
-                        title={`Department Category: ${dept.name}`}
-                      >
-                        <DeptIcon className="h-3 w-3" />
-                        <span>{dept.shortName}</span>
-                      </span>
-
-                      {isPredictive ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs">
-                          <Wrench className="h-3 w-3 text-amber-400" />
-                          PREDICTIVE MAINTENANCE
-                        </span>
-                      ) : null}
-
                       {getSeverityBadge(alert.severity)}
 
-                      <span className="font-mono text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className="font-semibold text-sm text-white flex items-center gap-1.5">
                         {getMetricIcon(alert)}
                         {alert.anomaly_metric}
                       </span>
 
-                      {/* Explainable Anomaly Tooltip: Reveals underlying telemetry factors */}
+                      <span className="text-xs text-slate-400 inline-flex items-center gap-1">
+                        <DeptIcon className="h-3 w-3 text-slate-400" />
+                        <span>{dept.shortName}</span>
+                      </span>
+
                       <ExplainableAnomalyTooltip
                         alert={alert}
                         onOpenFullAnalysis={onInspectAnomaly}
