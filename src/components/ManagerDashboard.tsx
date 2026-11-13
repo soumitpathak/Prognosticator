@@ -1262,7 +1262,8 @@ export default function ManagerDashboard({
       const now = Date.now();
       const zoneKey = params.locationZone || 'default';
       const lastTrigger = lastCriticalToastTimestampsRef.current[zoneKey] || 0;
-      if (!params.force && now - lastTrigger < 8000) return; // 8-second cooldown for background stream
+      // 60-second cooldown per zone to prevent notification storms and maintain smooth UI performance
+      if (!params.force && now - lastTrigger < 60000) return;
       lastCriticalToastTimestampsRef.current[zoneKey] = now;
 
       const confScore = params.confidenceLevel > 1 ? params.confidenceLevel / 100 : params.confidenceLevel;
@@ -1320,7 +1321,7 @@ export default function ManagerDashboard({
         cohortCount: params.cohortCount || 18,
         privacyNotice: params.privacyNotice || 'k-Anonymity Verified (N >= 12) & ε=0.5 Differential Privacy',
         createdAt: now,
-        autoDismissMs: effectiveRiskTier === 'CRITICAL_RISK' ? 14000 : 10000,
+        autoDismissMs: effectiveRiskTier === 'CRITICAL_RISK' ? 8000 : 6000,
         acknowledged: false,
         riskTier: effectiveRiskTier,
         riskProbability: params.riskProbability ?? confScore,
@@ -1333,7 +1334,7 @@ export default function ManagerDashboard({
         measurementVarianceR: params.measurementVarianceR
       };
 
-      setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 4));
+      setCriticalAnomalyToasts((prev) => [newToast, ...prev].slice(0, 2));
 
       // Trigger Browser-Based Desktop Alert when tabbed out (or forced)
       if (effectiveRiskTier === 'CRITICAL_RISK') {
@@ -1432,10 +1433,10 @@ export default function ManagerDashboard({
         recommendedAction: `PRE-EMPTIVE ACTION: Forecasted 7-day moving average (${sma}/day) exceeds proactive safe limit (${safeLimit}/day) prior to acute incident. Distribute cooling stations, schedule staggered rotations, and inspect microclimate controls.`,
         acknowledged: false,
         createdAt: Date.now(),
-        autoDismissMs: 14000
+        autoDismissMs: 8000
       };
 
-      setActiveToasts((prev) => [preemptiveToast, ...prev].slice(0, 8));
+      setActiveToasts((prev) => [preemptiveToast, ...prev].slice(0, 2));
 
       setProtocolActiveNotice(
         `PRE-EMPTIVE PROACTIVE NOTIFICATION: 7-day moving average projection (${sma}/day) exceeds safe level (${safeLimit}/day) in ${activeZone.name}. Pre-emptive cooling & rotation protocols activated.`
@@ -1494,7 +1495,7 @@ export default function ManagerDashboard({
         if (!isBreached || limitVal === undefined) return;
         const cooldownKey = `${zone.id}-${signalKey}`;
         const lastTriggered = lastBreachTimestampsRef.current[cooldownKey] || 0;
-        if (!force && now - lastTriggered < 15000) return; // 15-second cooldown per signal per zone
+        if (!force && now - lastTriggered < 60000) return; // 60-second cooldown per signal per zone
 
         lastBreachTimestampsRef.current[cooldownKey] = now;
 
@@ -1681,7 +1682,7 @@ export default function ManagerDashboard({
       }
 
       if (newToasts.length > 0) {
-        setActiveToasts((prev) => [...newToasts, ...prev].slice(0, 8));
+        setActiveToasts((prev) => [...newToasts, ...prev].slice(0, 2));
         if (toastSoundEnabled) {
           const maxSev = newToasts.some((t) => t.severity === 'CRITICAL') ? 'CRITICAL' : 'HIGH';
           voiceAlertService.playAlertChime(maxSev, voiceSettings.severityAudioToggles);
@@ -2095,11 +2096,11 @@ export default function ManagerDashboard({
         recommendedAction: alert.action,
         acknowledged: false,
         createdAt: now,
-        autoDismissMs: alert.severity === 'CRITICAL' ? 14000 : 9000,
+        autoDismissMs: alert.severity === 'CRITICAL' ? 8000 : 6000,
         privacyComplianceNotice: alert.privacyStatus || 'k-Anonymity Verified (N >= 12)'
       };
 
-      setActiveToasts((prev) => [newToast, ...prev].slice(0, 8));
+      setActiveToasts((prev) => [newToast, ...prev].slice(0, 2));
       if (toastSoundEnabled) {
         const mappedSev = alert.severity === 'WARNING' ? 'MODERATE' : alert.severity;
         voiceAlertService.playAlertChime(mappedSev, voiceSettings.severityAudioToggles);
@@ -3376,36 +3377,7 @@ export default function ManagerDashboard({
     }
   }, [activeAlerts, anomalyAuditRecords, anomalyTrend30d, zones, telemetryStream, activeZoneObj, activeRole]);
 
-  // Initial demonstration high-risk population health anomaly toast alert on mount
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      triggerCriticalAnomalyNotification({
-        department: 'Civil & Structural Construction',
-        confidenceLevel: 0.948,
-        riskProbability: 0.892,
-        riskTier: 'CRITICAL_RISK',
-        locationZone: 'Outdoor-Construction-Sector-4',
-        zoneId: 'Outdoor-Construction-Sector-4',
-        cohortCount: 18,
-        workerPseudonym: 'W-9921',
-        anomalyMetric: 'Acute Autonomic & Core Temperature Strain',
-        measuredValue: 'Heart Rate 138 BPM, Skin Temp 38.6°C, TWL 92.4 W/m²',
-        thresholdLimit: 'HR Max 115 BPM, Skin 37.8°C',
-        reconstructionMse: 0.385,
-        recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.',
-        privacyNotice: 'k-Anonymity Verified (N >= 12) & ε=0.5 Differential Privacy',
-        attributions: {
-          'Heart Rate Variability (HRV) Drop': 0.42,
-          'Ambient Heat Index Load': 0.31,
-          'Skin Temperature Elevation': 0.18,
-          'Cumulative Sleep Deficit': 0.09
-        },
-        force: true
-      });
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [triggerCriticalAnomalyNotification]);
+  // High-risk population health anomaly toast alerts are triggered via genuine stream thresholds with 60s cooldown
 
   // Streaming IoT Hub Simulator Interval
   useEffect(() => {
@@ -3435,28 +3407,9 @@ export default function ManagerDashboard({
         sendKalmanConfidenceDesktopNotification(dynamicKalmanConf, kalmanConfidenceThreshold);
       }
 
-      // Real-time alert toast notification if Prognosticator Engine detects high-risk or critical population health anomaly
-      if (result.risk_probability >= 0.65 || result.risk_tier === 'CRITICAL_RISK') {
-        const isCrit = result.risk_tier === 'CRITICAL_RISK' || result.risk_probability >= 0.75;
-        triggerAnomalyToast({
-          title: isCrit
-            ? 'Prognosticator Engine: Critical Risk Anomaly'
-            : 'Prognosticator Engine: High-Risk Population Strain',
-          metric: 'LSTM Multidimensional Anomaly Vector',
-          measuredVal: Number((result.risk_probability * 100).toFixed(1)),
-          measuredFormatted: `${(result.risk_probability * 100).toFixed(1)}% Risk Prob`,
-          limitVal: kalmanConfig.criticalCutoffPct,
-          limitFormatted: `${kalmanConfig.criticalCutoffPct}% Cutoff`,
-          deltaFormatted: `+${((result.risk_probability * 100) - kalmanConfig.criticalCutoffPct).toFixed(1)}%`,
-          severity: isCrit ? 'CRITICAL' : 'HIGH',
-          action: result.recommended_operational_action,
-          zoneName: activeZoneObj.name,
-          zoneId: activeZoneObj.id,
-          cohortCount: activeZoneObj.count,
-          signalKey: 'anomalyEngine',
-          privacyStatus: result.privacy_compliance
-        });
-
+      // Real-time alert toast notification if Prognosticator Engine detects critical population health anomaly (subject to 60s cooldown)
+      if (result.risk_tier === 'CRITICAL_RISK' || result.risk_probability >= 0.85) {
+        const isCrit = result.risk_tier === 'CRITICAL_RISK' || result.risk_probability >= 0.88;
         const lastStreamPt = telemetryStream[telemetryStream.length - 1];
         const rawHrvDisplay = lastStreamPt?.raw_hrv ? `${lastStreamPt.raw_hrv}ms` : '31.2ms (±6ms Jitter)';
         const smoothedHrvDisplay = lastStreamPt?.smoothed_hrv ? `${lastStreamPt.smoothed_hrv}ms` : '34.6ms';
@@ -3516,7 +3469,7 @@ export default function ManagerDashboard({
     }, 3200);
 
     return () => clearInterval(interval);
-  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerAnomalyToast, kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification, telemetryRiskThreshold, triggerTelemetryRiskBrowserAlert]);
+  }, [isStreamingActive, jitterEnabled, activeZoneObj, kalmanConfig, checkReadingForThresholdBreaches, triggerCriticalAnomalyNotification, kalmanConfidenceThreshold, sendKalmanConfidenceDesktopNotification, telemetryRiskThreshold, triggerTelemetryRiskBrowserAlert]);
 
   // Handle Burst Event Triggers
   const handleTriggerBurst = (type: 'HEATWAVE' | 'NOISE' | 'CARDIAC' | 'DROPOUT') => {

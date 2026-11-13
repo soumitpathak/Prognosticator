@@ -13,15 +13,10 @@ const LoginGatewayView = lazy(() => import('./components/LoginGatewayView'));
 import {
   Shield,
   UserCheck,
-  Layers,
   Eye,
-  Key,
-  Scale,
-  Users,
   LogOut,
   Lock,
   AlertTriangle,
-  Globe2,
   HardHat,
   Stethoscope,
   Wrench,
@@ -199,7 +194,7 @@ export default function App() {
         {/* Zone 2: View Mode Indicator & Role Landing Console */}
         <div className="flex items-center gap-2">
           {isAdmin ? (
-            /* Admin Console Switcher: Allows enterprise admin to inspect all 5 operational roles */
+            /* Admin Console Switcher: Allows enterprise admin to audit all 5 operational roles */
             <div className={`flex items-center border rounded-lg p-0.5 ${
               isAccessibilityMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-900/90 border-slate-800'
             }`}>
@@ -214,7 +209,7 @@ export default function App() {
                 title="Executive Whole-Site Command & Prognostics"
               >
                 <Shield className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Executive Site Command</span>
+                <span className="hidden sm:inline">Executive Command</span>
               </button>
 
               <button
@@ -284,46 +279,15 @@ export default function App() {
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-700 text-slate-400 flex items-center gap-1">
                 <Lock className="h-2.5 w-2.5" />
-                <span>Role Assigned by Admin</span>
+                <span>Strict Role Separation</span>
               </span>
             </div>
           )}
         </div>
 
-        {/* Zone 3: Right Action Cluster: Admin Role Management, Persona, Compliance, A11y, Logout */}
+        {/* Zone 3: Right Action Cluster: Clean Persona & Session Controls */}
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          {/* Admin Role Management Trigger (Exclusive to Admin) */}
-          {isAdmin ? (
-            <button
-              type="button"
-              onClick={() => setIsRbacModalOpen(true)}
-              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs ${
-                isAccessibilityMode
-                  ? 'bg-indigo-50 text-indigo-900 border-indigo-300 hover:bg-indigo-100'
-                  : 'bg-indigo-950/50 text-indigo-300 border-indigo-500/50 hover:bg-indigo-900/40'
-              }`}
-              title="Enterprise Administrator: Manage User Roles and PBAC Policies"
-            >
-              <Key className="h-3.5 w-3.5 text-indigo-400" />
-              <span>Manage User Roles (Admin)</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsRbacModalOpen(true)}
-              className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer shadow-xs ${
-                isAccessibilityMode
-                  ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-white'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
-              }`}
-              title="Inspect Your Role Permissions & PBAC Policy evaluation"
-            >
-              <Lock className="h-3 w-3 text-slate-400" />
-              <span className="hidden md:inline">Permissions</span>
-            </button>
-          )}
-
-          {/* Persona Card / Switcher Button: Switcher is accessible to Admin; Non-admin sees locked persona badge */}
+          {/* Persona Card: Switcher accessible to Admin; Non-admin sees locked role badge */}
           {isAdmin ? (
             <button
               type="button"
@@ -333,7 +297,7 @@ export default function App() {
                   ? 'bg-slate-100 hover:bg-white text-slate-900 border-slate-300'
                   : 'bg-slate-900 hover:bg-slate-800/90 text-slate-200 border-slate-700'
               }`}
-              title="Click to switch test persona"
+              title="Click to switch test persona or manage credentials"
             >
               <div className={`h-5 w-5 rounded-md ${currentUser.avatarColor} text-white font-bold flex items-center justify-center text-[10px]`}>
                 {currentUser.avatarInitials}
@@ -372,55 +336,37 @@ export default function App() {
             </div>
           )}
 
-          {/* Country & Migrant Workforce Compliance Button */}
-          <button
-            type="button"
-            onClick={() => setIsComplianceModalOpen(true)}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer shadow-xs ${
-              isAccessibilityMode
-                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40'
-            }`}
-            title="Inspect Country & Migrant Workforce Compliance (Singapore MOM, GCC MoHRE, OSHA, GDPR)"
-          >
-            <Scale className="h-3.5 w-3.5 text-emerald-400" />
-            <span>{frameworkDetail.countryName.split(' ')[0]} Compliance</span>
-            <span className="text-[9px] font-mono bg-emerald-900 text-emerald-200 px-1 py-0.2 rounded font-bold">
-              {frameworkDetail.regulatoryBody.split(' ')[0]}
-            </span>
-          </button>
+          {/* Frontline Worker Sovereign Protection Badge */}
+          {currentUser.role === 'FRONTLINE_WORKER' && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-950/60 border border-purple-500/40 text-[11px] text-purple-300 font-mono">
+              <Shield className="h-3.5 w-3.5 text-purple-400" />
+              <span>Sovereign Privacy Shield</span>
+            </div>
+          )}
 
-          {/* Global Accessibility Mode Toggle Button */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isAccessibilityMode}
-            onClick={toggleAccessibilityMode}
-            className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs ${
-              isAccessibilityMode
-                ? 'bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 font-bold'
-                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
-            }`}
-            title="Toggle Accessibility Mode: High-contrast light presentation"
-          >
-            <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
-            <span className="hidden sm:inline">A11y</span>
-            <span className={`text-[9px] font-mono px-1 py-0.5 rounded font-bold ${
-              isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400'
-            }`}>
-              {isAccessibilityMode ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setIsArchModalOpen(true)}
-            className={`flex items-center space-x-1 transition text-[11px] cursor-pointer ${
-              isAccessibilityMode ? 'text-slate-700 hover:text-cyan-700 font-medium' : 'text-slate-400 hover:text-cyan-400'
-            }`}
-          >
-            <Layers className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">System Spec</span>
-          </button>
+          {/* Global Accessibility Mode Toggle Button (for non-workers) */}
+          {currentUser.role !== 'FRONTLINE_WORKER' && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isAccessibilityMode}
+              onClick={toggleAccessibilityMode}
+              className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs ${
+                isAccessibilityMode
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 font-bold'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+              }`}
+              title="Toggle Accessibility Mode: High-contrast light presentation"
+            >
+              <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
+              <span className="hidden sm:inline">A11y</span>
+              <span className={`text-[9px] font-mono px-1 py-0.5 rounded font-bold ${
+                isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {isAccessibilityMode ? 'ON' : 'OFF'}
+              </span>
+            </button>
+          )}
 
           {/* Direct Logout Button */}
           <button
@@ -568,6 +514,10 @@ export default function App() {
           <UserLoginModal
             isOpen={true}
             onClose={() => setIsLoginModalOpen(false)}
+            onOpenRbacModal={isAdmin ? () => {
+              setIsLoginModalOpen(false);
+              setIsRbacModalOpen(true);
+            } : undefined}
             onUserChanged={(user) => {
               setCurrentUser(user);
               setIsAuthenticated(true);

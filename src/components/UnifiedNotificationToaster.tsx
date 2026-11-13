@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -6,7 +6,6 @@ import {
   Thermometer,
   Activity,
   Cpu,
-  Brain,
   X,
   ExternalLink,
   ChevronRight,
@@ -81,8 +80,10 @@ export default function UnifiedNotificationToaster({
   onToggleSound
 }: UnifiedNotificationToasterProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  // Pinned alerts mode: When false, alerts NEVER automatically disappear!
-  const [isAutoDismissEnabled, setIsAutoDismissEnabled] = useState<boolean>(false);
+  // Auto-dismiss enabled by default (6s for standard, 8s for critical)
+  const [isAutoDismissEnabled, setIsAutoDismissEnabled] = useState<boolean>(true);
+  // Tracks items currently undergoing smooth exit animation
+  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
 
   // Normalize and merge both toast queues, sorting newest first
   const unifiedItems: UnifiedToastItem[] = useMemo(() => {
@@ -101,7 +102,7 @@ export default function UnifiedNotificationToaster({
         timestamp: ct.timeFormatted,
         recommendedAction: ct.recommendedAction,
         createdAt: ct.createdAt || Date.now(),
-        autoDismissMs: ct.autoDismissMs || 9000,
+        autoDismissMs: 6500,
         acknowledged: ct.acknowledged,
         isKalmanModelAnomaly: true,
         kalmanSmoothed: ct.kalmanSmoothedValue,
@@ -122,7 +123,7 @@ export default function UnifiedNotificationToaster({
       const isDuplicate = items.some(
         (existing) =>
           existing.location === bt.zoneName &&
-          Math.abs(existing.createdAt - (bt.createdAt || 0)) < 3000
+          Math.abs(existing.createdAt - (bt.createdAt || 0)) < 4000
       );
       if (!isDuplicate) {
         items.push({
@@ -136,7 +137,7 @@ export default function UnifiedNotificationToaster({
           timestamp: bt.timeFormatted,
           recommendedAction: bt.recommendedAction,
           createdAt: bt.createdAt || Date.now(),
-          autoDismissMs: bt.autoDismissMs || 7000,
+          autoDismissMs: 6000,
           isKalmanModelAnomaly: false,
           originalBreach: bt
         });
@@ -147,13 +148,41 @@ export default function UnifiedNotificationToaster({
     return items.sort((a, b) => b.createdAt - a.createdAt);
   }, [criticalToasts, breachToasts]);
 
-  // Handle individual dismiss
-  const handleDismiss = (item: UnifiedToastItem) => {
-    if (item.sourceType === 'CRITICAL_ANOMALY') {
-      onDismissCritical(item.id);
-    } else {
-      onDismissBreach(item.id);
-    }
+  // Smooth dismiss handler: animates out cleanly before updating React state
+  const handleSmoothDismiss = (item: UnifiedToastItem) => {
+    setDismissingIds((prev) => new Set(prev).add(item.id));
+    setTimeout(() => {
+      if (item.sourceType === 'CRITICAL_ANOMALY') {
+        onDismissCritical(item.id);
+      } else {
+        onDismissBreach(item.id);
+      }
+      setDismissingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }, 280);
+  };
+
+  // Smooth dismiss all handler
+  const handleSmoothDismissAll = () => {
+    const allIds = new Set(unifiedItems.map((i) => i.id));
+    setDismissingIds(allIds);
+    setTimeout(() => {
+      if (onClearAll) {
+        onClearAll();
+      } else {
+        unifiedItems.forEach((item) => {
+          if (item.sourceType === 'CRITICAL_ANOMALY') {
+            onDismissCritical(item.id);
+          } else {
+            onDismissBreach(item.id);
+          }
+        });
+      }
+      setDismissingIds(new Set());
+    }, 280);
   };
 
   // Handle individual acknowledge
@@ -174,34 +203,25 @@ export default function UnifiedNotificationToaster({
     }
   };
 
-  // Stack up to 2 active toasts simultaneously for optimal situational awareness without clutter
-  const visibleItems = unifiedItems.slice(0, 2);
+  // Keep max 1 active visible toast on screen to avoid covering charts or tables
+  const visibleItems = unifiedItems.slice(0, 1);
   const hiddenCount = unifiedItems.length - visibleItems.length;
 
-  // Auto-dismiss management: ONLY triggers if user explicitly enabled auto-dismiss (never by default)
+  // Graceful auto-dismiss timer per visible item
   useEffect(() => {
     if (!isAutoDismissEnabled || visibleItems.length === 0) return;
 
-    const interval = setInterval(() => {
-      const now = Date.now();
-      visibleItems.forEach((item) => {
-        if (hoveredId === item.id) return; // Pause countdown on hover
-        // Do not auto-dismiss unacknowledged critical alerts
-        if (item.severity === 'CRITICAL' && !item.acknowledged) return;
+    const currentItem = visibleItems[0];
+    if (hoveredId === currentItem.id) return; // Pause on hover
+    if (dismissingIds.has(currentItem.id)) return;
 
-        const elapsed = now - item.createdAt;
-        if (elapsed >= item.autoDismissMs) {
-          if (item.sourceType === 'CRITICAL_ANOMALY') {
-            onDismissCritical(item.id);
-          } else {
-            onDismissBreach(item.id);
-          }
-        }
-      });
-    }, 250);
+    const remainingTime = Math.max(1000, currentItem.autoDismissMs - (Date.now() - currentItem.createdAt));
+    const timer = setTimeout(() => {
+      handleSmoothDismiss(currentItem);
+    }, remainingTime);
 
-    return () => clearInterval(interval);
-  }, [visibleItems, hoveredId, isAutoDismissEnabled, onDismissCritical, onDismissBreach]);
+    return () => clearTimeout(timer);
+  }, [visibleItems, hoveredId, isAutoDismissEnabled, dismissingIds]);
 
   if (unifiedItems.length === 0) {
     return null;
@@ -211,258 +231,185 @@ export default function UnifiedNotificationToaster({
     <aside
       aria-label="Kalman Filtering Anomaly & Safety Alerts"
       aria-live="assertive"
-      className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2.5 max-w-sm sm:max-w-md w-full pointer-events-none select-none"
+      className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 max-w-sm w-full pointer-events-none select-none transition-all duration-300"
     >
-      {/* Multi-Alert Summary Strip when queue has overflow */}
+      {/* Sleek Top Pill when multiple alerts exist in queue */}
       {hiddenCount > 0 && (
-        <div className="pointer-events-auto flex items-center justify-between gap-3 w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
+        <div className="pointer-events-auto flex items-center justify-between gap-2.5 w-full bg-slate-900/95 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-lg text-xs text-slate-200 backdrop-blur-md animate-fadeIn">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="relative flex h-2 w-2 shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
             </span>
-            <span className="font-mono text-[11px] text-slate-300">
-              <strong className="text-white font-semibold">+{hiddenCount}</strong> additional anomaly alert{hiddenCount === 1 ? '' : 's'} in queue
+            <span className="font-mono text-[11px] text-slate-300 truncate">
+              <strong className="text-white font-semibold">+{hiddenCount}</strong> more in queue
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
-              onClick={() => setIsAutoDismissEnabled((prev) => !prev)}
-              className={`text-[10px] font-semibold transition font-mono cursor-pointer px-2 py-0.5 rounded border flex items-center gap-1 ${
-                !isAutoDismissEnabled
-                  ? 'bg-cyan-950 text-cyan-300 border-cyan-600 shadow-xs'
-                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
-              }`}
-              title={!isAutoDismissEnabled ? 'Alerts are pinned (will not auto-dismiss). Click to enable auto-dismiss' : 'Auto-dismiss is active. Click to pin alerts'}
+              type="button"
+              onClick={handleSmoothDismissAll}
+              className="text-[11px] font-semibold text-rose-300 hover:text-white px-2 py-0.5 rounded bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 transition cursor-pointer"
+              title="Dismiss all alerts and clear screen"
             >
-              {!isAutoDismissEnabled ? <Pin className="h-3 w-3 fill-cyan-400" /> : <PinOff className="h-3 w-3" />}
-              <span>{!isAutoDismissEnabled ? 'PINNED' : 'AUTO-DISMISS'}</span>
+              Dismiss All
             </button>
 
             {onOpenNotificationCenter && (
               <button
+                type="button"
                 onClick={onOpenNotificationCenter}
-                className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 transition flex items-center gap-0.5 cursor-pointer"
+                className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 transition flex items-center gap-0.5 cursor-pointer px-1.5 py-0.5"
+                title="View full notification log"
               >
                 <span>View Center</span>
                 <ChevronRight className="h-3 w-3" />
-              </button>
-            )}
-
-            {onClearAll && (
-              <button
-                onClick={onClearAll}
-                className="text-[11px] text-slate-400 hover:text-white transition font-mono cursor-pointer px-1.5 py-0.5 rounded hover:bg-slate-800"
-                title="Dismiss all active alerts"
-              >
-                Dismiss All
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* Stack of Active Toasts (Up to 2 stacked cards) */}
+      {/* Primary Active Toast (Sleek, Compact, Translucent Glassmorphism) */}
       {visibleItems.map((item) => {
         const isCritical = item.severity === 'CRITICAL';
         const isHovered = hoveredId === item.id;
+        const isDismissing = dismissingIds.has(item.id);
         const isKalman = item.isKalmanModelAnomaly;
-        const riskPct = item.riskProbability ? (item.riskProbability * 100).toFixed(1) : '89.4';
+        const riskPct = item.riskProbability ? (item.riskProbability * 100).toFixed(0) : '89';
 
         return (
           <div
             key={item.id}
             onMouseEnter={() => setHoveredId(item.id)}
             onMouseLeave={() => setHoveredId(null)}
-            className={`pointer-events-auto w-full rounded-xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] relative overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-3 border-2 ${
+            className={`pointer-events-auto w-full rounded-xl shadow-2xl relative overflow-hidden backdrop-blur-md transition-all duration-300 border ${
+              isDismissing
+                ? 'opacity-0 translate-x-8 scale-95 duration-300 pointer-events-none'
+                : 'opacity-100 translate-x-0 scale-100 duration-200'
+            } ${
               isCritical
-                ? 'bg-slate-950 border-rose-500/90 ring-1 ring-rose-500/40 text-slate-100'
-                : 'bg-slate-950 border-amber-500/90 ring-1 ring-amber-500/40 text-slate-100'
+                ? 'bg-slate-900/95 border-rose-500/60 ring-1 ring-rose-500/30 text-slate-100'
+                : 'bg-slate-900/95 border-amber-500/60 ring-1 ring-amber-500/30 text-slate-100'
             }`}
           >
-            {/* Top Indicator Strip */}
-            <div
-              className={`px-3 py-1.5 flex items-center justify-between border-b text-[11px] font-mono ${
-                isCritical
-                  ? 'bg-rose-950 border-rose-800/80 text-rose-200'
-                  : 'bg-amber-950 border-amber-800/80 text-amber-200'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                {isKalman ? (
-                  <>
-                    <Cpu className="h-3.5 w-3.5 text-cyan-400 animate-pulse shrink-0" />
-                    <span className="font-bold tracking-tight text-white flex items-center gap-1">
-                      <span>KALMAN ANOMALY DETECTED</span>
-                      <span className="text-[10px] text-cyan-300 font-normal hidden sm:inline">• P_k|k = 0.024</span>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                    <span className="font-bold tracking-tight text-white">THRESHOLD BREACH ALERT</span>
-                  </>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5">
+            {/* Header: Severity Badge, Zone, Time & Comfortable Close Button */}
+            <div className="px-3.5 py-2 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/60 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
                 <span
-                  className={`px-1.5 py-0.2 rounded font-bold uppercase tracking-wider text-[9px] border ${
+                  className={`px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider text-[9px] border shrink-0 ${
                     isCritical
-                      ? 'bg-rose-900/80 text-rose-200 border-rose-700'
-                      : 'bg-amber-900/80 text-amber-200 border-amber-700'
+                      ? 'bg-rose-950 text-rose-300 border-rose-500/40'
+                      : 'bg-amber-950 text-amber-300 border-amber-500/40'
                   }`}
                 >
-                  {item.severity} RISK ({riskPct}%)
+                  {item.severity} &middot; {riskPct}%
                 </span>
+                <span className="font-semibold text-white truncate text-xs">{item.location}</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-mono text-slate-400 hidden sm:inline">{item.timestamp}</span>
 
                 <button
+                  type="button"
                   onClick={() => setIsAutoDismissEnabled((prev) => !prev)}
                   className={`p-1 rounded text-[10px] transition cursor-pointer flex items-center gap-1 ${
                     !isAutoDismissEnabled
-                      ? 'text-cyan-300 bg-cyan-950 border border-cyan-600 shadow-xs font-bold'
+                      ? 'text-cyan-300 bg-cyan-950/80 border border-cyan-500/50'
                       : 'text-slate-400 hover:text-white'
                   }`}
-                  title={!isAutoDismissEnabled ? 'Alert is pinned (Won\'t disappear). Click to toggle auto-dismiss' : 'Auto-dismiss active. Click to pin alert'}
+                  title={!isAutoDismissEnabled ? 'Alert is pinned (pause auto-dismiss). Click to enable auto-dismiss' : 'Auto-dismissing in 6s. Click to pin'}
                 >
-                  {!isAutoDismissEnabled ? (
-                    <Pin className="h-3 w-3 fill-cyan-400" />
-                  ) : (
-                    <PinOff className="h-3 w-3" />
-                  )}
+                  {!isAutoDismissEnabled ? <Pin className="h-3 w-3 fill-cyan-400" /> : <PinOff className="h-3 w-3" />}
                 </button>
 
+                {/* Generous Hit-Target Close Button for Smooth Dismissal */}
                 <button
-                  onClick={() => handleDismiss(item)}
-                  className="text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
-                  title="Dismiss alert"
+                  type="button"
+                  onClick={() => handleSmoothDismiss(item)}
+                  className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                  aria-label="Close notification"
+                  title="Dismiss notification"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            {/* Main Body */}
+            {/* Content: Clean, High-Signal Metric & 1-Line Directive */}
             <div className="p-3 space-y-2">
-              {/* Location & Title */}
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                    <span className="font-semibold text-white truncate">{item.location}</span>
-                    <span className="text-slate-500">·</span>
-                    <span className="text-[11px] font-mono text-cyan-400">N={item.cohortCount || 18}</span>
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-0.5 font-mono">
-                      <ShieldCheck className="h-3 w-3" />
-                      <span className="hidden sm:inline">k≥12</span>
-                    </span>
-                  </div>
-                  <h4 className="text-xs font-semibold text-rose-300 mt-0.5 truncate flex items-center gap-1">
-                    <Activity className="h-3 w-3 shrink-0 text-rose-400" />
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
+                    {isKalman ? <Cpu className="h-3.5 w-3.5 text-cyan-400 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />}
                     <span>{item.title}</span>
-                  </h4>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-white mt-0.5">
+                    {item.metric}
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
-                    <Clock className="h-2.5 w-2.5" />
-                    {item.timestamp}
-                  </span>
+
+                <div className="text-right text-[10px] font-mono text-emerald-400 flex items-center gap-1 shrink-0 pt-0.5">
+                  <ShieldCheck className="h-3 w-3" />
+                  <span>k≥12</span>
                 </div>
               </div>
 
-              {/* Kalman Telemetry Metric Card */}
-              {isKalman && (
-                <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-[11px] font-mono space-y-1">
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span className="text-slate-400">Telemetry:</span>
-                    <span className="text-white font-medium truncate max-w-[240px]">
-                      {item.metric}
-                    </span>
-                  </div>
-                  {item.kalmanSmoothed && (
-                    <div className="flex justify-between items-center text-cyan-300 border-t border-slate-800/60 pt-1">
-                      <span className="text-slate-400 text-[10px]">Kalman Smoothed:</span>
-                      <span className="font-bold text-[10px]">{item.kalmanSmoothed}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center text-[10px] text-slate-400 border-t border-slate-800/60 pt-1">
-                    <span>MSE: <strong className="text-slate-200">{item.reconstructionMse?.toFixed(3) ?? '0.385'}</strong></span>
-                    <span className="text-emerald-400 truncate max-w-[190px]">{item.kalmanStatus}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Threshold Breach details if not kalman */}
-              {!isKalman && (
-                <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-[11px] font-mono text-slate-300">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-400">Breach Reading:</span>
-                    <span className="text-white font-semibold">{item.metric}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Operational Action Directive */}
               {item.recommendedAction && (
-                <div className="text-[11px] text-slate-200 bg-slate-900 border border-slate-700 rounded-md p-1.5 flex items-start gap-1.5">
-                  <Zap className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-slate-300 bg-slate-950/70 border border-slate-800/80 rounded-lg p-2 flex items-start gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
                   <p className="line-clamp-2 leading-tight">
-                    <strong className="text-amber-300">Directive:</strong> {item.recommendedAction}
+                    <strong className="text-amber-300">Action:</strong> {item.recommendedAction}
                   </p>
                 </div>
               )}
 
-              {/* Interactive Actions */}
-              <div className="flex items-center justify-between gap-2 pt-0.5 text-xs">
+              {/* Quick Actions Strip */}
+              <div className="flex items-center justify-between gap-2 pt-1">
                 <div className="flex items-center gap-1.5">
                   <button
+                    type="button"
                     onClick={() => handleAcknowledge(item)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 border ${
                       item.acknowledged
-                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700 cursor-default'
-                        : 'bg-cyan-950/80 hover:bg-cyan-900 text-cyan-200 border-cyan-700/70'
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
                     }`}
-                    title="Acknowledge anomaly in compliance audit trail"
                   >
-                    <CheckCircle2 className="h-3 w-3 text-cyan-400" />
+                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
                     <span>{item.acknowledged ? 'Acknowledged' : 'Acknowledge'}</span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => handleDispatch(item)}
-                    className="px-2 py-1 rounded-md text-[11px] font-medium bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-700/70 transition cursor-pointer flex items-center gap-1"
-                    title="Stage medical or cooling dispatch team"
+                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-600 transition cursor-pointer flex items-center gap-1"
                   >
                     <Radio className="h-3 w-3 text-rose-400" />
                     <span>Dispatch</span>
                   </button>
                 </div>
 
-                {onInspectInChart && item.zoneId && (
-                  <button
-                    onClick={() => onInspectInChart(item.zoneId!)}
-                    className="text-[11px] text-slate-400 hover:text-white transition flex items-center gap-0.5 cursor-pointer"
-                    title="Scroll to telemetry waveform chart"
-                  >
-                    <span>Inspect</span>
-                    <ExternalLink className="h-2.5 w-2.5 text-slate-400" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleSmoothDismiss(item)}
+                  className="text-[11px] text-slate-400 hover:text-white transition cursor-pointer font-medium"
+                >
+                  Dismiss
+                </button>
               </div>
             </div>
 
-            {/* Visual Indicator: Countdown Bar when auto-dismiss is on, or solid Pinned badge */}
-            {isAutoDismissEnabled ? (
-              <div
-                className={`absolute bottom-0 left-0 h-1 transition-all ${
-                  isCritical ? 'bg-rose-500' : 'bg-amber-500'
-                } ${isHovered ? 'w-full opacity-40' : 'animate-[toast-progress_14s_linear_forwards]'}`}
-              />
-            ) : (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-900 border-t border-slate-800 flex items-center justify-between px-2">
-                <span className="text-[8px] font-mono font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1">
-                  <Pin className="h-2 w-2 fill-cyan-400" /> PINNED • ACTIVE IN WORKFLOW
-                </span>
+            {/* Smooth Animated Progress Bar */}
+            {isAutoDismissEnabled && (
+              <div className="h-0.5 w-full bg-slate-800 overflow-hidden">
+                <div
+                  className={`h-full transition-all ${
+                    isCritical ? 'bg-rose-500' : 'bg-amber-500'
+                  } ${isHovered ? 'w-full opacity-30' : 'animate-[toast-progress_6s_linear_forwards]'}`}
+                />
               </div>
             )}
           </div>

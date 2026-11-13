@@ -24,12 +24,14 @@ interface UserLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUserChanged: (user: UserPersona) => void;
+  onOpenRbacModal?: () => void;
 }
 
 export default function UserLoginModal({
   isOpen,
   onClose,
-  onUserChanged
+  onUserChanged,
+  onOpenRbacModal
 }: UserLoginModalProps) {
   const [activeTab, setActiveTab] = useState<'PERSONAS' | 'CREDENTIALS'>('PERSONAS');
   const [emailInput, setEmailInput] = useState<string>('sarah.chen@prognosticator.io');
@@ -151,13 +153,26 @@ export default function UserLoginModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-            aria-label="Close modal"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            {authService.isAdmin() && onOpenRbacModal && (
+              <button
+                type="button"
+                onClick={onOpenRbacModal}
+                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-500/50 hover:bg-indigo-900/60 transition cursor-pointer shadow-xs"
+                title="Manage Roles & Governance"
+              >
+                <Key className="h-3.5 w-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">Manage Roles (Admin)</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              aria-label="Close modal"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Success message banner */}
