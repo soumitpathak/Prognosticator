@@ -98,32 +98,10 @@ export const TARGET_PERSONAS: UserPersona[] = [
     avatarInitials: 'TM',
     avatarColor: 'bg-purple-600',
     clearanceLevel: 'LEVEL_1_BASIC',
-    primaryLanguage: 'bn',
-    languageLabel: 'বাংলা (Bengali)',
+    primaryLanguage: 'en',
+    languageLabel: 'English',
     assignedZoneOrDorm: 'Sector 4 Heavy Works & Dormitory Bay 12',
     bioSummary: 'Frontline migrant worker equipped with BLE biometric sensor band. Protected by Sovereign Worker Privacy Shield and Midday Work Ban policies.',
-    permissions: [
-      'VIEW_PRIVATE_BIOMETRICS',
-      'REQUEST_ANONYMOUS_REST_BREAK'
-    ]
-  },
-  {
-    id: 'user_migrant_worker_rajan',
-    name: 'Rajan Pillai',
-    email: 'rajan.pillai@worker.local',
-    role: 'FRONTLINE_WORKER',
-    roleTitle: 'High-Voltage Electrical Conduit Technician (Work Permit Pass)',
-    department: 'Marine Offshore & Port Electrical Fabrication',
-    organization: 'Straits Technical Contracting Pte Ltd',
-    workforceType: 'MIGRANT_WORKFORCE',
-    jurisdiction: 'SINGAPORE_MOM',
-    avatarInitials: 'RP',
-    avatarColor: 'bg-indigo-600',
-    clearanceLevel: 'LEVEL_1_BASIC',
-    primaryLanguage: 'ta',
-    languageLabel: 'தமிழ் (Tamil)',
-    assignedZoneOrDorm: 'Tuas Marine Yard & Jurong East Lodge',
-    bioSummary: 'Foreign migrant worker covered under Singapore Ministry of Manpower (MOM) 2024 Heat Stress & WSH Medical Examination Regulations.',
     permissions: [
       'VIEW_PRIVATE_BIOMETRICS',
       'REQUEST_ANONYMOUS_REST_BREAK'
@@ -348,14 +326,17 @@ export class AuthService {
     return this.currentUser;
   }
 
-  public loginWithCredentials(email: string, _password?: string): UserPersona {
+  public findPersonaByEmail(email: string): UserPersona | undefined {
     const normalized = email.trim().toLowerCase();
-    const found = TARGET_PERSONAS.find((p) => p.email.toLowerCase() === normalized);
-    if (found) {
-      return this.switchPersona(found.id);
+    return TARGET_PERSONAS.find((p) => p.email.toLowerCase() === normalized);
+  }
+
+  public loginWithCredentials(email: string, _password?: string): UserPersona | null {
+    const found = this.findPersonaByEmail(email);
+    if (!found) {
+      return null;
     }
-    // If not exact match, log in with Safety Director
-    return this.switchPersona('user_safety_director');
+    return this.switchPersona(found.id);
   }
 
   public loginWithFirebaseUser(firebaseUser: {
@@ -462,22 +443,22 @@ export class AuthService {
       id: `user_${Date.now()}`,
       name: params.fullName,
       email: params.email,
-      role: 'SAFETY_DIRECTOR',
-      roleTitle: 'Site Safety Specialist (Admin-Managed Role)',
-      department: params.department || 'Occupational Health & Field Safety',
+      role: 'FRONTLINE_WORKER',
+      roleTitle: 'Registered Workforce Member (Pending Admin Role Elevation)',
+      department: params.department || 'Field Operations & Safety',
       organization: params.organization || 'Apex Industrial Operations',
-      workforceType: 'SUPERVISORY_STAFF',
+      workforceType: 'DOMESTIC_WORKFORCE',
       jurisdiction: this.currentJurisdiction,
       avatarInitials: initials,
-      avatarColor: 'bg-cyan-700',
-      clearanceLevel: 'LEVEL_3_TECHNICAL',
+      avatarColor: 'bg-purple-700',
+      clearanceLevel: 'LEVEL_1_BASIC',
       primaryLanguage: 'en',
       languageLabel: 'English',
-      bioSummary: `Registered enterprise member. Role & clearance assigned and managed by System Administrator in RBAC console.`,
+      assignedZoneOrDorm: 'General Operations Sector',
+      bioSummary: `Registered enterprise member starting with Sovereign Worker clearance. Elevated role & clearance assigned exclusively by System Administrator in RBAC console.`,
       permissions: [
-        'VIEW_AGGREGATE_ANALYTICS',
-        'VIEW_COMPLIANCE_AUDIT_LOGS',
-        'RUN_WHAT_IF_SIMULATIONS'
+        'VIEW_PRIVATE_BIOMETRICS',
+        'REQUEST_ANONYMOUS_REST_BREAK'
       ]
     };
 
@@ -503,10 +484,7 @@ export class AuthService {
   }
 
   public isAdmin(): boolean {
-    return (
-      this.currentUser.role === 'SAFETY_DIRECTOR' ||
-      this.currentUser.permissions.includes('MANAGE_USER_ROLES')
-    );
+    return this.currentUser.permissions.includes('MANAGE_USER_ROLES');
   }
 
   public updateUserRole(userId: string, newRole: UserRole, newClearance?: ClearanceLevel): UserPersona | null {

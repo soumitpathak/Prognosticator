@@ -454,9 +454,9 @@ describe('11. Enterprise User Personas & RBAC / PBAC Authorization', () => {
     expect(roles).toContain('COMPLIANCE_AUDITOR');
 
     const migrantWorkers = personas.filter((p) => p.workforceType === 'MIGRANT_WORKFORCE');
-    expect(migrantWorkers.length).toBeGreaterThanOrEqual(2);
-    expect(migrantWorkers.some((w) => w.primaryLanguage === 'bn')).toBe(true); // Bengali
-    expect(migrantWorkers.some((w) => w.primaryLanguage === 'ta')).toBe(true); // Tamil
+    expect(migrantWorkers.length).toBe(1);
+    expect(migrantWorkers[0].id).toBe('user_migrant_worker_tariq');
+    expect(migrantWorkers[0].primaryLanguage).toBe('en');
   });
 
   it('permits safety directors to actuate HVAC and configure thresholds', () => {
@@ -524,5 +524,101 @@ describe('12. Country & Migrant Workforce Regulatory Compliance', () => {
     expect(us.complianceStatus).toBe('FULLY_COMPLIANT');
   });
 });
+
+describe('13. Global i18n, Single-Select Language Optimization & RTL Support', async () => {
+  const { i18nService, LANGUAGE_OPTIONS } = await import('../services/i18nService');
+
+  it('defaults to English and provides single-select autocomplete language options', () => {
+    expect(i18nService.getLanguage()).toBe('en');
+    expect(LANGUAGE_OPTIONS.length).toBe(8);
+    expect(LANGUAGE_OPTIONS.map((l) => l.code)).toEqual(['en', 'bn', 'ta', 'zh', 'tl', 'ar', 'hi', 'es']);
+  });
+
+  it('switches across all supported languages one at a time and optimizes directionality for RTL', () => {
+    for (const option of LANGUAGE_OPTIONS) {
+      i18nService.setLanguage(option.code);
+      expect(i18nService.getLanguage()).toBe(option.code);
+      expect(i18nService.getLanguageOption().direction).toBe(option.code === 'ar' ? 'rtl' : 'ltr');
+
+      const dict = i18nService.getTranslations(option.code);
+      expect(dict.home.signInTitle.length).toBeGreaterThan(0);
+      expect(dict.home.previewTitle.length).toBeGreaterThan(0);
+      expect(dict.home.previewPrivacy.length).toBeGreaterThan(0);
+      expect(dict.shell.logOut.length).toBeGreaterThan(0);
+      expect(dict.shell.loadingWorker.length).toBeGreaterThan(0);
+      expect(dict.worker.title.length).toBeGreaterThan(0);
+      expect(dict.worker.migrantPassBadge.length).toBeGreaterThan(0);
+      expect(dict.worker.twlSevereHeatBadge.length).toBeGreaterThan(0);
+      expect(dict.worker.middayWorkBanPrefix.length).toBeGreaterThan(0);
+      expect(dict.clinician.title.length).toBeGreaterThan(0);
+      expect(dict.engineer.title.length).toBeGreaterThan(0);
+      expect(dict.auditor.title.length).toBeGreaterThan(0);
+      expect(dict.manager.surveillanceCommand.length).toBeGreaterThan(0);
+    }
+    i18nService.setLanguage('en');
+  });
+});
+
+describe('14. Cross-Role Live Operations Bus & Audit Chain Synchronization', async () => {
+  const { crossRoleOperationsService } = await import('../services/crossRoleOperationsService');
+
+  it('propagates Worker anonymous break to Clinical Triage, Director Relief, and Auditor SHA-256 Ledger with Zero PII', () => {
+    crossRoleOperationsService.resetOperationalState();
+    const initialBlocks = crossRoleOperationsService.getSnapshot().ledgerBlocks.length;
+
+    const brk = crossRoleOperationsService.submitAnonymousBreakRequest({
+      zoneId: 'Sector 4 Heavy Works',
+      language: 'ar',
+      skinTempC: 38.0,
+      hrvMs: 42
+    });
+
+    const snapAfterWorker = crossRoleOperationsService.getSnapshot();
+    expect(brk.ephemeralToken).toMatch(/^ANON-\d{4}$/);
+    expect(snapAfterWorker.restBreaks[0].status).toBe('DISPATCHED');
+    expect(snapAfterWorker.ledgerBlocks.length).toBe(initialBlocks + 1);
+    expect(snapAfterWorker.ledgerBlocks[0].eventType).toBe('REST_BREAK_ISSUED');
+    expect(snapAfterWorker.triageQueue.some((t) => t.workerPseudonym === brk.ephemeralToken)).toBe(true);
+
+    // Zero PII check on ledger block and activity feed
+    expect(JSON.stringify(snapAfterWorker.ledgerBlocks[0])).not.toContain('tariq');
+
+    // Director acknowledges relief -> Worker break updates to HYDRATION_DISPATCHED
+    const ackCount = crossRoleOperationsService.acknowledgePendingCoolingBreaks('Sarah Chen, CSP');
+    expect(ackCount).toBe(1);
+    const snapAfterAck = crossRoleOperationsService.getSnapshot();
+    expect(snapAfterAck.restBreaks[0].status).toBe('HYDRATION_DISPATCHED');
+    expect(snapAfterAck.ledgerBlocks.length).toBe(initialBlocks + 2);
+  });
+
+  it('propagates Engineer HVAC damper actuation and Clinician rehydration to shared state and Auditor ledger', () => {
+    crossRoleOperationsService.resetOperationalState();
+    const beforeTwl = crossRoleOperationsService.getSnapshot().hvacZones[0].twl;
+
+    crossRoleOperationsService.actuateHvacDamper({
+      zoneId: 'ZONE-A',
+      delta: 5,
+      actorName: 'Marcus Vance, PE',
+      actorRole: 'Lead Mechanical Engineer'
+    });
+
+    const snap = crossRoleOperationsService.getSnapshot();
+    expect(snap.hvacZones[0].twl).toBeGreaterThan(beforeTwl);
+    expect(snap.ledgerBlocks[0].eventType).toBe('HVAC_ACTUATION');
+
+    crossRoleOperationsService.dispatchClinicalRehydration({
+      recordId: 'CLIN-001',
+      actorName: 'Dr. Aravind Krishnan',
+      actorRole: 'Chief Occupational Health Officer',
+      regulatoryStandard: 'Singapore MOM & HIPAA §164.514'
+    });
+
+    const snap2 = crossRoleOperationsService.getSnapshot();
+    expect(snap2.triageQueue.find((r) => r.id === 'CLIN-001')?.status).toBe('DISPATCHED');
+    expect(snap2.ledgerBlocks[0].eventType).toBe('MEDICAL_DISPATCH');
+  });
+});
+
+
 
 

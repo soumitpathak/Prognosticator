@@ -222,7 +222,7 @@ export default function AggregateRiskScoreTrend24hChart({
   const [formTitle, setFormTitle] = useState<string>('Facility event: HVAC maintenance');
   const [formNote, setFormNote] = useState<string>('');
   const [formCategory, setFormCategory] = useState<ChartAnnotation['category']>('HVAC_MAINTENANCE');
-  const [formAuthor, setFormAuthor] = useState<string>('Alex Mercer (Safety Lead)');
+  const [formAuthor, setFormAuthor] = useState<string>('Safety Director (Safety Lead)');
   const [annotationSavedNotice, setAnnotationSavedNotice] = useState<string | null>(null);
 
   // Subscribe to persistent annotations service
@@ -507,7 +507,7 @@ export default function AggregateRiskScoreTrend24hChart({
     if (deleted) {
       complianceAuditService.logEvent({
         eventType: 'MANUAL_OVERRIDE',
-        actor: 'Alex Mercer',
+        actor: 'Safety Director',
         actorRole: 'Safety Compliance Officer',
         actorType: 'USER',
         targetModule: 'Health Risk Trend Chart',
@@ -1747,7 +1747,7 @@ export default function AggregateRiskScoreTrend24hChart({
                     required
                     value={formAuthor}
                     onChange={(e) => setFormAuthor(e.target.value)}
-                    placeholder="e.g. Alex Mercer (Safety Lead)"
+                    placeholder="e.g. Safety Director (Safety Lead)"
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 transition"
                   />
                 </div>

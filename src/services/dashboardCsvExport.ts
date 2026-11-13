@@ -20,7 +20,7 @@ export function exportDashboardDataCsv({
   activeAlerts,
   telemetryStream,
   currentZone,
-  userName = 'Alex Mercer',
+  userName = 'Safety Director',
   userRole = 'EHS Safety Supervisor',
   selectedMetrics
 }: DashboardExportOptions): { success: boolean; filename: string; recordCount: number } {

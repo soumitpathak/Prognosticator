@@ -39,7 +39,7 @@ export default function HistoricalAnomalyCsvExportModal({
   const [selectedStandard, setSelectedStandard] = useState<ComplianceStandard>('ISO_45001');
   const [targetZone, setTargetZone] = useState<string>(selectedZoneId || 'ALL');
   const [targetSeverity, setTargetSeverity] = useState<string>('ALL');
-  const [auditorName, setAuditorName] = useState<string>('Alex Mercer, Lead EHS Auditor (ID: EHS-2026-904)');
+  const [auditorName, setAuditorName] = useState<string>('Lead EHS Auditor (ID: EHS-2026-904)');
   const [includeCertificationHeader, setIncludeCertificationHeader] = useState<boolean>(true);
   const [includeTechnicalAttribution, setIncludeTechnicalAttribution] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);

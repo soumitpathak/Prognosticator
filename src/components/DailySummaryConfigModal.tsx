@@ -42,7 +42,7 @@ export interface DailySummaryTriggerConfig {
 export const DEFAULT_RECIPIENTS: DailySummaryRecipient[] = [
   {
     id: 'REC-01',
-    name: 'Alex Mercer',
+    name: 'Safety Director',
     email: 'alex.mercer@prognosticator-safety.internal',
     role: 'Lead EHS Operations Supervisor',
     enabled: true
@@ -177,7 +177,7 @@ export default function DailySummaryConfigModal({
         id: `AUD-TEST-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: 'Safety Director',
         userRole: 'EHS Operations Supervisor',
         category: 'REPORT_EXPORT',
         targetModule: 'Daily Summary Automated Delivery',
@@ -214,7 +214,7 @@ export default function DailySummaryConfigModal({
       id: `AUD-CFG-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: 'Safety Director',
       userRole: 'EHS Operations Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Daily Summary Automated Delivery',

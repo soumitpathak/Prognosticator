@@ -45,7 +45,7 @@ export default function HistoricalAnomalyPdfExportModal({
   const [selectedStandard, setSelectedStandard] = useState<PdfComplianceStandard>('ISO_45001');
   const [targetZone, setTargetZone] = useState<string>(selectedZoneId || 'ALL');
   const [targetSeverity, setTargetSeverity] = useState<string>('ALL');
-  const [auditorName, setAuditorName] = useState<string>('Alex Mercer, Lead EHS Auditor (ID: EHS-2026-904)');
+  const [auditorName, setAuditorName] = useState<string>('Lead EHS Auditor (ID: EHS-2026-904)');
   const [includeCertificationHeader, setIncludeCertificationHeader] = useState<boolean>(true);
   const [includeKpiSummary, setIncludeKpiSummary] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -283,7 +283,7 @@ export default function HistoricalAnomalyPdfExportModal({
               value={auditorName}
               onChange={(e) => setAuditorName(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none font-mono"
-              placeholder="e.g. Alex Mercer, Lead EHS Auditor (ID: EHS-2026-904)"
+              placeholder="e.g. Lead EHS Auditor (ID: EHS-2026-904)"
             />
           </div>
 

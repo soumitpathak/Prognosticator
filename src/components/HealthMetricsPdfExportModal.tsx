@@ -69,7 +69,7 @@ export default function HealthMetricsPdfExportModal({
         totalAnomalies24h: 14,
         connectedEndpoints: '184 / 184 (100% Online)',
         safetyPersonnel: '12 Officers (9 Deployed, 3 Standby)',
-        userName: 'Alex Mercer (EHS Lead Supervisor)',
+        userName: 'Safety Director (EHS Lead Supervisor)',
         onProgress: (step, pct) => {
           setProgressMessage(step);
           setProgressPercent(pct);

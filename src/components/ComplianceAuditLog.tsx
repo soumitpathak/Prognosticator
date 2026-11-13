@@ -67,7 +67,7 @@ export default function ComplianceAuditLog({
   const handleSimulateManualOverride = () => {
     complianceAuditService.logEvent({
       eventType: 'MANUAL_OVERRIDE',
-      actor: 'Alex Mercer',
+      actor: 'Safety Director',
       actorRole: 'Safety Compliance Officer',
       actorType: 'USER',
       targetModule: 'Kalman Filter Gateway',

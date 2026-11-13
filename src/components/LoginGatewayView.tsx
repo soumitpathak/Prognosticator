@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Shield,
   Lock,
@@ -6,7 +6,6 @@ import {
   Key,
   Eye,
   EyeOff,
-  ArrowRight,
   Activity,
   CheckCircle2,
   ShieldCheck,
@@ -14,11 +13,17 @@ import {
   LogIn,
   Send,
   Radio,
-  Sparkles
+  Sparkles,
+  Info
 } from 'lucide-react';
 import { UserPersona } from '../types';
 import { authService } from '../services/authService';
 import { signInWithGoogle } from '../services/firebase';
+import { useTranslation } from '../services/i18nService';
+import { calculateHeatIndex } from '../services/whatIfSimulationEngine';
+import { defaultKalman } from '../services/kalmanFilter';
+import { computeLstmReconstructionAnomaly } from '../services/lstmAnomalyEngine';
+import LanguageAutocomplete from './LanguageAutocomplete';
 
 // High-fidelity operational assets generated for Prognosticator
 import commandCenterImg from '../assets/images/workforce_health_command_center_1794419609820.jpg';
@@ -35,6 +40,7 @@ export default function LoginGatewayView({
   onLoginSuccess,
   isAccessibilityMode = false
 }: LoginGatewayViewProps) {
+  const { t, langOption } = useTranslation();
   const [viewMode, setViewMode] = useState<AuthViewMode>('LOGIN');
 
   // Sign In State
@@ -57,17 +63,70 @@ export default function LoginGatewayView({
   // Common State
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+  const [isErrorFeedback, setIsErrorFeedback] = useState<boolean>(false);
+  const [showSignupNoticeInfo, setShowSignupNoticeInfo] = useState<boolean>(false);
+  const [previewSectorIdx, setPreviewSectorIdx] = useState<number>(0);
+
+  const previewTelemetry = useMemo(() => {
+    const sectors = [
+      {
+        label: 'Sector 4 · Foundry',
+        tempC: 37.8,
+        humidityPct: 68,
+        rawHrv: [52, 49, 44, 41, 39],
+        skinTemps: [37.4, 37.7, 38.0],
+        sleepDeficit: 2.5,
+        cohortSize: 22
+      },
+      {
+        label: 'Roofline · Solar',
+        tempC: 34.5,
+        humidityPct: 58,
+        rawHrv: [64, 62, 60, 58, 57],
+        skinTemps: [36.9, 37.1, 37.2],
+        sleepDeficit: 1.0,
+        cohortSize: 16
+      },
+      {
+        label: 'Cooling · Bay B',
+        tempC: 26.2,
+        humidityPct: 48,
+        rawHrv: [72, 74, 71, 73, 75],
+        skinTemps: [36.4, 36.5, 36.5],
+        sleepDeficit: 0.4,
+        cohortSize: 19
+      }
+    ];
+    const active = sectors[previewSectorIdx] || sectors[0];
+    const smoothedHrv = defaultKalman.smooth(active.rawHrv);
+    const heatIndexC = calculateHeatIndex(active.tempC, active.humidityPct);
+    const anomaly = computeLstmReconstructionAnomaly(
+      smoothedHrv,
+      active.skinTemps,
+      heatIndexC,
+      active.sleepDeficit
+    );
+    return { sectors, active, heatIndexC, anomaly };
+  }, [previewSectorIdx]);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setIsErrorFeedback(false);
     setStatusFeedback(`Authenticating ${loginEmail} against Enterprise Directory...`);
 
     setTimeout(() => {
       const loggedUser = authService.loginWithCredentials(loginEmail, loginPassword);
       setIsLoading(false);
+      if (!loggedUser) {
+        setIsErrorFeedback(true);
+        setStatusFeedback(
+          `Access Denied: "${loginEmail}" is not registered in the authorized Enterprise Directory. Select a directory account below or request access via Sign Up.`
+        );
+        return;
+      }
       onLoginSuccess(loggedUser);
-    }, 450);
+    }, 350);
   };
 
   const handleSignUpSubmit = (e: React.FormEvent) => {
@@ -137,88 +196,182 @@ export default function LoginGatewayView({
       }`}
     >
       {/* Top Enterprise Brand Bar */}
-      <header className="w-full border-b border-slate-800/80 bg-[#0A0F1A]/95 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3.5">
-            <div className="h-9 w-9 rounded-lg bg-cyan-600 flex items-center justify-center text-white shadow-md shadow-cyan-900/30">
-              <Activity className="h-5 w-5" />
+      <header className={`w-full border-b backdrop-blur-md sticky top-0 z-50 transition-colors ${
+        isAccessibilityMode
+          ? 'border-slate-300 bg-white/95'
+          : 'border-slate-800/80 bg-[#0A0F1A]/95'
+      }`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="h-8 w-8 rounded-lg bg-cyan-600 flex items-center justify-center text-white shadow-sm shrink-0">
+              <Activity className="h-4 w-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-bold tracking-tight text-white font-sans">
-                  PROGNOSTICATOR
-                </span>
-                <span className="font-mono text-[10px] tracking-wider uppercase text-cyan-400 border border-cyan-500/30 px-1.5 py-0.2 rounded bg-cyan-950/40">
-                  v2.4 Enterprise
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
-                Multi-Signal Workforce Health Early-Warning Intelligence
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2 text-xs font-mono text-slate-400">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-slate-300">Admin-Managed Role Governance</span>
+            <span className={`text-base font-extrabold tracking-tight font-sans whitespace-nowrap ${
+              isAccessibilityMode ? 'text-slate-950' : 'text-white'
+            }`}>
+              PROGNOSTICATOR
+            </span>
           </div>
         </div>
       </header>
 
       {/* Main Two-Column Viewport */}
-      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 md:py-12 flex-1 flex flex-col justify-center">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 md:py-10 flex-1 flex flex-col justify-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start lg:items-center">
           
-          {/* Left Column (7 cols): Enterprise System Briefing & Operational Imagery */}
+          {/* Left Column (7 cols): Enterprise System Briefing, Imagery & Live Signal Preview */}
           <div className="lg:col-span-7 space-y-6">
             <div>
-              <div className="flex items-center space-x-2 text-xs font-mono text-cyan-400 mb-2.5 uppercase tracking-wider">
-                <span className="h-2 w-2 rounded-full bg-cyan-400"></span>
-                <span>Near-Real-Time Population &amp; Workforce Health Intelligence</span>
-              </div>
-              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
-                Synthesize disparate signals to prevent health threats before they escalate.
+              <p className={`text-xs font-semibold tracking-wide mb-2 ${
+                isAccessibilityMode ? 'text-cyan-800' : 'text-cyan-400'
+              }`}>
+                {t.home.heroKicker}
+              </p>
+              <h1 className={`text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight text-balance ${
+                isAccessibilityMode ? 'text-slate-950' : 'text-white'
+              }`}>
+                {t.home.heroTitle}
               </h1>
-              <p className="text-sm sm:text-base text-slate-300 mt-3.5 leading-relaxed">
-                Early signs of heat stress, autonomic collapse, or occupational overexposure rarely sit in a single database. Prognosticator unites continuous wearable biometrics, environmental microclimate telemetry, workplace acoustic levels, and absence patterns into calibrated, explainable early warnings.
+              <p className={`text-sm sm:text-base mt-3 leading-relaxed max-w-2xl ${
+                isAccessibilityMode ? 'text-slate-700' : 'text-slate-300'
+              }`}>
+                {t.home.heroDescription}
               </p>
             </div>
 
             {/* High-Fidelity Operational Images Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Image 1: Command Center */}
-              <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/90 shadow-lg group relative">
+              <div className={`border rounded-xl overflow-hidden shadow-sm group ${
+                isAccessibilityMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-slate-900/90'
+              }`}>
                 <img
                   src={commandCenterImg}
-                  alt="Industrial Health Surveillance Command Center"
-                  className="w-full h-44 object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                  alt={t.home.card1Title}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-40 object-cover object-center group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="p-3 bg-gradient-to-t from-slate-950 via-slate-900 to-transparent">
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Activity className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>Industrial Surveillance Command</span>
+                <div className="p-3">
+                  <div className={`text-xs font-bold flex items-center gap-1.5 ${
+                    isAccessibilityMode ? 'text-slate-950' : 'text-white'
+                  }`}>
+                    <Activity className={`h-3.5 w-3.5 shrink-0 ${isAccessibilityMode ? 'text-cyan-700' : 'text-cyan-400'}`} />
+                    <span>{t.home.card1Title}</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Live biometric heat maps &amp; 12-hour predictive anomaly forecasting.
+                  <p className={`text-[11px] mt-1 ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {t.home.card1Desc}
                   </p>
                 </div>
               </div>
 
               {/* Image 2: Wearable & Edge Sensor Stream */}
-              <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/90 shadow-lg group relative">
+              <div className={`border rounded-xl overflow-hidden shadow-sm group ${
+                isAccessibilityMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-slate-900/90'
+              }`}>
                 <img
                   src={wearableSensorsImg}
-                  alt="Wearable Biometric & Environmental IoT Sensors"
-                  className="w-full h-44 object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                  alt={t.home.card2Title}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-40 object-cover object-center group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="p-3 bg-gradient-to-t from-slate-950 via-slate-900 to-transparent">
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Radio className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Edge Biometric &amp; Microclimate IoT</span>
+                <div className="p-3">
+                  <div className={`text-xs font-bold flex items-center gap-1.5 ${
+                    isAccessibilityMode ? 'text-slate-950' : 'text-white'
+                  }`}>
+                    <Radio className={`h-3.5 w-3.5 shrink-0 ${isAccessibilityMode ? 'text-emerald-700' : 'text-emerald-400'}`} />
+                    <span>{t.home.card2Title}</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Continuous HRV, epidermal temperature, and Thermal Work Limit (TWL).
+                  <p className={`text-[11px] mt-1 ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {t.home.card2Desc}
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Edge Signal Computation Preview Strip */}
+            <div className={`border rounded-xl p-4 space-y-3 ${
+              isAccessibilityMode ? 'border-slate-300 bg-white shadow-xs' : 'border-slate-800 bg-slate-900/70'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className={`text-xs font-bold ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>
+                    {t.home.previewTitle}
+                  </h2>
+                  <p className={`text-[11px] ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {t.home.previewDesc}
+                  </p>
+                </div>
+                <div className={`flex items-center p-0.5 rounded-lg border text-[11px] ${
+                  isAccessibilityMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-950 border-slate-800'
+                }`}>
+                  {previewTelemetry.sectors.map((sec, idx) => (
+                    <button
+                      key={sec.label}
+                      type="button"
+                      onClick={() => setPreviewSectorIdx(idx)}
+                      className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer whitespace-nowrap ${
+                        previewSectorIdx === idx
+                          ? 'bg-cyan-600 text-white font-semibold'
+                          : isAccessibilityMode
+                          ? 'text-slate-700 hover:text-slate-950'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {sec.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`grid grid-cols-3 gap-3 pt-2 border-t ${
+                isAccessibilityMode ? 'border-slate-200' : 'border-slate-800/80'
+              }`}>
+                <div>
+                  <div className={`text-[11px] ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {t.home.previewHeatIndex}
+                  </div>
+                  <div className={`text-base font-bold font-mono tabular-nums mt-0.5 ${
+                    previewTelemetry.heatIndexC >= 40
+                      ? isAccessibilityMode ? 'text-rose-700' : 'text-rose-400'
+                      : previewTelemetry.heatIndexC >= 34
+                      ? isAccessibilityMode ? 'text-amber-700' : 'text-amber-400'
+                      : isAccessibilityMode ? 'text-emerald-700' : 'text-emerald-400'
+                  }`}>
+                    {previewTelemetry.heatIndexC.toFixed(1)}°C
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-[11px] ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {t.home.previewMse}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`text-base font-bold font-mono tabular-nums ${
+                      isAccessibilityMode ? 'text-slate-950' : 'text-white'
+                    }`}>
+                      {previewTelemetry.anomaly.mseScore.toFixed(2)}
+                    </span>
+                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                      previewTelemetry.anomaly.riskTier === 'CRITICAL_RISK'
+                        ? isAccessibilityMode ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                        : previewTelemetry.anomaly.riskTier === 'MODERATE_RISK'
+                        ? isAccessibilityMode ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                        : isAccessibilityMode ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                    }`}>
+                      {previewTelemetry.anomaly.riskTier.replace('_RISK', '')}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`text-[11px] ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {t.home.previewPrivacy}
+                  </div>
+                  <div className={`text-xs font-mono tabular-nums font-semibold mt-1 ${
+                    isAccessibilityMode ? 'text-cyan-800' : 'text-cyan-300'
+                  }`}>
+                    N={previewTelemetry.active.cohortSize} (k&ge;12) · &epsilon;=0.5
+                  </div>
                 </div>
               </div>
             </div>
@@ -226,41 +379,43 @@ export default function LoginGatewayView({
 
           {/* Right Column (5 cols): Institutional Auth Card */}
           <div className="lg:col-span-5">
-            <div className="border border-slate-800 rounded-2xl bg-[#0B101E]/95 p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
+            <div className={`border rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md ${
+              isAccessibilityMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-[#0B101E]/95'
+            }`}>
               
               {/* Header inside Card */}
-              <div className="flex items-center justify-between pb-5 border-b border-slate-800/80 mb-5">
+              <div className="flex items-center justify-between pb-5 border-b border-slate-800/80 mb-5 gap-3">
                 <div>
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-cyan-400" />
+                    <Lock className="h-4 w-4 text-cyan-400 shrink-0" />
                     <span>
-                      {viewMode === 'LOGIN' && 'Enterprise Sign In'}
-                      {viewMode === 'SIGNUP' && 'Request Enterprise Access'}
-                      {viewMode === 'FORGOT_PASSWORD' && 'Reset Security Token'}
+                      {viewMode === 'LOGIN' && t.home.signInTitle}
+                      {viewMode === 'SIGNUP' && t.home.signUpTitle}
+                      {viewMode === 'FORGOT_PASSWORD' && t.home.forgotTitle}
                     </span>
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {viewMode === 'LOGIN' && 'Authorized workforce identity & access console.'}
-                    {viewMode === 'SIGNUP' && 'Role & persona clearance verified by Administrator.'}
-                    {viewMode === 'FORGOT_PASSWORD' && 'Dispatch recovery credentials to work email.'}
+                    {viewMode === 'LOGIN' && t.home.signInSubtitle}
+                    {viewMode === 'SIGNUP' && t.home.signUpSubtitle}
+                    {viewMode === 'FORGOT_PASSWORD' && t.home.forgotSubtitle}
                   </p>
                 </div>
 
                 {/* View switcher tabs */}
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs">
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs shrink-0">
                   <button
                     type="button"
                     onClick={() => {
                       setViewMode('LOGIN');
                       setStatusFeedback(null);
                     }}
-                    className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer whitespace-nowrap ${
                       viewMode === 'LOGIN'
                         ? 'bg-cyan-600 text-white shadow-xs'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Sign In
+                    {t.home.tabSignIn}
                   </button>
                   <button
                     type="button"
@@ -268,21 +423,27 @@ export default function LoginGatewayView({
                       setViewMode('SIGNUP');
                       setStatusFeedback(null);
                     }}
-                    className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer whitespace-nowrap ${
                       viewMode === 'SIGNUP'
                         ? 'bg-cyan-600 text-white shadow-xs'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Sign Up
+                    {t.home.tabSignUp}
                   </button>
                 </div>
               </div>
 
               {/* Status or Error Banner */}
               {statusFeedback && (
-                <div className="mb-4 p-3 rounded-xl bg-cyan-950/70 border border-cyan-500/50 text-cyan-200 text-xs flex items-center gap-2 animate-fadeIn">
-                  <Sparkles className="h-4 w-4 text-cyan-400 shrink-0" />
+                <div
+                  className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 animate-fadeIn border ${
+                    isErrorFeedback
+                      ? 'bg-rose-950/70 border-rose-500/50 text-rose-200'
+                      : 'bg-cyan-950/70 border-cyan-500/50 text-cyan-200'
+                  }`}
+                >
+                  <Sparkles className={`h-4 w-4 shrink-0 ${isErrorFeedback ? 'text-rose-400' : 'text-cyan-400'}`} />
                   <span>{statusFeedback}</span>
                 </div>
               )}
@@ -303,13 +464,13 @@ export default function LoginGatewayView({
                       <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
                       <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
                     </svg>
-                    <span>Sign In with Google Cloud SSO</span>
+                    <span>{t.home.googleSsoBtn}</span>
                   </button>
 
                   <div className="flex items-center my-3">
                     <div className="flex-1 border-t border-slate-800"></div>
                     <span className="px-3 text-[10px] font-mono text-slate-500 uppercase">
-                      Or Enterprise Credentials
+                      {t.home.orCredentials}
                     </span>
                     <div className="flex-1 border-t border-slate-800"></div>
                   </div>
@@ -317,7 +478,7 @@ export default function LoginGatewayView({
                   <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Corporate Work Email
+                        {t.home.emailLabel}
                       </label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
@@ -334,7 +495,7 @@ export default function LoginGatewayView({
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Password or SSO Security Key
+                        {t.home.passwordLabel}
                       </label>
                       <div className="relative">
                         <Key className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
@@ -363,7 +524,7 @@ export default function LoginGatewayView({
                           onChange={(e) => setRememberMe(e.target.checked)}
                           className="rounded border-slate-700 bg-slate-950 text-cyan-600 focus:ring-0"
                         />
-                        <span>Remember workstation</span>
+                        <span>{t.home.rememberMe}</span>
                       </label>
                       <button
                         type="button"
@@ -374,7 +535,7 @@ export default function LoginGatewayView({
                         }}
                         className="text-cyan-400 hover:underline cursor-pointer text-xs"
                       >
-                        Forgot password?
+                        {t.home.forgotLink}
                       </button>
                     </div>
 
@@ -384,50 +545,72 @@ export default function LoginGatewayView({
                       className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/40"
                     >
                       <LogIn className="h-3.5 w-3.5" />
-                      <span>Sign In to Surveillance Console</span>
+                      <span>{t.home.signInSubmitBtn}</span>
                     </button>
                   </form>
 
-                  {/* Institutional Directory Helper (Quick-fill for Evaluation) */}
+                  {/* Institutional Directory Helper (Single English Worker Login) */}
                   <div className="mt-4 pt-3 border-t border-slate-800/80">
-                    <span className="text-[10px] font-mono text-slate-500 block mb-1.5 uppercase">
-                      Admin Directory Quick-Fill (Test Accounts):
-                    </span>
                     <div className="flex flex-wrap gap-1.5 font-mono text-[11px]">
                       <button
                         type="button"
-                        onClick={() => setLoginEmail('sarah.chen@prognosticator.io')}
-                        className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 cursor-pointer text-[10px]"
+                        onClick={() => {
+                          setLoginEmail('sarah.chen@prognosticator.io');
+                          setIsErrorFeedback(false);
+                          setStatusFeedback(null);
+                        }}
+                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 cursor-pointer text-[10px]"
+                        title="Lands on Executive Whole-Site Command & Admin RBAC"
                       >
-                        Sarah (Safety Dir)
+                        {t.home.roleDirectorBtn}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setLoginEmail('dr.aravind@prognosticator.io')}
-                        className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 cursor-pointer text-[10px]"
+                        onClick={() => {
+                          setLoginEmail('dr.aravind@prognosticator.io');
+                          setIsErrorFeedback(false);
+                          setStatusFeedback(null);
+                        }}
+                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 cursor-pointer text-[10px]"
+                        title="Lands on Occupational Health & Clinical Triage Center"
                       >
-                        Dr. Aravind (Clinician)
+                        {t.home.roleClinicianBtn}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setLoginEmail('marcus.vance@plantops.net')}
-                        className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 cursor-pointer text-[10px]"
+                        onClick={() => {
+                          setLoginEmail('marcus.vance@plantops.net');
+                          setIsErrorFeedback(false);
+                          setStatusFeedback(null);
+                        }}
+                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 cursor-pointer text-[10px]"
+                        title="Lands on Facility HVAC & Mechanical Reliability Console"
                       >
-                        Marcus (Engineer)
+                        {t.home.roleEngineerBtn}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setLoginEmail('tariq.mansoor@worker.local')}
-                        className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 cursor-pointer text-[10px]"
+                        onClick={() => {
+                          setLoginEmail('e.rostova@wsh-inspector.gov');
+                          setIsErrorFeedback(false);
+                          setStatusFeedback(null);
+                        }}
+                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-rose-300 border border-rose-500/30 cursor-pointer text-[10px]"
+                        title="Lands on Statutory Regulatory Compliance & WSH Audit"
                       >
-                        Tariq (Worker)
+                        {t.home.roleAuditorBtn}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setLoginEmail('e.rostova@wsh-inspector.gov')}
-                        className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-rose-300 border border-rose-500/30 cursor-pointer text-[10px]"
+                        onClick={() => {
+                          setLoginEmail('tariq.mansoor@worker.local');
+                          setIsErrorFeedback(false);
+                          setStatusFeedback(null);
+                        }}
+                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 cursor-pointer text-[10px]"
+                        title="Lands on Sovereign Worker Shield"
                       >
-                        Elena (MOM Auditor)
+                        {t.home.roleWorkerBtn}
                       </button>
                     </div>
                   </div>
@@ -437,33 +620,53 @@ export default function LoginGatewayView({
               {/* VIEW 2: SIGN UP / REGISTRATION */}
               {viewMode === 'SIGNUP' && (
                 <form onSubmit={handleSignUpSubmit} className="space-y-3.5">
-                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
-                    <p className="font-semibold text-white mb-0.5 flex items-center gap-1.5">
-                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                      <span>Admin-Managed Role Governance</span>
-                    </p>
-                    <p className="text-slate-400 leading-relaxed">
-                      New registrations are assigned initial clearance and persona roles by the site Safety Director in accordance with statutory compliance and zero-trust PBAC standards.
-                    </p>
+                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300 relative">
+                    <div className="font-semibold text-white flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <span>{t.home.signupNoticeTitle}</span>
+                      <div className="inline-flex items-center group">
+                        <button
+                          type="button"
+                          onClick={() => setShowSignupNoticeInfo((prev) => !prev)}
+                          onBlur={() => setShowSignupNoticeInfo(false)}
+                          aria-label={t.home.signupNoticeDesc}
+                          aria-expanded={showSignupNoticeInfo}
+                          title={t.home.signupNoticeDesc}
+                          className="p-0.5 rounded-full text-slate-400 hover:text-cyan-400 focus:text-cyan-400 focus:outline-none cursor-pointer transition-colors"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                        <div
+                          role="tooltip"
+                          className={`absolute inset-x-0 top-full mt-1.5 p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-normal text-slate-200 leading-relaxed shadow-xl z-40 transition-opacity ${
+                            showSignupNoticeInfo
+                              ? 'block opacity-100'
+                              : 'hidden group-hover:block group-focus-within:block'
+                          }`}
+                        >
+                          {t.home.signupNoticeDesc}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Full Legal Name
+                      {t.home.fullNameLabel}
                     </label>
                     <input
                       type="text"
                       value={signupName}
                       onChange={(e) => setSignupName(e.target.value)}
                       required
-                      placeholder="e.g. Alex Mercer"
+                      placeholder={t.home.fullNameLabel}
                       className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Corporate Work Email
+                      {t.home.emailLabel}
                     </label>
                     <input
                       type="email"
@@ -477,7 +680,7 @@ export default function LoginGatewayView({
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Department / Operational Division
+                      {t.home.deptLabel}
                     </label>
                     <input
                       type="text"
@@ -491,7 +694,7 @@ export default function LoginGatewayView({
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Password
+                        {t.home.passwordLabel}
                       </label>
                       <input
                         type="password"
@@ -503,7 +706,7 @@ export default function LoginGatewayView({
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Confirm Password
+                        {t.home.confirmPasswordLabel}
                       </label>
                       <input
                         type="password"
@@ -521,7 +724,7 @@ export default function LoginGatewayView({
                     className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/40"
                   >
                     <UserPlus className="h-3.5 w-3.5" />
-                    <span>Request Access &amp; Register Account</span>
+                    <span>{t.home.signupSubmitBtn}</span>
                   </button>
 
                   <div className="text-center pt-2">
@@ -530,7 +733,7 @@ export default function LoginGatewayView({
                       onClick={() => setViewMode('LOGIN')}
                       className="text-xs text-slate-400 hover:text-cyan-400 cursor-pointer"
                     >
-                      Already have an account? <span className="text-cyan-400 underline">Sign In</span>
+                      {t.home.alreadyHaveAccount} <span className="text-cyan-400 underline">{t.home.tabSignIn}</span>
                     </button>
                   </div>
                 </form>
@@ -546,7 +749,7 @@ export default function LoginGatewayView({
                         <span>Security Dispatch Triggered</span>
                       </div>
                       <p className="text-slate-300 leading-relaxed">
-                        A secure password recovery link and single-use security token has been dispatched to <strong className="text-emerald-300">{resetEmail}</strong>.
+                        <strong className="text-emerald-300">{resetEmail}</strong>
                       </p>
                       <button
                         type="button"
@@ -556,18 +759,18 @@ export default function LoginGatewayView({
                         }}
                         className="mt-3 w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition cursor-pointer"
                       >
-                        Return to Sign In
+                        {t.home.backToSignIn}
                       </button>
                     </div>
                   ) : (
                     <form onSubmit={handleForgotPasswordSubmit} className="space-y-3.5">
                       <p className="text-xs text-slate-300 leading-relaxed">
-                        Enter your enterprise work email. A cryptographic recovery token will be dispatched to your inbox or company SSO directory.
+                        {t.home.forgotDesc}
                       </p>
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Enterprise Work Email
+                          {t.home.emailLabel}
                         </label>
                         <div className="relative">
                           <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
@@ -588,7 +791,7 @@ export default function LoginGatewayView({
                         className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/40"
                       >
                         <Send className="h-3.5 w-3.5" />
-                        <span>Dispatch Password Reset Link</span>
+                        <span>{t.home.resetSubmitBtn}</span>
                       </button>
 
                       <div className="text-center pt-2">
@@ -597,7 +800,7 @@ export default function LoginGatewayView({
                           onClick={() => setViewMode('LOGIN')}
                           className="text-xs text-slate-400 hover:text-white cursor-pointer"
                         >
-                          &larr; Back to Sign In
+                          {t.home.backToSignIn}
                         </button>
                       </div>
                     </form>
@@ -609,11 +812,24 @@ export default function LoginGatewayView({
         </div>
       </main>
 
-      {/* Enterprise Footer */}
-      <footer className="w-full border-t border-slate-800/80 bg-[#070B13] py-4">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between text-xs text-slate-500 font-mono text-[11px]">
-          <span>&copy; 2026 Prognosticator System. All rights reserved.</span>
-          <span>Role-Governed Health Early-Warning Architecture</span>
+      {/* Enterprise Footer with Single-Select Autocomplete Language Selector */}
+      <footer
+        dir={langOption.direction}
+        className={`w-full border-t py-4 transition-colors ${
+          isAccessibilityMode ? 'border-slate-300 bg-slate-200 text-slate-700' : 'border-slate-800/80 bg-[#070B13] text-slate-500'
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-sans">
+            <span>{t.home.footerCopyright}</span>
+            <span className={`hidden md:inline ${isAccessibilityMode ? 'text-slate-400' : 'text-slate-700'}`} aria-hidden="true">&middot;</span>
+            <span className="hidden md:inline">{t.home.footerTagline}</span>
+          </div>
+          <LanguageAutocomplete
+            dropDirection="up"
+            isAccessibilityMode={isAccessibilityMode}
+            idPrefix="home-footer-lang"
+          />
         </div>
       </footer>
     </div>

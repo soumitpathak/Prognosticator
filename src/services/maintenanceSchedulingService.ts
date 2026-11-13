@@ -321,7 +321,7 @@ class MaintenanceSchedulingManager {
       id: `AUD-MNT-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: 'Safety Director',
       userRole: 'EHS Manager on Duty',
       category: 'MAINTENANCE_DISPATCH',
       targetModule: 'Automated Predictive Maintenance Scheduler',

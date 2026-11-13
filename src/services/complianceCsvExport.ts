@@ -13,7 +13,7 @@ export function exportCurrentAnomalyLogsAndTrendsCsv({
   trendData,
   zones,
   telemetryStream,
-  supervisorName = 'Alex Mercer (EHS Safety Supervisor)',
+  supervisorName = 'Safety Director (EHS Safety Supervisor)',
   auditStandard = 'ISO 45001:2018 / OSHA 29 CFR 1910.120',
   currentZoneName = 'All Monitored Facility Zones'
 }: {

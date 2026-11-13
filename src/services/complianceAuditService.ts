@@ -10,7 +10,7 @@ export interface ComplianceAuditRecord {
   timeFormatted: string; // e.g. "14:23:10"
   dateFormatted: string; // e.g. "2026-10-30"
   eventType: 'MANUAL_OVERRIDE' | 'AUTOMATED_ADJUSTMENT' | 'SYSTEM_COMPLIANCE' | 'SECURITY_ACCESS' | 'SAFETY_DISPATCH';
-  actor: string; // e.g. "Alex Mercer (Safety Lead)" or "Autonomous Kalman-LSTM Sentinel"
+  actor: string; // e.g. "Safety Director (Safety Lead)" or "Autonomous Kalman-LSTM Sentinel"
   actorRole: string; // e.g. "EHS Lead Supervisor" or "AI Core Gateway"
   actorType: 'USER' | 'SYSTEM';
   targetModule: string; // e.g. "Health Risk Trend Chart", "Kalman Filter Gateway", "Automated HVAC Control"
@@ -34,7 +34,7 @@ const INITIAL_AUDIT_RECORDS: ComplianceAuditRecord[] = [
     timeFormatted: '14:15:22',
     dateFormatted: '2026-10-30',
     eventType: 'MANUAL_OVERRIDE',
-    actor: 'Alex Mercer',
+    actor: 'Safety Director',
     actorRole: 'Safety Compliance Officer',
     actorType: 'USER',
     targetModule: 'Health Risk Trend Chart',
@@ -129,7 +129,7 @@ const INITIAL_AUDIT_RECORDS: ComplianceAuditRecord[] = [
     timeFormatted: '09:00:00',
     dateFormatted: '2026-10-30',
     eventType: 'SECURITY_ACCESS',
-    actor: 'Alex Mercer',
+    actor: 'Safety Director',
     actorRole: 'Safety Compliance Officer',
     actorType: 'USER',
     targetModule: 'Privacy Shield & Worker Vitals',

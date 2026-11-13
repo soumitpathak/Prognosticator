@@ -50,7 +50,7 @@ export default function ShiftHandoverModal({
   onLogAudit,
   onNotice
 }: ShiftHandoverModalProps) {
-  const [outgoingSupervisor] = useState<string>('Alex Mercer (EHS Lead - Outgoing Shift)');
+  const [outgoingSupervisor] = useState<string>('Outgoing Shift Supervisor (EHS Lead)');
   const [incomingSupervisor, setIncomingSupervisor] = useState<string>('Jordan Hayes (EHS Supervisor - Incoming Shift)');
   const [copied, setCopied] = useState<boolean>(false);
   const [isSignedOff, setIsSignedOff] = useState<boolean>(false);

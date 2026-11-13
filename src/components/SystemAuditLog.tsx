@@ -122,7 +122,7 @@ export default function SystemAuditLog({ logs, onAddManualLog }: SystemAuditLogP
     if (onAddManualLog) {
       onAddManualLog({
         userId: formUserId.trim() || 'USR-MGR-2026',
-        userName: formUserName.trim() || 'Alex Mercer',
+        userName: formUserName.trim() || 'Safety Director',
         userRole: formUserRole || 'EHS Safety Supervisor',
         category: formCategory,
         targetModule: formTargetModule,

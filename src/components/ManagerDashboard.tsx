@@ -199,6 +199,9 @@ import { complianceAuditService } from '../services/complianceAuditService';
 import { chartAnnotationService } from '../services/chartAnnotationService';
 import { generateDashboardSummaryPdfReport } from '../services/dashboardSummaryPdfGenerator';
 import { FileText, Loader2, Navigation, ShieldCheck, Shield, Crosshair, Wrench, Volume2, VolumeX, UserCheck, Sparkles, Heart, Clock, History, ChevronDown, FileCode, Bell, BellRing, Flame, Globe, GitMerge, BarChart3, Compass, Smartphone, BookmarkCheck, Layers, Mail, Cpu, Calendar, Camera, Wind, GitCompare, Sun, Moon, AlertOctagon } from 'lucide-react';
+import { useTranslation } from '../services/i18nService';
+import { crossRoleOperationsService, useCrossRoleOperations } from '../services/crossRoleOperationsService';
+import LanguageAutocomplete from './LanguageAutocomplete';
 
 export type TeamMemberRole = 'SAFETY_OFFICER' | 'MAINTENANCE_CREW' | 'OPERATIONS_LEAD';
 
@@ -335,6 +338,11 @@ export default function ManagerDashboard({
   onToggleAccessibilityMode: propOnToggleAccessibilityMode,
   currentUser
 }: ManagerDashboardProps = {}) {
+  const { t } = useTranslation();
+  const m = t.manager;
+  const crossRoleOps = useCrossRoleOperations();
+  const activeActorName = currentUser?.name || 'Safety Director';
+  const activeActorLabel = currentUser ? `${currentUser.name} (${currentUser.roleTitle})` : 'Safety Director (EHS Safety Supervisor)';
   const [selectedZone, setSelectedZone] = useState<string>('Outdoor-Construction-Sector-4');
   const [loading, setLoading] = useState<boolean>(false);
   const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
@@ -454,26 +462,37 @@ export default function ManagerDashboard({
   const [healthDateRange, setHealthDateRange] = useState<DateRangeSelection>(DEFAULT_DATE_RANGE);
   const [selectedComparisonDeptId, setSelectedComparisonDeptId] = useState<string>('Outdoor-Construction-Sector-4');
 
-  // Progressive below-the-fold component loading for instantaneous initial page load
-  const [isDeferredLoaded, setIsDeferredLoaded] = useState<boolean>(false);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsDeferredLoaded(true);
-    }, 40);
-    return () => clearTimeout(timer);
-  }, []);
+  // Consolidated Live Command Sub-Tabs ('COMMAND' | 'FORECASTS' | 'ANALYTICS' | 'GOVERNANCE')
+  type LiveSubSection = 'COMMAND' | 'FORECASTS' | 'ANALYTICS' | 'GOVERNANCE';
+  const [liveSection, setLiveSection] = useState<LiveSubSection>('COMMAND');
+
+  const jumpToLiveSection = useCallback(
+    (section: LiveSubSection, elementId?: string, highlightRingClass?: string) => {
+      setManagerTab('live');
+      setLiveSection(section);
+      if (elementId) {
+        setTimeout(() => {
+          const el = document.getElementById(elementId);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (highlightRingClass) {
+              const classes = highlightRingClass.split(' ').filter(Boolean);
+              el.classList.add('transition-all', ...classes);
+              setTimeout(() => el.classList.remove(...classes), 2800);
+            }
+          }
+        }, 80);
+      }
+    },
+    []
+  );
 
   // What-If Simulator state for WorkforceRiskTrend7DaysChart
   const [isWhatIfSimulatorOpen, setIsWhatIfSimulatorOpen] = useState<boolean>(false);
 
   const handleOpenWhatIfSimulator = () => {
     setIsWhatIfSimulatorOpen(true);
-    const el = document.getElementById('workforce-risk-trend-7d-card');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
-    }
+    jumpToLiveSection('FORECASTS', 'workforce-risk-trend-7d-card', 'ring-2 ring-cyan-500');
   };
 
   // User-Defined Health Telemetry Risk Threshold State (Persisted in localStorage)
@@ -502,7 +521,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-THRESH'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Safety Supervisor',
       category: 'THRESHOLD_CHANGE',
       targetModule: 'Health Telemetry Risk Threshold Sentinel',
@@ -589,7 +608,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-NOTIF'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor',
         category: 'THRESHOLD_CHANGE',
         targetModule: 'Health Telemetry Risk Threshold Sentinel',
@@ -651,6 +670,7 @@ export default function ManagerDashboard({
         setManagerTab('complianceAudit');
       } else if (currentUser.role === 'SAFETY_DIRECTOR') {
         setManagerTab('live');
+        setLiveSection('COMMAND');
         setActiveRole('SAFETY_OFFICER');
       }
     }
@@ -669,7 +689,7 @@ export default function ManagerDashboard({
     setActiveRole(newRole);
     complianceAuditService.logEvent({
       eventType: 'MANUAL_OVERRIDE',
-      actor: 'Alex Mercer',
+      actor: currentUser?.name || 'Sarah Chen, CSP',
       actorRole:
         newRole === 'SAFETY_OFFICER'
           ? 'Safety Compliance Officer'
@@ -704,7 +724,7 @@ export default function ManagerDashboard({
       }
       complianceAuditService.logEvent({
         eventType: 'MANUAL_OVERRIDE',
-        actor: 'Alex Mercer',
+        actor: activeActorName,
         actorRole: 'Safety Compliance Officer',
         actorType: 'USER',
         targetModule: 'Real-Time Notification Dispatcher',
@@ -890,7 +910,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-CSV'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Operations Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Daily Summary Report',
@@ -957,7 +977,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-EXP'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Lead Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Historical Anomaly Events Log',
@@ -987,7 +1007,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-PDF'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Lead Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Historical Anomaly Events Log',
@@ -1010,7 +1030,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-PDF'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Lead Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Real-Time Health Metrics & KPI Display',
@@ -1143,13 +1163,8 @@ export default function ManagerDashboard({
 
   // Scroll smoothly to Forecast / Trend Chart
   const handleScrollToForecastChart = useCallback(() => {
-    const el = document.getElementById('anomaly-trend-30d-card') || document.getElementById('incident-projection-chart-card');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-rose-500', 'transition-all');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-rose-500'), 3000);
-    }
-  }, []);
+    jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card', 'ring-2 ring-rose-500');
+  }, [jumpToLiveSection]);
 
   // Real-Time Notification Toast System State
   const [activeToasts, setActiveToasts] = useState<ThresholdBreachToast[]>([]);
@@ -1228,9 +1243,8 @@ export default function ManagerDashboard({
 
   const handleInspectCriticalToastInChart = useCallback((zoneId: string) => {
     setAnomalyTrendZoneId(zoneId);
-    const el = document.getElementById('anomaly-trend-30d-card');
-    el?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+    jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+  }, [jumpToLiveSection]);
 
   const triggerCriticalAnomalyNotification = useCallback(
     (params: {
@@ -2126,20 +2140,17 @@ export default function ManagerDashboard({
 
   const handleInspectSignalInChart = (signalKey: string) => {
     if (signalKey.includes('Sector') || signalKey.includes('Zone') || signalKey.includes('Line') || signalKey.includes('Hub') || signalKey.includes('Tunnel') || signalKey.toLowerCase().includes('kalman')) {
-      const el = document.getElementById('kalman-predictive-model-30days-chart') || document.getElementById('historical-workforce-health-chart') || document.getElementById('telemetry-charts-card');
-      el?.scrollIntoView({ behavior: 'smooth' });
+      jumpToLiveSection('ANALYTICS', 'kalman-predictive-model-30days-chart');
       return;
     }
 
     if (signalKey === 'anomalyEngine') {
-      const el = document.getElementById('active-anomalies-widget') || document.getElementById('historical-health-chart-card');
-      el?.scrollIntoView({ behavior: 'smooth' });
+      jumpToLiveSection('COMMAND', 'active-anomalies-widget');
       setIsolatedHealthSignal('riskScore');
       return;
     }
 
-    const el = document.getElementById('historical-health-chart-card');
-    el?.scrollIntoView({ behavior: 'smooth' });
+    jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
 
     // Set correlation overlay pairing
     if (signalKey === 'ambientTemp' || signalKey === 'noiseDb' || signalKey === 'twl' || signalKey === 'aqi') {
@@ -2334,7 +2345,7 @@ export default function ManagerDashboard({
       id: `AUD-HT-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Manager on Duty',
       category: 'THRESHOLD_CHANGE',
       targetModule: 'Workforce Health Signals Rule Engine',
@@ -2366,7 +2377,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-CSV'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor',
         category: 'REPORT_EXPORT',
         targetModule: 'Workforce Telemetry Data Exporter',
@@ -2416,7 +2427,7 @@ export default function ManagerDashboard({
         activeAlerts,
         telemetryStream,
         currentZone: currentActiveZone,
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor'
       });
 
@@ -2424,7 +2435,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-DASH-CSV'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor',
         category: 'REPORT_EXPORT',
         targetModule: 'Dashboard Data CSV Export Engine',
@@ -2473,7 +2484,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-PDF'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Safety Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Print-Friendly Telemetry PDF Engine',
@@ -2488,7 +2499,7 @@ export default function ManagerDashboard({
     // Record statutory HIPAA / OSHA compliance access event
     systemComplianceService.logEvent({
       accessorId: 'USR-MGR-2026',
-      accessorName: 'Alex Mercer',
+      accessorName: activeActorName,
       accessorRole: 'EHS Safety Supervisor',
       department: currentZone.name,
       reportName: 'Comprehensive Workforce Health Telemetry Report',
@@ -2575,7 +2586,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-JHSC'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Safety Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Safety Committee PDF Report Engine',
@@ -2658,7 +2669,7 @@ export default function ManagerDashboard({
         zones,
         telemetryStream,
         annotations: chartAnnotationService.getAnnotations(),
-        supervisorName: 'Alex Mercer (Safety Compliance Lead)',
+        supervisorName: activeActorLabel,
         activeRole:
           activeRole === 'SAFETY_OFFICER'
             ? 'Safety Compliance Officer'
@@ -2690,7 +2701,7 @@ export default function ManagerDashboard({
           currentZone: activeZoneObj,
           activeAlerts,
           thresholds: healthThresholds,
-          userName: 'Alex Mercer (EHS Lead Supervisor)'
+          userName: activeActorLabel
         });
         filename = res.filename;
       } else {
@@ -2700,7 +2711,7 @@ export default function ManagerDashboard({
           currentZone: activeZoneObj,
           activeAlerts,
           thresholds: healthThresholds,
-          userName: 'Alex Mercer (EHS Lead Supervisor)'
+          userName: activeActorLabel
         });
         filename = res.filename;
       }
@@ -2710,7 +2721,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-EXP'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor',
         category: 'REPORT_EXPORT',
         targetModule: '30-Day Anomaly Trend Intelligence',
@@ -2893,7 +2904,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-DTH'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Lead Supervisor',
         category: 'THRESHOLD_CHANGE',
         targetModule: 'Department Risk Score Thresholds',
@@ -2923,14 +2934,14 @@ export default function ManagerDashboard({
   const handleSimulatedComplianceCsvExport = useCallback(() => {
     const res = serializeCurrentAnomalyDataToCsvAndDownload(activeAlerts, activeZoneObj, {
       auditStandard: 'ISO 45001:2018 / OSHA 1910 Compliance Framework',
-      userName: 'Alex Mercer (EHS Safety Supervisor)'
+      userName: activeActorLabel
     });
 
     const auditEntry: SystemAuditLogEntry = {
       id: generateUniqueId('AUD-CSV'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Lead Supervisor',
       category: 'REPORT_EXPORT',
       targetModule: 'Enterprise Anomaly Telemetry Export',
@@ -3054,7 +3065,7 @@ export default function ManagerDashboard({
       id: generateUniqueId('AUD-TEST'),
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Lead Supervisor',
       category: 'THRESHOLD_CHANGE',
       targetModule: 'Notification Center (Test Injection)',
@@ -3077,11 +3088,8 @@ export default function ManagerDashboard({
     setTimeout(() => setProtocolActiveNotice(null), 8000);
 
     // Scroll smoothly to Notification Center
-    const el = document.getElementById('notification-center-section');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [activeZoneObj, toastSoundEnabled, voiceSettings.severityAudioToggles]);
+    jumpToLiveSection('GOVERNANCE', 'notification-center-section');
+  }, [activeZoneObj, toastSoundEnabled, voiceSettings.severityAudioToggles, jumpToLiveSection]);
 
   // Stage Pre-Emptive Protocols from 12-Hour LSTM Predictive Risk Forecast
   const handleStageLstmPreemptiveMitigation = useCallback(
@@ -3104,7 +3112,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-LSTM'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Lead Supervisor',
         category: 'MAINTENANCE_DISPATCH',
         targetModule: '12-Hour LSTM Predictive Risk Forecaster',
@@ -3236,7 +3244,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-NOTIF'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Lead Supervisor',
         category: 'THRESHOLD_CHANGE',
         targetModule: 'Kalman Filter Real-Time Confidence Monitor',
@@ -3284,7 +3292,7 @@ export default function ManagerDashboard({
   const handleExportCurrentAnomalyCsvDirect = useCallback(() => {
     try {
       const res = serializeCurrentAnomalyDataToCsvAndDownload(activeAlerts, activeZoneObj, {
-        userName: 'Alex Mercer (EHS Safety Supervisor)',
+        userName: activeActorLabel,
         auditStandard: 'ISO 45001 / OSHA 1910 Occupational Safety Standard'
       });
 
@@ -3292,7 +3300,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-CSV'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor',
         category: 'REPORT_EXPORT',
         targetModule: 'Current Anomaly State Serializer',
@@ -3324,7 +3332,7 @@ export default function ManagerDashboard({
         trendData: anomalyTrend30d,
         zones,
         telemetryStream,
-        supervisorName: 'Alex Mercer (EHS Safety Supervisor)',
+        supervisorName: activeActorLabel,
         auditStandard: 'ISO 45001:2018 / OSHA 29 CFR 1910.120',
         currentZoneName: activeZoneObj.name
       });
@@ -3333,7 +3341,7 @@ export default function ManagerDashboard({
         id: generateUniqueId('AUD-COMP'),
         timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
         userId: 'USR-MGR-2026',
-        userName: 'Alex Mercer',
+        userName: activeActorName,
         userRole: 'EHS Safety Supervisor',
         category: 'REPORT_EXPORT',
         targetModule: 'Compliance Reporting Engine',
@@ -3348,7 +3356,7 @@ export default function ManagerDashboard({
       // Record in tamper-evident compliance audit trail
       complianceAuditService.logEvent({
         eventType: 'MANUAL_OVERRIDE',
-        actor: 'Alex Mercer',
+        actor: activeActorName,
         actorRole:
           activeRole === 'SAFETY_OFFICER'
             ? 'Safety Compliance Officer'
@@ -3708,7 +3716,7 @@ export default function ManagerDashboard({
       id: `AUD-ZN-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Manager on Duty',
       category: 'ZONE_CONFIG',
       targetModule: `Zone: ${newZone.name}`,
@@ -4034,7 +4042,7 @@ export default function ManagerDashboard({
       id: `AUD-TH-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Manager on Duty',
       category: 'THRESHOLD_CHANGE',
       targetModule: 'Kalman Anomaly Filter Engine',
@@ -4262,7 +4270,7 @@ export default function ManagerDashboard({
       id: `AUD-BIO-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: activeActorName,
       userRole: 'EHS Manager on Duty',
       category: 'BIOMETRIC_SYNC',
       targetModule: 'Wearable Health Device BLE Ingestion Hub',
@@ -4298,7 +4306,7 @@ export default function ManagerDashboard({
           </div>
           <div className="text-right text-xs font-mono text-slate-700">
             <div><strong>Date:</strong> {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-            <div><strong>Site Lead:</strong> Alex Mercer (EHS Safety Supervisor)</div>
+            <div><strong>Site Lead:</strong> {activeActorLabel}</div>
             <div><strong>Scope:</strong> {activeZoneObj.name}</div>
           </div>
         </div>
@@ -4462,7 +4470,7 @@ export default function ManagerDashboard({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">
-                Surveillance Command
+                {m.surveillanceCommand}
               </span>
               <span className="text-slate-600">/</span>
               <span className="text-xs font-bold text-cyan-300 font-mono">
@@ -4470,9 +4478,9 @@ export default function ManagerDashboard({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 font-mono">
-              <span>{activeZoneObj.count} Monitored Personnel</span>
+              <span>{activeZoneObj.count} {m.monitoredPersonnel}</span>
               <span>&middot;</span>
-              <span className="text-emerald-400">Kalman Active (Q={kalmanConfig.processVarianceQ.toFixed(2)})</span>
+              <span className="text-emerald-400">{m.kalmanActive} (Q={kalmanConfig.processVarianceQ.toFixed(2)})</span>
             </p>
           </div>
         </div>
@@ -4503,11 +4511,9 @@ export default function ManagerDashboard({
               if (matchedAlert) {
                 handleOpenAnomalyDetails(matchedAlert);
               } else {
-                if (managerTab !== 'live') setManagerTab('live');
                 setProtocolActiveNotice(`Global Search: Selected Alert Log [${alertId}]. Navigating to Incident Records.`);
                 setTimeout(() => setProtocolActiveNotice(null), 5000);
-                const el = document.getElementById('incident-log-section') || document.getElementById('historical-anomaly-events-log');
-                el?.scrollIntoView({ behavior: 'smooth' });
+                jumpToLiveSection('GOVERNANCE', 'incident-log-section');
               }
             }}
             onSelectWorker={(workerId, zoneId) => {
@@ -4524,16 +4530,13 @@ export default function ManagerDashboard({
               );
               setProtocolActiveNotice(`Global Search: Located Worker [${workerId}] in ${zoneId || activeZoneObj.name}. Live wearable telemetry focused.`);
               setTimeout(() => setProtocolActiveNotice(null), 5000);
-              const el = document.getElementById('biometric-sync-section') || document.getElementById('worker-density-correlation-section');
-              el?.scrollIntoView({ behavior: 'smooth' });
+              jumpToLiveSection('FORECASTS', 'biometric-sync-section');
             }}
             onSelectTelemetryCategory={(categoryKey) => {
               setIsolatedHealthSignal(categoryKey);
-              if (managerTab !== 'live') setManagerTab('live');
               setProtocolActiveNotice(`Global Search: Isolated Telemetry Category [${categoryKey.toUpperCase()}]. Highlighting multi-signal stream.`);
               setTimeout(() => setProtocolActiveNotice(null), 5000);
-              const el = document.getElementById('historical-workforce-health-chart') || document.getElementById('telemetry-charts-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
+              jumpToLiveSection('ANALYTICS', 'historical-workforce-health-chart');
             }}
             onSelectReport={(reportKey) => {
               if (reportKey === 'DOWNLOAD_PDF_REPORT') {
@@ -4555,8 +4558,7 @@ export default function ManagerDashboard({
               } else if (reportKey === 'HEALTH_METRICS_PDF') {
                 setIsHealthMetricsPdfModalOpen(true);
               } else if (reportKey === 'ANOMALY_TREND_30D') {
-                const el = document.getElementById('anomaly-trend-30d-card');
-                el?.scrollIntoView({ behavior: 'smooth' });
+                jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
               } else if (reportKey === 'PREDICTIVE_MAINTENANCE_TAB') {
                 setManagerTab('predictiveMaintenance');
               } else if (reportKey === 'RESOURCE_UTILIZATION_HEATMAP') {
@@ -4564,23 +4566,11 @@ export default function ManagerDashboard({
                 const el = document.getElementById('resource-utilization-panel');
                 el?.scrollIntoView({ behavior: 'smooth' });
               } else if (reportKey === 'COHORT_COMPARISON_VIEW') {
-                if (managerTab !== 'live') setManagerTab('live');
-                setTimeout(() => {
-                  const el = document.getElementById('cohort-health-comparison-line-view');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }, 50);
+                jumpToLiveSection('ANALYTICS', 'cohort-health-comparison-line-view');
               } else if (reportKey === 'PREDICTIVE_30D_MODEL') {
-                if (managerTab !== 'live') setManagerTab('live');
-                setTimeout(() => {
-                  const el = document.getElementById('kalman-predictive-model-30days-chart');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }, 50);
+                jumpToLiveSection('ANALYTICS', 'kalman-predictive-model-30days-chart');
               } else if (reportKey === 'INCIDENT_LOG') {
-                if (managerTab !== 'live') setManagerTab('live');
-                setTimeout(() => {
-                  const el = document.getElementById('incident-log-section');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }, 50);
+                jumpToLiveSection('GOVERNANCE', 'incident-log-section');
               }
             }}
           />
@@ -4590,7 +4580,7 @@ export default function ManagerDashboard({
         <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 shadow-inner shrink-0 h-9">
           <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-2 flex items-center gap-1">
             <Users className="h-3 w-3 text-cyan-400" />
-            <span className="hidden sm:inline">Role View:</span>
+            <span className="hidden sm:inline">{m.roleView}</span>
           </span>
           <button
             onClick={() => handleSwitchRole('SAFETY_OFFICER')}
@@ -4602,7 +4592,7 @@ export default function ManagerDashboard({
             title="Safety Compliance Officer: Unrestricted access to all forecast models, biometric telemetry, and HIPAA audit trails"
           >
             <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Safety Officer</span>
+            <span>{m.safetyOfficer}</span>
           </button>
           <button
             onClick={() => handleSwitchRole('MAINTENANCE_CREW')}
@@ -4614,7 +4604,7 @@ export default function ManagerDashboard({
             title="Maintenance Crew: Focus on HVAC, environmental sensors, and equipment health. Sensitive worker biometric forecasts restricted."
           >
             <Wrench className="h-3.5 w-3.5" />
-            <span>Maintenance Crew</span>
+            <span>{m.maintenanceCrew}</span>
             <span className="text-[9px] font-mono bg-amber-950 text-amber-200 px-1 rounded uppercase">Restricted</span>
           </button>
           <button
@@ -4627,12 +4617,19 @@ export default function ManagerDashboard({
             title="Site Operations Lead: Operational throughput, worker coverage, and shift health overview"
           >
             <UserCheck className="h-3.5 w-3.5" />
-            <span>Ops Lead</span>
+            <span>{m.opsLead}</span>
           </button>
         </div>
 
         {/* Top Right Quick Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <LanguageAutocomplete
+            dropDirection="down"
+            compact
+            isAccessibilityMode={dashboardTheme === 'high-contrast-light'}
+            idPrefix="manager-landing-lang"
+          />
+
           {/* Mute Alerts Quick Toggle */}
           <button
             onClick={handleToggleMuteAlerts}
@@ -4648,7 +4645,7 @@ export default function ManagerDashboard({
             ) : (
               <Volume2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
             )}
-            <span>{isAlertsMuted ? 'Alerts Muted' : 'Mute'}</span>
+            <span>{isAlertsMuted ? m.alertsMuted : m.mute}</span>
           </button>
 
           {/* Top-Right Notification Center anchored in top right */}
@@ -4748,7 +4745,7 @@ export default function ManagerDashboard({
             title="Download current workforce telemetry data as a CSV file for offline analysis"
           >
             <Download className="h-3.5 w-3.5" />
-            <span>Download CSV</span>
+            <span>{m.downloadCsv}</span>
           </button>
 
           {/* Download PDF Report (Print Styles) */}
@@ -4758,7 +4755,7 @@ export default function ManagerDashboard({
             title="Download comprehensive PDF report of current telemetry data leveraging print-friendly styles"
           >
             <Printer className="h-3.5 w-3.5" />
-            <span>Download PDF Report</span>
+            <span>{m.downloadPdfReport}</span>
           </button>
 
           {/* Simulate Kalman Anomaly Alert Toast */}
@@ -4768,7 +4765,7 @@ export default function ManagerDashboard({
             title="Trigger visual toast alert for a significant Kalman filtering health telemetry anomaly"
           >
             <Cpu className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-            <span>Simulate Kalman Anomaly</span>
+            <span>{m.simulateKalman}</span>
           </button>
 
           {/* What-If Simulator Trigger */}
@@ -4778,7 +4775,7 @@ export default function ManagerDashboard({
             title="Launch What-If Environmental & Physical Stress Simulation"
           >
             <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            <span>What-If Simulator</span>
+            <span>{m.whatIfSimulator}</span>
           </button>
 
           {/* Telemetry Ingest & Industry Benchmarks */}
@@ -4788,7 +4785,7 @@ export default function ManagerDashboard({
             title="Upload custom CSV/JSON telemetry or load industry benchmark datasets (Foundry, Mining, Solar, Cold-Chain)"
           >
             <UploadCloud className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Ingest &amp; Benchmarks</span>
+            <span>{m.ingestBenchmarks}</span>
           </button>
 
           {/* Reports & Export Dropdown */}
@@ -4801,7 +4798,7 @@ export default function ManagerDashboard({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-700 transition cursor-pointer shadow-xs"
             >
               <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Reports &amp; Export</span>
+              <span>{m.reportsExport}</span>
               <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -4969,14 +4966,9 @@ export default function ManagerDashboard({
                   <span>Audio &amp; Voice Config</span>
                 </button>
                 <button
-                  onClick={() => {
-                    const el = document.getElementById('d3-rolling-30d-health-signals-section');
-                    if (el) {
-                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
-                      setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
-                    }
-                  }}
+                  onClick={() =>
+                    jumpToLiveSection('ANALYTICS', 'd3-rolling-30d-health-signals-section', 'ring-2 ring-cyan-500')
+                  }
                   className="w-full text-left px-3 py-2 text-cyan-300 hover:bg-cyan-950/40 flex items-center gap-2 cursor-pointer transition font-medium"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
@@ -5042,7 +5034,7 @@ export default function ManagerDashboard({
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 text-slate-400 font-semibold mr-1">
             <Filter className="h-3.5 w-3.5 text-cyan-400" />
-            <span className="uppercase tracking-wider text-[11px] font-mono">Signal Visibility:</span>
+            <span className="uppercase tracking-wider text-[11px] font-mono">{m.signalVisibility}</span>
           </div>
 
           {/* Cardiac Signals Category Toggle */}
@@ -5056,7 +5048,7 @@ export default function ManagerDashboard({
             title="Toggle visibility of Cardiac telemetry signals (Heart Rate, Kalman HRV, HRV Drops, Blood Pressure)"
           >
             <Heart className={`h-3 w-3 ${signalCategories.cardiac ? 'text-rose-400' : 'text-slate-600'}`} />
-            <span>Cardiac Signals</span>
+            <span>{m.cardiacSignals}</span>
             <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.cardiac ? 'bg-rose-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
               {signalCategories.cardiac ? 'ON' : 'OFF'}
             </span>
@@ -5073,7 +5065,7 @@ export default function ManagerDashboard({
             title="Toggle visibility of Environmental telemetry signals (Skin Temp, Ambient Temp, TWL, Noise dB, AQI)"
           >
             <Thermometer className={`h-3 w-3 ${signalCategories.environmental ? 'text-amber-400' : 'text-slate-600'}`} />
-            <span>Environmental Signals</span>
+            <span>{m.environmentalSignals}</span>
             <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.environmental ? 'bg-amber-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
               {signalCategories.environmental ? 'ON' : 'OFF'}
             </span>
@@ -5090,7 +5082,7 @@ export default function ManagerDashboard({
             title="Toggle visibility of Performance & Operational risk metrics (Risk Score, Stress Index, Vibration, Projections)"
           >
             <ShieldAlert className={`h-3 w-3 ${signalCategories.performance ? 'text-purple-400' : 'text-slate-600'}`} />
-            <span>Performance Signals</span>
+            <span>{m.performanceSignals}</span>
             <span className={`text-[10px] font-mono px-1 rounded ${signalCategories.performance ? 'bg-purple-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
               {signalCategories.performance ? 'ON' : 'OFF'}
             </span>
@@ -5107,7 +5099,7 @@ export default function ManagerDashboard({
             title="Toggle historical rolling moving averages across all charts to identify long-term signal degradation trends"
           >
             <TrendingUp className={`h-3 w-3 ${showGlobalMovingAverages ? 'text-emerald-400' : 'text-slate-600'}`} />
-            <span>Historical Moving Averages</span>
+            <span>{m.historicalMovingAvg}</span>
             <span className={`text-[10px] font-mono px-1 rounded ${showGlobalMovingAverages ? 'bg-emerald-900 text-white' : 'bg-slate-900 text-slate-500'}`}>
               {showGlobalMovingAverages ? 'ACTIVE' : 'OFF'}
             </span>
@@ -5121,7 +5113,7 @@ export default function ManagerDashboard({
               className="px-2 py-1 rounded text-xs text-amber-300 hover:text-white bg-amber-950/60 border border-amber-600/40 cursor-pointer flex items-center gap-1 font-mono"
             >
               <RotateCcw className="h-3 w-3" />
-              <span>Reset Filters</span>
+              <span>{m.resetFilters}</span>
             </button>
           )}
 
@@ -5130,7 +5122,7 @@ export default function ManagerDashboard({
             className="px-2.5 py-1 rounded-lg text-xs font-semibold text-cyan-300 hover:text-white bg-slate-950 hover:bg-slate-800 border border-slate-700 cursor-pointer flex items-center gap-1.5"
           >
             <Sliders className="h-3 w-3 text-cyan-400" />
-            <span>Configure Signals &rarr;</span>
+            <span>{m.configureSignals} &rarr;</span>
           </button>
         </div>
       </div>
@@ -5164,12 +5156,10 @@ export default function ManagerDashboard({
           engineUptimePct={99.98}
           systemLatencyMs={18.4}
           onJumpToAlerts={() => {
-            const el = document.getElementById('active-alerts-section');
-            el?.scrollIntoView({ behavior: 'smooth' });
+            jumpToLiveSection('COMMAND', 'active-alerts-section');
           }}
           onJumpToZones={() => {
-            const el = document.getElementById('floorplan-view-section');
-            el?.scrollIntoView({ behavior: 'smooth' });
+            jumpToLiveSection('COMMAND', 'floor-plan-2d-view');
           }}
           onDownloadPdfReport={handleDownloadDashboardSummaryPdf}
           onDownloadCsvReport={handleDownloadWorkforceTelemetryCsv}
@@ -5190,7 +5180,7 @@ export default function ManagerDashboard({
             }`}
           >
             <Activity className="h-4 w-4" />
-            <span>Live Operations</span>
+            <span>{m.tabLive}</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-900 text-cyan-300 font-mono">
               Real-Time
             </span>
@@ -5206,7 +5196,7 @@ export default function ManagerDashboard({
             }`}
           >
             <Users className="h-4 w-4 text-amber-300" />
-            <span>Resource Utilization</span>
+            <span>{m.tabResources}</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 font-mono font-bold border border-amber-500/40">
               Heatmap
             </span>
@@ -5222,7 +5212,7 @@ export default function ManagerDashboard({
             }`}
           >
             <ShieldAlert className="h-4 w-4 text-emerald-400" />
-            <span>Compliance Audit Log</span>
+            <span>{m.tabComplianceAudit}</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
               CSV Export
             </span>
@@ -5237,7 +5227,7 @@ export default function ManagerDashboard({
             }`}
           >
             <ShieldCheck className="h-4 w-4 text-emerald-300" />
-            <span>HIPAA Access Log</span>
+            <span>{m.tabHipaaLog}</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 font-mono font-bold border border-emerald-500/40">
               Security
             </span>
@@ -5252,7 +5242,7 @@ export default function ManagerDashboard({
             }`}
           >
             <Cpu className="h-4 w-4 text-cyan-300" />
-            <span>Predictive Maintenance</span>
+            <span>{m.tabPredictiveMaint}</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 font-mono font-bold border border-cyan-500/40">
               IoT Forecast
             </span>
@@ -5267,7 +5257,7 @@ export default function ManagerDashboard({
             }`}
           >
             <GitMerge className="h-4 w-4 text-indigo-300" />
-            <span>Correlation Engine</span>
+            <span>{m.tabCorrelation}</span>
             <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 font-mono font-bold border border-indigo-500/40">
               Causal Links
             </span>
@@ -5282,7 +5272,7 @@ export default function ManagerDashboard({
             }`}
           >
             <Users className="h-4 w-4 text-amber-300" />
-            <span>Worker Density (D3)</span>
+            <span>{m.tabWorkerDensity}</span>
           </button>
 
           <button
@@ -5294,7 +5284,7 @@ export default function ManagerDashboard({
             }`}
           >
             <Layers className="h-4 w-4 text-purple-300" />
-            <span>Pattern Library</span>
+            <span>{m.tabPatternLibrary}</span>
           </button>
         </div>
 
@@ -5370,11 +5360,7 @@ export default function ManagerDashboard({
             selectedZoneId={selectedZone}
             onSelectZone={(zoneId) => setSelectedZone(zoneId)}
             onNavigateToFloorplan={() => {
-              setManagerTab('live');
-              setTimeout(() => {
-                const el = document.getElementById('floor-plan-2d-view');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              }, 100);
+              jumpToLiveSection('COMMAND', 'floor-plan-2d-view');
             }}
           />
         </div>
@@ -5447,7 +5433,206 @@ export default function ManagerDashboard({
       {/* Primary Live Operations View: Persistent DOM to prevent expensive remounting & D3/Chart recalculation */}
       <div className={managerTab === 'live' ? 'block' : 'hidden'}>
 
-      {/* Top-Level Summary Section: Real-Time Critical KPIs & Status Cards */}
+{/* PDF Export In-Flight Notification */}
+      {isDirectPdfExporting && (
+        <div className="mb-6 p-4 rounded-xl bg-cyan-950/70 border border-cyan-500/60 text-cyan-200 text-xs flex items-center justify-between shadow-xl animate-pulse">
+          <div className="flex items-center space-x-3">
+            <Loader2 className="h-5 w-5 text-cyan-400 animate-spin shrink-0" />
+            <div>
+              <span className="font-bold text-white text-sm block">Generating Executive Safety PDF Report...</span>
+              <span className="text-[11px] text-cyan-300 font-mono">{directPdfStatus}</span>
+            </div>
+          </div>
+          <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2.5 py-1 rounded-full font-mono font-semibold border border-cyan-500/40">
+            Client-Side jsPDF &amp; Canvas
+          </span>
+        </div>
+      )}
+
+{/* Protocol Banner Notification */}
+      {protocolActiveNotice && (
+        <div className="mb-6 p-4 rounded-xl bg-cyan-950/60 border border-cyan-500/50 text-cyan-200 text-xs flex items-center justify-between shadow-lg animate-fadeIn">
+          <div className="flex items-center space-x-2.5">
+            <CheckCircle2 className="h-5 w-5 text-cyan-400 shrink-0" />
+            <span className="font-medium">{protocolActiveNotice}</span>
+          </div>
+          <button
+            onClick={() => setProtocolActiveNotice(null)}
+            className="text-cyan-400 hover:text-white text-xs underline font-semibold ml-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+{/* Cross-Role Live Operations Sync Strip (Zero-PII Aggregate Bus) */}
+      <div className="mb-5 p-3.5 rounded-xl bg-slate-900 border border-cyan-500/30 shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <div className="flex items-center gap-2 font-bold text-white">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Live Cross-Role Operations Bus</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-300">
+            <span>
+              Anonymous Breaks:{' '}
+              <strong className={crossRoleOps.restBreaks.some((b) => b.status === 'DISPATCHED') ? 'text-amber-400' : 'text-emerald-400'}>
+                {crossRoleOps.restBreaks.filter((b) => b.status !== 'COMPLETED').length}
+              </strong>
+            </span>
+            <span className="text-slate-600">&middot;</span>
+            <span>
+              Clinical Triage Pending:{' '}
+              <strong className="text-emerald-300">
+                {crossRoleOps.triageQueue.filter((q) => q.status === 'PENDING').length}
+              </strong>
+            </span>
+            <span className="text-slate-600">&middot;</span>
+            <span>
+              HVAC Critical Zones:{' '}
+              <strong className={crossRoleOps.hvacZones.some((z) => z.status === 'CRITICAL') ? 'text-rose-400' : 'text-emerald-400'}>
+                {crossRoleOps.hvacZones.filter((z) => z.status === 'CRITICAL').length}
+              </strong>
+            </span>
+            <span className="text-slate-600">&middot;</span>
+            <span>
+              Audit Ledger:{' '}
+              <strong className="text-cyan-300">
+                #{(99820 + crossRoleOps.ledgerBlocks.length).toLocaleString()}
+              </strong>
+            </span>
+          </div>
+          {crossRoleOps.activityFeed[0] && (
+            <span className="text-[11px] text-cyan-300 truncate max-w-md">
+              Latest: {crossRoleOps.activityFeed[0].headline}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {crossRoleOps.restBreaks.some((b) => b.status === 'DISPATCHED') && (
+            <button
+              type="button"
+              onClick={() =>
+                crossRoleOperationsService.acknowledgePendingCoolingBreaks(
+                  currentUser?.name || 'Safety Director'
+                )
+              }
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer transition shadow-xs"
+            >
+              Acknowledge Shaded Relief ({crossRoleOps.restBreaks.filter((b) => b.status === 'DISPATCHED').length})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              crossRoleOperationsService.triggerSectorHeatSpike(
+                currentUser?.name || 'Safety Director'
+              )
+            }
+            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold cursor-pointer transition shadow-xs"
+          >
+            Trigger Heat Surge Drill
+          </button>
+          {crossRoleOps.activityFeed.length > 0 && (
+            <button
+              type="button"
+              onClick={() => crossRoleOperationsService.resetOperationalState()}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium cursor-pointer transition"
+            >
+              Reset Ops
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Consolidated Live Operations Executive Sub-View Switcher (4 Focused Operational Views) */}
+      <div className="mb-6 bg-slate-900/95 border border-slate-800 rounded-xl p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-md">
+        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Live Operations Sub-Views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={liveSection === 'COMMAND'}
+            onClick={() => setLiveSection('COMMAND')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              liveSection === 'COMMAND'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Activity className="h-3.5 w-3.5" />
+            <span>Command Overview</span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+              activeAlerts.filter((a) => !a.acknowledged).length > 0
+                ? 'bg-rose-500/20 text-rose-300'
+                : 'bg-slate-800 text-slate-300'
+            }`}>
+              {activeAlerts.filter((a) => !a.acknowledged).length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={liveSection === 'FORECASTS'}
+            onClick={() => setLiveSection('FORECASTS')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              liveSection === 'FORECASTS'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <TrendingUp className="h-3.5 w-3.5" />
+            <span>Forecasts &amp; Telemetry</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/70 text-cyan-300">
+              12–48h
+            </span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={liveSection === 'ANALYTICS'}
+            onClick={() => setLiveSection('ANALYTICS')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              liveSection === 'ANALYTICS'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <LineChart className="h-3.5 w-3.5" />
+            <span>Trends &amp; Heatmaps</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/70 text-slate-300">
+              30D
+            </span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={liveSection === 'GOVERNANCE'}
+            onClick={() => setLiveSection('GOVERNANCE')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              liveSection === 'GOVERNANCE'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <ShieldAlert className="h-3.5 w-3.5" />
+            <span>Thresholds, Staffing &amp; Audits</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/70 text-slate-300">
+              {systemAuditLogs.length}
+            </span>
+          </button>
+        </div>
+
+        <span className="text-[11px] font-mono text-slate-400 px-2 hidden lg:inline">
+          Zone Focus: <strong className="text-cyan-300">{activeZoneObj.name}</strong>
+        </span>
+      </div>
+
+      {liveSection === 'COMMAND' && (
+        <div className="space-y-2 animate-fadeIn">
+{/* Top-Level Summary Section: Real-Time Critical KPIs & Status Cards */}
       <div id="top-level-summary-kpis" className="mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
           <div>
@@ -5570,8 +5755,7 @@ export default function ManagerDashboard({
             alerts={activeAlerts}
             telemetryStream={telemetryStream}
             onClickInspect={() => {
-              const el = document.getElementById('anomaly-trend-30d-card');
-              el?.scrollIntoView({ behavior: 'smooth' });
+              jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
             }}
           />
 
@@ -5736,222 +5920,18 @@ export default function ManagerDashboard({
         </div>
       </div>
 
-      {/* 24-Hour vs Previous Week Telemetry Variance Summary Component */}
-      <HealthTelemetryVarianceSummary
+{/* Real-Time Population Health Score Fluctuation Sparkline (Powered by Recharts) */}
+      <PopulationHealthSparkline
         telemetryStream={telemetryStream}
-        theme={dashboardTheme}
-        thresholdBreaches={activeBreachSignalKeys}
-        className="mb-6"
-      />
-
-      {/* Proactive Alert Forecast Card: Analyzes Health Risk Growth Rates to Predict Upcoming Spikes */}
-      <AlertForecastCard
-        telemetryStream={telemetryStream}
+        selectedZone={activeZoneObj}
         zones={zones}
-        selectedZoneId={selectedZone}
-        onStageMitigation={(forecast) => {
-          setProtocolActiveNotice(
-            `Mitigation Protocol Staged for ${forecast.zoneName}: ${forecast.action} (Projected peak: ${forecast.projectedPeak}%, Time to breach: ~${forecast.timeToSpikeHours}h)`
-          );
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        onViewTrendChart={() => {
-          const el = document.getElementById('workforce-risk-trend-7d-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        theme={dashboardTheme}
-        className="mb-6"
-      />
-
-      {/* Proactive Maintenance Scheduler: Triggers when LSTM-Kalman engine predicts sensor component failure within 72h */}
-      <ProactiveMaintenanceSchedulerCard
-        className="mb-6"
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        onNavigateToZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const el = document.getElementById('anomaly-density-floor-plan-heatmap');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
-
-      {/* Automated Response Module: Corrective HVAC/Ventilation Adjustments for Low-to-Medium Environmental Anomalies */}
-      <AutomatedResponseModule
-        className="mb-6"
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        onNavigateToZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const el = document.getElementById('anomaly-density-floor-plan-heatmap');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
-
-      {/* Kalman Filter Cohort Anomaly Sentinel & Notification Panel: Alerts safety managers when anomaly scores exceed defined thresholds for any population cohort */}
-      <KalmanCohortAnomalyNotificationPanel
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onDispatchMitigation={(cohortName, action) => {
-          setProtocolActiveNotice(`Mitigation Protocol Dispatched to ${cohortName}: ${action}`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        onLogAudit={(action, details) => {
-          const entry: SystemAuditLogEntry = {
-            id: generateUniqueId('AUD-KALMAN'),
-            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
-            userId: 'USR-MGR-2026',
-            userName: 'Alex Mercer',
-            userRole: 'EHS Operations Supervisor',
-            category: 'THRESHOLD_CHANGE',
-            targetModule: 'Kalman Cohort Sentinel',
-            parameter: action,
-            previousValue: 'NOMINAL',
-            newValue: action,
-            justification: details,
-            approvalStatus: 'VERIFIED'
-          };
-          setSystemAuditLogs((prev) => [entry, ...prev]);
-        }}
-        onTriggerAnomalyToast={(cohort) => {
-          triggerCriticalAnomalyNotification({
-            department: cohort.cohortName,
-            confidenceLevel: cohort.kalmanAnomalyScore / 100,
-            riskProbability: cohort.kalmanAnomalyScore / 100,
-            riskTier: cohort.severity === 'CRITICAL' ? 'CRITICAL_RISK' : 'HIGH_RISK',
-            locationZone: cohort.zoneName,
-            zoneId: cohort.zoneId,
-            cohortCount: cohort.populationSize,
-            workerPseudonym: `COHORT-${cohort.zoneId.slice(0, 8)}`,
-            anomalyMetric: `${cohort.primaryAttribution} (Kalman Score: ${cohort.kalmanAnomalyScore}%)`,
-            measuredValue: `Kalman Anomaly Score: ${cohort.kalmanAnomalyScore}% (Limit: ${cohort.thresholdLimit}%)`,
-            rawMeasuredValue: `Raw Measured Divergence: +${cohort.divergenceDelta}%`,
-            kalmanSmoothedValue: `Kalman Smoothed Score: ${cohort.kalmanAnomalyScore}%`,
-            kalmanStatus: cohort.kalmanValidationStatus,
-            thresholdLimit: `${cohort.thresholdLimit}% Safe Threshold`,
-            reconstructionMse: 0.392,
-            recommendedAction: cohort.recommendedIntervention,
-            privacyNotice: `k-Anonymity Verified (N=${cohort.populationSize} >= 12) & ε=0.5 DP Shield`,
-            force: true
-          });
+        onScrollToFullChart={() => {
+          jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
         }}
         className="mb-6"
       />
 
-      {/* Real-Time Health Metric Safety Alert System Monitor Bar */}
-      <div id="real-time-alert-system-panel" className="mb-6 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400">
-              <BellRing className="h-5 w-5 text-rose-400 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  Real-Time Health Metric Safety Alert System
-                </h3>
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                  Active &bull; Toast Warnings Armed
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Evaluates streaming telemetry packets every 3.2s &bull; Immediately fires warning toasts when health metrics drop below safety floors
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => handleSimulateHealthMetricDrop('HRV')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/60 text-rose-200 text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Test real-time warning toast when worker HRV drops below the 40ms safety threshold"
-            >
-              <Activity className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
-              <span>Simulate HRV Drop (&lt;40ms)</span>
-            </button>
-
-            <button
-              onClick={() => handleSimulateHealthMetricDrop('TWL')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-500/60 text-amber-200 text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Test real-time warning toast when Thermal Work Limit drops below 115 W/m²"
-            >
-              <TrendingDown className="h-3.5 w-3.5 text-amber-400" />
-              <span>Simulate TWL Drop (&lt;115)</span>
-            </button>
-
-            <button
-              onClick={() => handleSimulateHealthMetricDrop('MULTI')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition shadow-md shadow-red-950/50 cursor-pointer"
-              title="Simulate severe multi-signal health drop across HRV, TWL, and pulse"
-            >
-              <ShieldAlert className="h-3.5 w-3.5 text-white" />
-              <span>Acute Multi-Drop Alert</span>
-            </button>
-
-            <button
-              onClick={() => setIsHealthThresholdsModalOpen(true)}
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
-              title="Configure custom health signal notification thresholds"
-            >
-              <Settings className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Thresholds</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Live Safety Floor Badges */}
-        <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2 text-xs">
-          <div className="flex items-center gap-3 flex-wrap text-[11px] font-mono text-slate-400">
-            <span className="text-slate-300 font-semibold">Active Safety Thresholds:</span>
-            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-              HRV Safety Floor: <strong className="text-cyan-400">&ge;{healthThresholds.minHrvMs} ms</strong>
-            </span>
-            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-              TWL Safe Work Limit: <strong className="text-blue-400">&ge;{healthThresholds.minTwlIndex} W/m²</strong>
-            </span>
-            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-              Health Homeostasis: <strong className="text-emerald-400">&ge;65%</strong>
-            </span>
-            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-              Pulse Ceiling: <strong className="text-rose-400">&le;{healthThresholds.maxHeartRateBpm ?? 115} BPM</strong>
-            </span>
-            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
-              Skin Temp Ceiling: <strong className="text-amber-400">&le;{healthThresholds.maxSkinTempC}°C</strong>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] font-mono">
-            <span className="text-slate-400">Active Warning Toasts:</span>
-            <span className={`px-2 py-0.5 rounded font-bold ${activeToasts.length > 0 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 'bg-slate-950 text-slate-500'}`}>
-              {activeToasts.length} Active
-            </span>
-            {activeToasts.length > 0 && (
-              <button
-                onClick={handleClearAllToasts}
-                className="flex items-center space-x-1 text-xs font-semibold text-rose-300 hover:text-white bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 px-2 py-0.5 rounded cursor-pointer ml-1 transition"
-                title="Dismiss all active warning toasts at once"
-              >
-                <span>Dismiss All ({activeToasts.length})</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Proximity Alert Warning System: Triggers if High-Risk Anomaly Overlaps High-Density Worker Cluster */}
+{/* Proximity Alert Warning System: Triggers if High-Risk Anomaly Overlaps High-Density Worker Cluster */}
       <ProximityAlertBanner
         zones={zones}
         alerts={activeAlerts}
@@ -5965,598 +5945,7 @@ export default function ManagerDashboard({
         }}
       />
 
-      {/* Recharts 7-Day Aggregate Workforce Risk Level Line Chart with What-If Simulator & Prediction Uncertainty Band */}
-      <WorkforceRiskTrend7DaysChart
-        className="mb-6"
-        theme={dashboardTheme}
-        isWhatIfOpen={isWhatIfSimulatorOpen}
-        onToggleWhatIfOpen={() => setIsWhatIfSimulatorOpen((prev) => !prev)}
-        showMovingAverage={showGlobalMovingAverages}
-        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
-        onSelectDay={(day) => {
-          if (day.isSpike) {
-            setProtocolActiveNotice(
-              `Inspecting 7-day risk spike on ${day.fullDate}: Peak risk ${day.peakRiskScore}% driven by ${day.spikeReason}.`
-            );
-            setTimeout(() => setProtocolActiveNotice(null), 7000);
-          }
-        }}
-      />
-
-      {/* Recharts Multi-Zone Facility Health Risk Trends Over Time Line Chart */}
-      <FacilityZonesRiskTrendChart
-        zones={zones}
-        alerts={activeAlerts}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-        className="mb-6"
-      />
-
-      {/* Anomaly Density Heatmap: Overlays Multi-Sensor Anomaly Counts Onto Schematic Architectural Floor Plan to Pinpoint High-Traffic Error Areas */}
-      <AnomalyDensityHeatmap
-        zones={zones}
-        alerts={activeAlerts}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onDispatchMitigation={(zoneName, action) => {
-          setProtocolActiveNotice(`Hotspot mitigation team dispatched to ${zoneName}: ${action}`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        className="mb-6"
-      />
-
-      {/* Zone Anomaly Concentration Heatmap: Visual Heatmap Representing Geographic or Zone-Based Health Anomaly Concentration Levels */}
-      <ZoneAnomalyConcentrationHeatmap
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onDispatchMitigation={(zoneObj, action) => {
-          setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        className="mb-6"
-      />
-
-      {/* Spatial Distribution Risk Heatmap: Visual Identification of Hazard Hot Spots Across Zones Alongside Existing Charts */}
-      <SpatialZoneRiskHeatmap
-        className="mb-6"
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onDispatchMitigation={(zoneObj, action) => {
-          setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        onNavigateToMaintenance={(endpointId) => {
-          setManagerTab('predictiveMaintenance');
-        }}
-      />
-
-      {/* D3-Powered Workplace Zone Health Risk Clusters Heatmap */}
-      <D3WorkplaceZoneRiskHeatmap
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {isDeferredLoaded ? (
-        <>
-      {/* Resource Utilization & Worker Distribution Heatmap Panel */}
-      <ResourceUtilizationPanel
-        zones={zones}
-        alerts={activeAlerts}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-        onNavigateToFloorplan={() => {
-          const el = document.getElementById('floor-plan-2d-view');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        className="mb-6"
-      />
-
-      {/* Explainable AI (XAI) Log Window: Top Contributing Factors for High-Risk Anomaly Detections by LSTM-Kalman Engine */}
-      <ExplainableAiLogWindow
-        className="mb-6"
-        anomalies={activeAlerts}
-        zones={zones}
-        onOpenScenarioSimulation={() => setIsScenarioSimulationOpen(true)}
-        onDispatchMitigation={handleDispatchAction}
-      />
-
-      {/* PDF Export In-Flight Notification */}
-      {isDirectPdfExporting && (
-        <div className="mb-6 p-4 rounded-xl bg-cyan-950/70 border border-cyan-500/60 text-cyan-200 text-xs flex items-center justify-between shadow-xl animate-pulse">
-          <div className="flex items-center space-x-3">
-            <Loader2 className="h-5 w-5 text-cyan-400 animate-spin shrink-0" />
-            <div>
-              <span className="font-bold text-white text-sm block">Generating Executive Safety PDF Report...</span>
-              <span className="text-[11px] text-cyan-300 font-mono">{directPdfStatus}</span>
-            </div>
-          </div>
-          <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2.5 py-1 rounded-full font-mono font-semibold border border-cyan-500/40">
-            Client-Side jsPDF &amp; Canvas
-          </span>
-        </div>
-      )}
-
-      {/* Protocol Banner Notification */}
-      {protocolActiveNotice && (
-        <div className="mb-6 p-4 rounded-xl bg-cyan-950/60 border border-cyan-500/50 text-cyan-200 text-xs flex items-center justify-between shadow-lg animate-fadeIn">
-          <div className="flex items-center space-x-2.5">
-            <CheckCircle2 className="h-5 w-5 text-cyan-400 shrink-0" />
-            <span className="font-medium">{protocolActiveNotice}</span>
-          </div>
-          <button
-            onClick={() => setProtocolActiveNotice(null)}
-            className="text-cyan-400 hover:text-white text-xs underline font-semibold ml-4"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* 48-Hour Incident Likelihood Surge Predictive Analysis Banner */}
-      {predictive48hAnalysis.increasePct >= 20.0 && !isPredictiveSurgeBannerDismissed && (
-        <div className="mb-6 p-5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-slate-900/95 to-amber-950/75 border-2 border-rose-500/70 shadow-2xl relative overflow-hidden ring-1 ring-rose-500/30 animate-in fade-in slide-in-from-top-3 duration-300">
-          {/* Subtle Ambient Background Watermark */}
-          <div className="absolute -right-6 -bottom-8 opacity-10 pointer-events-none text-rose-400">
-            <TrendingUp className="h-44 w-44" />
-          </div>
-
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 relative z-10">
-            {/* Left: Surge Beacon & Analytical Breakdown */}
-            <div className="flex items-start sm:items-center space-x-4">
-              <div className="p-3.5 rounded-2xl bg-rose-900/60 border-2 border-rose-500 text-rose-300 shrink-0 shadow-lg relative">
-                <AlertTriangle className="h-7 w-7 text-rose-400 animate-bounce" />
-                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
-                </span>
-              </div>
-
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="bg-rose-500/20 text-rose-300 border border-rose-500/50 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
-                    <Sparkles className="h-3 w-3 text-rose-400" />
-                    PREDICTIVE ANALYSIS ALERT &bull; 48-HOUR SURGE WARNING
-                  </span>
-                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
-                    Inflection Threshold &ge; 20% Breached
-                  </span>
-                  <span className="bg-slate-800 text-slate-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-slate-700">
-                    Model Confidence: {predictive48hAnalysis.confidenceScore}%
-                  </span>
-                </div>
-
-                <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                  <span>+{predictive48hAnalysis.increasePct}% Projected Incident Likelihood Increase Over Next 48 Hours</span>
-                </h3>
-
-                <p className="text-xs text-rose-200/90 mt-1 max-w-3xl leading-relaxed">
-                  Longitudinal 30-day anomaly trend frequency and forward projection models indicate an acute{' '}
-                  <strong className="text-white">+{predictive48hAnalysis.increasePct}% incident likelihood velocity spike</strong> over the upcoming 48 hours (rising from rolling baseline of <span className="font-mono text-cyan-300 font-semibold">{predictive48hAnalysis.baselineDailyRate}/day</span> to <span className="font-mono text-rose-300 font-bold">{predictive48hAnalysis.projected48hDailyRate}/day</span>, forecasted <span className="font-mono text-rose-300 font-bold">~{predictive48hAnalysis.total48hForecastedEvents} events</span>). Primary hazard vector: <span className="text-amber-300 font-semibold">{predictive48hAnalysis.primaryDriver}</span> across {predictive48hAnalysis.affectedCohorts.join(', ')}.
-                </p>
-              </div>
-            </div>
-
-            {/* Right: Key Proactive Metrics & Quick Actions */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
-              <div className="flex bg-slate-950/80 p-2.5 rounded-xl border border-rose-900/60 divide-x divide-slate-800 text-xs">
-                <div className="px-3 text-center">
-                  <div className="text-[10px] text-slate-400">Baseline 7D Rate</div>
-                  <div className="text-sm font-bold text-cyan-400 font-mono">{predictive48hAnalysis.baselineDailyRate}/day</div>
-                </div>
-                <div className="px-3 text-center">
-                  <div className="text-[10px] text-slate-400">48h Forecast Rate</div>
-                  <div className="text-sm font-bold text-rose-400 font-mono">{predictive48hAnalysis.projected48hDailyRate}/day</div>
-                </div>
-                <div className="px-3 text-center">
-                  <div className="text-[10px] text-slate-400">Surge Delta</div>
-                  <div className="text-sm font-bold text-rose-300 font-mono">+{predictive48hAnalysis.increasePct}%</div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-                <button
-                  onClick={handleStagePreemptive48hMitigation}
-                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-lg cursor-pointer border border-rose-400/40"
-                  title="Stage pre-emptive rapid cooling stations and hydration rotations before acute anomalies materialize"
-                >
-                  <ShieldAlert className="h-4 w-4" />
-                  <span>Stage Pre-Emptive Protocols</span>
-                </button>
-
-                <button
-                  onClick={handleScrollToForecastChart}
-                  className="flex items-center justify-center space-x-1 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
-                  title="Jump directly to 30-day anomaly trend and 48-hour forward projection chart"
-                >
-                  <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>Inspect Trend Chart</span>
-                </button>
-
-                <button
-                  onClick={() => handleExportViewAuditReport('PDF')}
-                  className="flex items-center justify-center space-x-1 bg-indigo-950/80 hover:bg-indigo-900/90 border border-indigo-500/50 text-indigo-200 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
-                  title="Export 48h predictive risk brief as simulated PDF for statutory audit"
-                >
-                  <FileText className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Risk Brief PDF</span>
-                </button>
-
-                <button
-                  onClick={() => setIsPredictiveSurgeBannerDismissed(true)}
-                  className="px-2.5 py-2 text-slate-400 hover:text-slate-200 text-sm font-bold rounded-xl hover:bg-slate-900 transition cursor-pointer"
-                  title="Dismiss 48-hour predictive surge banner"
-                >
-                  &times;
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Kalman Filter Real-Time Confidence & Desktop Notification Sentinel Banner */}
-      <div className="mb-6 p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          {/* Left: Kalman Filter Confidence Status */}
-          <div className="flex items-start sm:items-center space-x-3.5">
-            <div
-              className={`p-2.5 rounded-xl border shrink-0 ${
-                kalmanConfidence >= kalmanConfidenceThreshold
-                  ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-400'
-                  : 'bg-rose-950/80 border-rose-500/70 text-rose-400 animate-pulse'
-              }`}
-            >
-              <Activity className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-bold text-white">Kalman Filter Real-Time Confidence Sentinel</h3>
-                <span
-                  className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border flex items-center gap-1 ${
-                    kalmanConfidence >= kalmanConfidenceThreshold
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                      : 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                  }`}
-                >
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      kalmanConfidence >= kalmanConfidenceThreshold ? 'bg-emerald-400' : 'bg-rose-400 animate-ping'
-                    }`}
-                  />
-                  State Confidence: {kalmanConfidence.toFixed(1)}%
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                  Threshold: &lt;{kalmanConfidenceThreshold.toFixed(1)}% Triggers Alert
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                Monitors recursive 1D Kalman state estimation confidence. If high noise or packet jitter drops confidence below the safety threshold, an OS desktop notification and audit entry are dispatched immediately.
-              </p>
-            </div>
-          </div>
-
-          {/* Right: Controls & Simulation Actions */}
-          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-            {/* Threshold Slider / Presets */}
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs">
-              <span className="text-[11px] text-slate-400 px-2 font-medium">Floor:</span>
-              {[75, 80, 85, 90].map((th) => (
-                <button
-                  key={th}
-                  onClick={() => setKalmanConfidenceThreshold(th)}
-                  className={`px-2 py-1 rounded text-[11px] font-mono font-semibold transition cursor-pointer ${
-                    kalmanConfidenceThreshold === th
-                      ? 'bg-cyan-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {th}%
-                </button>
-              ))}
-            </div>
-
-            {/* Desktop Notification Permission Status / Toggle */}
-            <button
-              onClick={requestDesktopNotificationPermission}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
-                desktopNotificationPermission === 'granted'
-                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-                  : 'bg-amber-950/70 border-amber-500/50 text-amber-300 hover:bg-amber-900/60'
-              }`}
-              title={
-                desktopNotificationPermission === 'granted'
-                  ? 'Desktop notification permission is granted'
-                  : 'Click to grant browser notification permission for desktop alerts'
-              }
-            >
-              {desktopNotificationPermission === 'granted' ? (
-                <>
-                  <Bell className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Desktop Alerts: Active</span>
-                </>
-              ) : (
-                <>
-                  <BellRing className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
-                  <span>Enable Desktop Alerts</span>
-                </>
-              )}
-            </button>
-
-            {/* Simulate Confidence Drop (< 85%) */}
-            <button
-              onClick={handleSimulateKalmanConfidenceDrop}
-              className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/90 border border-rose-500/60 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
-              title={`Instantly simulate a Kalman filter confidence collapse below threshold to trigger desktop notification and in-app alerts`}
-            >
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
-              <span>Simulate Confidence Drop (&lt;{kalmanConfidenceThreshold}%)</span>
-            </button>
-
-            {/* Test Desktop Notification Button */}
-            <button
-              onClick={handleTestDesktopNotification}
-              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer"
-              title="Send a sample desktop notification to verify operating system permissions"
-            >
-              <Bell className="h-3.5 w-3.5 text-cyan-400" />
-              <span>Test OS Alert</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Real-Time Population Health Score Fluctuation Sparkline (Powered by Recharts) */}
-      <PopulationHealthSparkline
-        telemetryStream={telemetryStream}
-        selectedZone={activeZoneObj}
-        zones={zones}
-        onScrollToFullChart={() => {
-          const el = document.getElementById('historical-health-chart-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        className="mb-6"
-      />
-
-      {/* Macro Analytics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-medium">Active Monitored Workforce</p>
-            <div className="flex items-baseline justify-between mt-2">
-              <h3 className="text-2xl font-bold text-white">1,420 Active</h3>
-              <span className="text-xs text-emerald-400 font-semibold flex items-center">
-                <Users className="h-3 w-3 mr-1" /> 100% Anonymized
-              </span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-slate-500 font-mono">Resilience Trend</span>
-              <HealthSignal24hBadge
-                data={telemetryStream.slice(-24).map((p) => Math.round(100 - p.risk_score * 0.6))}
-                lowerIsBetter={false}
-                label="24h"
-              />
-            </div>
-            <MiniSparkline
-              data={telemetryStream.slice(-24).map((p) => Math.round(100 - p.risk_score * 0.6))}
-              color="#10b981"
-              height={28}
-              width={95}
-              unit="%"
-              showForecast={true}
-              forecastDays={7}
-              ariaLabel="24-hour resilience trend with 7-day linear forecast"
-            />
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-medium">Active Critical Alerts</p>
-            <div className="flex items-baseline justify-between mt-2">
-              <h3 className="text-2xl font-bold text-rose-400">{pendingCriticalCount}</h3>
-              <span className="text-xs text-rose-400 font-semibold flex items-center">
-                <ShieldAlert className="h-3 w-3 mr-1" /> Immediate Action
-              </span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-slate-500 font-mono">Risk Variance</span>
-              <HealthSignal24hBadge
-                data={telemetryStream.slice(-24).map((p) => p.risk_score)}
-                lowerIsBetter={true}
-                label="24h"
-              />
-            </div>
-            <MiniSparkline
-              data={telemetryStream.slice(-24).map((p) => p.risk_score)}
-              color="#f43f5e"
-              height={28}
-              width={95}
-              unit="%"
-              showForecast={true}
-              forecastDays={7}
-              ariaLabel="24-hour risk variance trend with 7-day linear forecast"
-            />
-          </div>
-        </div>
-
-        {/* Equipment Predictive Maintenance Macro Metric Card */}
-        <div className="bg-slate-900 border border-amber-500/30 p-4 rounded-xl flex flex-col justify-between">
-          <div>
-            <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5">
-              <Wrench className="h-3.5 w-3.5 text-amber-400" />
-              Predictive Maintenance
-            </p>
-            <div className="flex items-baseline justify-between mt-2">
-              <h3 className="text-2xl font-bold text-amber-400">
-                {activeAlerts.filter((a) => a.alert_type === 'PREDICTIVE_MAINTENANCE' && !a.acknowledged).length} Pending
-              </h3>
-              <span className="text-[11px] text-amber-300/80 font-mono">
-                Vibration / Heat
-              </span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-slate-500 font-mono">ISO 10816 Curve</span>
-              <HealthSignal24hBadge
-                data={telemetryStream.slice(-24).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
-                lowerIsBetter={true}
-                label="24h"
-              />
-            </div>
-            <MiniSparkline
-              data={telemetryStream.slice(-24).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
-              color="#f59e0b"
-              height={28}
-              width={95}
-              unit="mm/s"
-              showForecast={true}
-              forecastDays={7}
-              ariaLabel="24-hour ISO 10816 vibration curve with 7-day linear forecast"
-            />
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-medium">Avg Wet-Bulb Heat Index</p>
-            <div className="flex items-baseline justify-between mt-2">
-              <h3 className="text-2xl font-bold text-amber-400">{activeZoneObj.heatIndex || 42.5}°C</h3>
-              <span className="text-xs text-slate-400">Severe Thermal Load</span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-slate-500 font-mono">Heat Wave Index</span>
-              <HealthSignal24hBadge
-                data={telemetryStream.slice(-24).map((p) => p.ambient_temp_c)}
-                lowerIsBetter={true}
-                label="24h"
-              />
-            </div>
-            <MiniSparkline
-              data={telemetryStream.slice(-24).map((p) => p.ambient_temp_c)}
-              color="#f97316"
-              height={28}
-              width={95}
-              unit="°C"
-              showForecast={true}
-              forecastDays={7}
-              ariaLabel="24-hour ambient heat index trend with 7-day linear forecast"
-            />
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-medium">Model Lead Time (Backtested)</p>
-            <div className="flex items-baseline justify-between mt-2">
-              <h3 className="text-2xl font-bold text-cyan-400">3.8 Hours</h3>
-              <span className="text-xs text-cyan-400 font-semibold">Prior to Incident</span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-slate-500 font-mono">HRV Autonomic</span>
-              <HealthSignal24hBadge
-                data={telemetryStream.slice(-24).map((p) => p.smoothed_hrv)}
-                lowerIsBetter={false}
-                label="24h"
-              />
-            </div>
-            <MiniSparkline
-              data={telemetryStream.slice(-24).map((p) => p.smoothed_hrv)}
-              color="#06b6d4"
-              height={28}
-              width={95}
-              unit="ms"
-              showForecast={true}
-              forecastDays={7}
-              ariaLabel="24-hour HRV autonomic trend with 7-day linear forecast"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Predictive Trend Alerts (Kalman Drift Early Warning): Identifies and Surfaces Long-Term Negative Health Trends Before High-Risk Alerts Trigger */}
-      <PredictiveTrendAlertsPanel
-        telemetryStream={telemetryStream}
-        zones={zones}
-        onDeployPrecursorAction={(trendAlert, directive) => {
-          const newAudit: AuditEvent = {
-            id: generateUniqueId('AUD-TRD'),
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            eventType: 'ALERT_DISPATCH',
-            zone: trendAlert.zoneName,
-            cohortCount: trendAlert.cohortSize,
-            riskTier: 'MODERATE_RISK',
-            privacyEnforced: 'Differential Privacy Enforced (k=12)',
-            actionTaken: `Precursor Early Countermeasure Deployed: ${directive}`
-          };
-          setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
-          setProtocolActiveNotice(`Predictive Trend Precursor Action Staged: ${directive}`);
-          setTimeout(() => setProtocolActiveNotice(null), 7000);
-        }}
-        onInspectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {/* High-Priority Active Anomalies Widget (Using Real-Time Telemetry to Highlight Urgent Health & Safety Deviations) */}
+{/* High-Priority Active Anomalies Widget (Using Real-Time Telemetry to Highlight Urgent Health & Safety Deviations) */}
       <ActiveAnomaliesWidget
         alerts={activeAlerts}
         telemetryStream={telemetryStream}
@@ -6573,855 +5962,7 @@ export default function ManagerDashboard({
         isSpeaking={isSpeaking}
       />
 
-      {/* Visual Heatmap Highlighting Geographical Zones & Workforce Segments Showing High-Risk Anomaly Markers */}
-      <GeographicalZoneRiskHeatmap
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onDispatchAction={(actionData) => {
-          const newDispatch: MedicalDispatchNotification = {
-            id: generateUniqueId('DSP-MAP'),
-            alertId: generateUniqueId('ALR-ZONE'),
-            zone: actionData.zoneName,
-            severity: actionData.severity,
-            recipientRole: 'On-Site Rapid Cooling Evacuation Team',
-            contactMethod: 'DUAL_CHANNEL',
-            recipientPhone: '+1 (555) 911-ZONE',
-            messagePayload: actionData.directive,
-            stagedAt: 'Just now',
-            status: 'STAGED'
-          };
-          setMedicalDispatches((prev) => [newDispatch, ...prev]);
-          setProtocolActiveNotice(
-            `Medical dispatch staged from Geographical Zone Heatmap: ${actionData.directive}`
-          );
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-        className="mb-6"
-      />
-
-      {/* High-Risk Event Notification Center (Scrollable Queue of Recent High-Risk Events with Timestamp, Anomaly Type, and View Details) */}
-      <div id="notification-center-section">
-        <NotificationCenter
-          alerts={activeAlerts}
-          zones={zones}
-          onViewDetails={handleOpenAnomalyDetails}
-          onAcknowledgeAlert={handleAcknowledgeAlert}
-          onAcknowledgeAll={handleAcknowledgeAllAlerts}
-          onDispatchAction={handleDispatchAction}
-          onSelectZone={(zoneId) => {
-            setSelectedZone(zoneId);
-            setAnomalyTrendZoneId(zoneId);
-            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-            setTelemetryAlert(res);
-          }}
-          departmentThresholdBreaches={departmentThresholdBreaches}
-          onOpenDepartmentThresholds={() => {
-            const el = document.getElementById('department-risk-threshold-config-panel');
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
-              setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
-            }
-          }}
-          onExportComplianceCsv={handleSimulatedComplianceCsvExport}
-          onGeneratePdfReport={handleDirectPdfExport}
-          onInjectTestAnomaly={handleInjectTestAnomaly}
-          isGeneratingPdf={isDirectPdfExporting}
-          incidentAssignments={incidentAssignments}
-          onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
-          telemetryRiskThreshold={telemetryRiskThreshold}
-          onUpdateTelemetryRiskThreshold={handleUpdateTelemetryRiskThreshold}
-          riskThresholdBreaches={riskThresholdBreaches}
-          onAcknowledgeRiskBreach={handleAcknowledgeRiskBreach}
-          onClearRiskBreaches={handleClearRiskBreaches}
-          currentTelemetryRisk={Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1))}
-          browserPermission={desktopNotificationPermission}
-          onRequestBrowserPermission={() => {
-            desktopNotificationService.requestPermission().then((p) => {
-              setDesktopNotificationPermission(p === 'unsupported' ? 'denied' : (p as NotificationPermission));
-            });
-          }}
-          browserAlertsEnabled={desktopNotificationsEnabled}
-          onToggleBrowserAlerts={() => {
-            const next = !desktopNotificationsEnabled;
-            setDesktopNotificationsEnabled(next);
-            desktopNotificationService.updateConfig({ enabled: next });
-          }}
-          soundEnabled={toastSoundEnabled}
-          onToggleSound={() => setToastSoundEnabled((p) => !p)}
-          onTestBrowserAlert={() => {
-            const cur = Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1));
-            desktopNotificationService.notifyRiskThresholdBreach(
-              {
-                id: `TEST-SENTINEL-${Date.now()}`,
-                riskScore: cur,
-                threshold: telemetryRiskThreshold,
-                delta: Number((cur - telemetryRiskThreshold).toFixed(1)),
-                zoneName: activeZoneObj.name,
-                workerCount: activeZoneObj.count,
-                primarySignal: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
-                recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.'
-              },
-              { forceTrigger: true }
-            );
-            setProtocolActiveNotice('Browser Alert dispatched! OS notification and audio siren triggered.');
-            setTimeout(() => setProtocolActiveNotice(null), 5000);
-          }}
-          onSimulateRiskBreach={() => {
-            const simulatedScore = Number((telemetryRiskThreshold + 9.8).toFixed(1));
-            triggerTelemetryRiskBrowserAlert(simulatedScore, activeZoneObj);
-          }}
-          className="mb-6"
-        />
-      </div>
-
-      {/* Configuration Panel for Custom Department Risk Score Threshold Values */}
-      <DepartmentRiskThresholdConfigPanel
-        departmentThresholds={departmentRiskThresholds}
-        onSaveThresholds={handleSaveDepartmentThresholds}
-        onResetDefaults={handleResetDepartmentThresholds}
-        className="mb-6"
-      />
-
-      {/* Real-Time 24-Hour Aggregate Risk Score Progression Trend Line Chart (Using Recharts & 24H Linear Regression Forecast) */}
-      <AggregateRiskScoreTrend24hChart
-        telemetryStream={telemetryStream}
-        selectedZone={activeZoneObj}
-        showMovingAverage={showGlobalMovingAverages}
-        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
-        onInspectHour={(pt) => {
-          setIsolatedHealthSignal('riskScore');
-          const el = document.getElementById('historical-health-chart-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        className="mb-6"
-      />
-
-      {/* 24-48 Hour Prognostic Forecast Panel & 12h LSTM: Gated and restricted when Maintenance Crew view is active */}
-      {activeRole === 'MAINTENANCE_CREW' ? (
-        <div className="bg-slate-900 border border-amber-900/40 rounded-xl p-5 mb-6 text-slate-300 shadow-xl relative overflow-hidden">
-          <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0">
-              <Lock className="h-6 w-6" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  Sensitive Workforce Health Forecasting Restricted
-                </h3>
-                <span className="text-[10px] font-mono uppercase bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold">
-                  Maintenance Crew Role Gated
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Access to individualized worker physiological stress projections, LSTM neural risk curves, and personal biometric predictions is restricted under OSHA 1910 and HIPAA §164.312 privacy requirements for the Maintenance Crew view. Physical equipment telemetry, HVAC response, and microclimate environmental monitors remain active.
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-                <span className="text-slate-400 font-mono">
-                  Active for Maintenance: <strong className="text-cyan-400">HVAC Automation</strong> • <strong className="text-cyan-400">Microclimate Environmental Sensors</strong> • <strong className="text-cyan-400">Equipment Vibration &amp; RUL</strong>
-                </span>
-                <button
-                  onClick={() => handleSwitchRole('SAFETY_OFFICER')}
-                  className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer ml-auto"
-                >
-                  Switch to Safety Officer View (Full Access) &rarr;
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          <PrognosticForecastPanel
-            alerts={activeAlerts}
-            zones={zones}
-            selectedZone={activeZoneObj}
-            onSelectZone={(zoneId) => {
-              setSelectedZone(zoneId);
-              setAnomalyTrendZoneId(zoneId);
-              const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-              const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-              const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-              setTelemetryAlert(res);
-            }}
-            onApplyPreemptiveProtocol={(scenarioType, details) => {
-              const newAudit: AuditEvent = {
-                id: generateUniqueId('AUD-PROG'),
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                eventType: 'ALERT_DISPATCH',
-                zone: activeZoneObj.name,
-                cohortCount: activeZoneObj.count,
-                riskTier: 'CRITICAL_RISK',
-                privacyEnforced: 'Differential Privacy Enforced (k=12)',
-                actionTaken: details
-              };
-              setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
-              setProtocolActiveNotice(`Prognostic 24-48h Pre-emptive Countermeasure staged: ${details}`);
-              setTimeout(() => setProtocolActiveNotice(null), 7000);
-            }}
-            className="mb-6"
-          />
-
-          <LstmRiskForecastingPanel12h
-            alerts={activeAlerts}
-            selectedZone={activeZoneObj}
-            onStageMitigation={handleStageLstmPreemptiveMitigation}
-            className="mb-6"
-          />
-        </>
-      )}
-
-      {/* Historical Population Health Anomalies Log (Lists the Last 5 Detected Events with Timestamps and Severity Levels) */}
-      <HistoricalPopulationHealthAnomaliesLog
-        alerts={activeAlerts}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onInspectAnomaly={(alert) => {
-          setAnomalyTrendZoneId(alert.location_zone);
-          const el = document.getElementById('anomaly-trend-30d-card') || document.getElementById('historical-health-chart-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onSpeakAlert={handleSpeakAlert}
-        onOpenComplianceExportModal={() => setIsComplianceCsvExportModalOpen(true)}
-        isSpeaking={isSpeaking}
-        className="mb-6"
-      />
-
-      {/* Incident Hotspots Summary Widget (Text-Based Natural Language Generation) */}
-      <IncidentHotspotsWidget
-        alerts={activeAlerts}
-        zones={zones}
-        telemetryStream={telemetryStream}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onOpenVoiceAlerts={() => setIsVoiceModalOpen(true)}
-      />
-
-      {/* Hyper-Local Real-Time Weather Integration Card */}
-      <ZoneWeatherCard
-        weather={currentWeather}
-        loading={weatherLoading}
-        onRefreshWeather={() => syncLiveWeather(activeZoneObj)}
-        zoneName={activeZoneObj.name}
-        latitude={activeZoneObj.latitude}
-        longitude={activeZoneObj.longitude}
-      />
-
-      {/* Real-Time Biometric Synchronization Hub (Wearable Health Devices & Live HRV Stress Monitoring) */}
-      <BiometricSyncModule
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onSyncBiometricToKalman={handleSyncBiometricToKalman}
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-      />
-
-      {/* 2D Floor Plan Visualization Component with Zone Hotspots & Sensor Telemetry Stream Toggles */}
-      <FloorPlan2DView
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        activeAlerts={activeAlerts}
-        streamToggles={effectiveStreamToggles}
-        onToggleStream={handleToggleStream}
-        onSetAllStreams={handleSetAllStreams}
-        recentTelemetryPoint={telemetryStream[telemetryStream.length - 1]}
-      />
-
-      {/* Custom Sensor Signals Alert Thresholds Configuration Panel (Inline Real-Time Control) */}
-      <SensorThresholdsConfigPanel
-        thresholds={healthThresholds}
-        onUpdateThresholds={handleSaveHealthThresholds}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        telemetryStream={telemetryStream}
-        onOpenAdvancedModal={() => setIsHealthThresholdsModalOpen(true)}
-        onScrollToChart={() => {
-          const el = document.getElementById('historical-health-chart-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
-
-      {/* Last 10 Detected Anomalies Scrollable Quick Audit List Component */}
-      <RecentAnomaliesAuditList
-        alerts={activeAlerts}
-        zones={zones}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onInspectAnomaly={(alert) => {
-          setAnomalyTrendZoneId(alert.location_zone);
-          const el = document.getElementById('anomaly-trend-30d-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-      />
-
-      {/* Telemetry Precursor Pattern Recognition Engine (String-Matching Algorithm) */}
-      <PatternRecognitionPanel
-        telemetryStream={telemetryStream}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-      />
-
-      {/* Dedicated Algorithm Sensitivity Configuration Panel for Anomaly Detection Algorithms */}
-      <AlgorithmSensitivityConfigPanel
-        kalmanConfig={kalmanConfig}
-        onUpdateKalmanConfig={(newConfig) => {
-          setKalmanConfig(newConfig);
-          const newPacket = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, newConfig);
-          setTelemetryAlert(res);
-        }}
-        healthThresholds={healthThresholds}
-        onUpdateHealthThresholds={handleSaveHealthThresholds}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-        onScrollToHistoricalLog={() => {
-          const el = document.getElementById('historical-anomaly-event-log-panel');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-      />
-
-      {/* Real-Time Audio Alerts Notification Toggle System per Severity Level */}
-      <AudioNotificationSeverityTogglePanel
-        voiceSettings={voiceSettings}
-        onUpdateVoiceSettings={setVoiceSettings}
-        onLogAuditAction={(cat, action, justification) => {
-          const auditEntry: SystemAuditLogEntry = {
-            id: generateUniqueId('AUD-AUD'),
-            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
-            userId: 'USR-MGR-2026',
-            userName: 'Alex Mercer',
-            userRole: 'EHS Safety Manager',
-            category: 'THRESHOLD_CHANGE',
-            targetModule: 'Real-Time Audio Notification Engine',
-            parameter: 'Severity Audio Toggles',
-            previousValue: 'N/A',
-            newValue: action,
-            justification: justification || 'Adjusted acoustic audio alert permissions per severity tier.',
-            approvalStatus: 'VERIFIED'
-          };
-          setSystemAuditLogs((prev) => [auditEntry, ...prev]);
-        }}
-      />
-
-      {/* Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel */}
-      <AnomalyThresholdConfigPanel
-        thresholds={healthThresholds}
-        onUpdateThresholds={handleSaveHealthThresholds}
-        trendData={anomalyTrend30d}
-        dailyFrequencyThreshold={dailyFrequencyThreshold}
-        onDailyFrequencyThresholdChange={setDailyFrequencyThreshold}
-        criticalFrequencyThreshold={criticalFrequencyThreshold}
-        onCriticalFrequencyThresholdChange={setCriticalFrequencyThreshold}
-        proactiveRiskThreshold={proactiveRiskThreshold}
-        onProactiveRiskThresholdChange={setProactiveRiskThreshold}
-        onTriggerPreemptiveAlert={() => triggerPreemptiveProactiveAlert()}
-        sensitivityLevel={sensitivityLevel}
-        onSensitivityLevelChange={setSensitivityLevel}
-        onScrollToTrendChart={() => {
-          const el = document.getElementById('anomaly-trend-30d-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        selectedZone={activeZoneObj}
-      />
-
-      {/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (Recharts / D3.js) */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 px-1 gap-2">
-        <div className="flex items-center space-x-2">
-          <span className="text-xs font-semibold text-slate-300">Longitudinal Trend Visualizer:</span>
-          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs shadow-xs">
-            <button
-              onClick={() => setTrendChartEngine('RECHARTS')}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
-                trendChartEngine === 'RECHARTS'
-                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <BarChart3 className="h-3 w-3" />
-              <span>Recharts Line Engine (Active)</span>
-            </button>
-            <button
-              onClick={() => setTrendChartEngine('D3')}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
-                trendChartEngine === 'D3'
-                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sparkles className="h-3 w-3 text-cyan-200" />
-              <span>D3.js Vector Engine</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="text-[11px] text-slate-400 font-mono hidden md:flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>Recharts Longitudinal Line Chart &bull; Multi-Series &bull; 7D SMA Projection &bull; 30-Day Frequency</span>
-        </div>
-      </div>
-
-      {trendChartEngine === 'RECHARTS' ? (
-        <AnomalyTrend30DaysChart
-          data={anomalyTrend30d}
-          summary={anomalyTrendSummary}
-          currentZone={activeZoneObj}
-          zones={zones}
-          selectedZoneId={anomalyTrendZoneId}
-          onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
-          onExportReport={handleExportViewAuditReport}
-          isExporting={isExportingAuditReport}
-          dailyFrequencyThreshold={dailyFrequencyThreshold}
-          criticalFrequencyThreshold={criticalFrequencyThreshold}
-          proactiveRiskThreshold={proactiveRiskThreshold}
-          sensitivityLevel={sensitivityLevel}
-          onOpenThresholdPanel={() => {
-            const el = document.getElementById('anomaly-threshold-config-panel');
-            el?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
-        />
-      ) : (
-        <D3AnomalyTrend30DaysChart
-          data={anomalyTrend30d}
-          summary={anomalyTrendSummary}
-          currentZone={activeZoneObj}
-          zones={zones}
-          selectedZoneId={anomalyTrendZoneId}
-          onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
-          onExportReport={handleExportViewAuditReport}
-          isExporting={isExportingAuditReport}
-          dailyFrequencyThreshold={dailyFrequencyThreshold}
-          criticalFrequencyThreshold={criticalFrequencyThreshold}
-          proactiveRiskThreshold={proactiveRiskThreshold}
-          sensitivityLevel={sensitivityLevel}
-          onOpenThresholdPanel={() => {
-            const el = document.getElementById('anomaly-threshold-config-panel');
-            el?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
-        />
-      )}
-
-      {/* Organization-Wide Geographical & Departmental Anomaly Frequency Heatmap */}
-      <OrganizationalAnomalyHeatmap
-        zones={zones}
-        alerts={activeAlerts}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-      />
-
-      {/* 24-Hour Temporal Health Anomaly Heat-Map Visualization (Using Recharts) */}
-      <TemporalAnomalyHeatmap
-        zones={zones}
-        alerts={activeAlerts}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {/* Population Health Risk Heatmap Widget (Categorizes into Low, Medium, High, Critical using Radar Chart) */}
-      <RiskHeatmapRadarWidget
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {/* Longitudinal Health Analytics & Timeframe Filter Header Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl mb-4 shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-cyan-400">
-            <Calendar className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <span>Longitudinal Workforce Health Analytics &amp; Comparative Baselines</span>
-              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30">
-                Filtered: {healthDateRange.preset}
-              </span>
-            </h3>
-            <p className="text-xs text-slate-400">
-              Filter historical trends and department comparison metrics across specific operational timeframes
-            </p>
-          </div>
-        </div>
-
-        {/* Quick jump to D3 30D Trend Comparison & Date Range Picker Control */}
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
-          <button
-            onClick={() => {
-              const el = document.getElementById('d3-rolling-30d-health-signals-section');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
-                setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
-              }
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 transition cursor-pointer shadow-xs"
-            title="Jump to D3 Rolling 30-Day Health Signals vs. Baseline Comparison section"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            <span>D3 30D Signals vs. Baseline</span>
-          </button>
-
-          <DateRangePicker
-            value={healthDateRange}
-            onChange={(newRange) => {
-              setHealthDateRange(newRange);
-              setProtocolActiveNotice(
-                `Timeframe filter updated: ${newRange.label} (${newRange.daysCount} days applied)`
-              );
-              setTimeout(() => setProtocolActiveNotice(null), 6000);
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Split-View Department Health Metrics vs Previous Month Historical Averages Comparison Card */}
-      <DepartmentHealthComparisonSplitCard
-        zones={zones}
-        dateRange={healthDateRange}
-        selectedDepartmentId={selectedComparisonDeptId}
-        onSelectDepartmentId={(id) => {
-          setSelectedComparisonDeptId(id);
-          setSelectedZone(id);
-        }}
-        className="mb-6"
-      />
-
-      {/* Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart */}
-      <DepartmentSeverityStackedBarChart
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-      />
-
-      {/* D3 Vector Engine: Rolling 30-Day Health Signals vs. Baseline Averages Trend Comparison Section */}
-      <div id="d3-rolling-30d-health-signals-section" className="scroll-mt-6">
-        <D3HealthSignalRollingTrendComparison
-          selectedZone={activeZoneObj}
-          zones={zones}
-          thresholds={healthThresholds}
-          dateRange={healthDateRange}
-          onSelectZone={(zoneId) => {
-            setSelectedZone(zoneId);
-            setAnomalyTrendZoneId(zoneId);
-            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-            setTelemetryAlert(res);
-          }}
-          className="mb-6"
-        />
-      </div>
-
-      {/* Historical Trend of Workforce Health Metrics Line Chart (Recharts) */}
-      <WorkforceHealth30DaysTrendChart
-        selectedZone={activeZoneObj}
-        zones={zones}
-        thresholds={healthThresholds}
-        dateRange={healthDateRange}
-        onTriggerThresholdAlert={checkReadingForThresholdBreaches}
-        showMovingAverage={showGlobalMovingAverages}
-        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
-        className="mb-6"
-      />
-
-      {/* 30-Day Forward Predictive Health Modeling using Kalman Filter Extrapolation */}
-      <KalmanPredictiveModel30DaysChart
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {/* Historical Workforce Health Signal Data Line Chart (Last 24 Hours via Recharts) */}
-      <HistoricalWorkforceHealthChart
-        data={telemetryStream}
-        zoneName={activeZoneObj.name}
-        activeThresholdCutoff={kalmanConfig.criticalCutoffPct}
-        thresholds={healthThresholds}
-        onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
-        onExportCsv={handleExportWorkforceCsv}
-        onExportReport={() => setIsHealthMetricsPdfModalOpen(true)}
-        externalIsolatedSignal={isolatedHealthSignal}
-        onSignalIsolationChange={setIsolatedHealthSignal}
-        correlationPair={activeCorrelationPair}
-        showMovingAverage={showGlobalMovingAverages}
-        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
-        maWindowHours={globalMaWindowHours}
-      />
-
-      {/* Dedicated Historical Anomaly Events Log Component with Severity Scores & Timestamp Details */}
-      <HistoricalAnomalyEventLog
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        thresholds={healthThresholds}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-        }}
-        onSpeakAlert={handleSpeakAlert}
-        onOpenSensitivityPanel={() => {
-          const el = document.getElementById('algorithm-sensitivity-config-panel');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onOpenComplianceExportModal={() => setIsComplianceCsvExportModalOpen(true)}
-        onOpenCompliancePdfExportModal={() => setIsCompliancePdfExportModalOpen(true)}
-        isSpeaking={isSpeaking}
-      />
-
-      {/* Chronological Anomaly Log Panel below Line Chart */}
-      <ChronologicalAnomalyLogPanel
-        alerts={activeAlerts}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => setSelectedZone(zoneId)}
-        onSpeakAlert={handleSpeakAlert}
-        onIsolateSignalInChart={(sigKey) => setIsolatedHealthSignal(sigKey)}
-        isSpeaking={isSpeaking}
-      />
-
-      {/* Alert History Table: Timestamped Log of Past Incidents Exceeding Thresholds */}
-      <AlertHistoryTable
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        thresholds={healthThresholds}
-        zones={zones}
-        selectedZone={activeZoneObj}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onSpeakAlert={handleSpeakAlert}
-        isSpeaking={isSpeaking}
-        onScrollToChart={() => {
-          const el = document.getElementById('historical-health-chart-card');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
-      />
-
-      {/* Incident Log: Comprehensive Historical Alerts Triggered by Anomaly Detection System */}
-      <IncidentLog
-        alerts={activeAlerts}
-        zones={zones}
-        selectedZoneId={selectedZone}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onDispatchAction={handleDispatchAction}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        onSpeakAlert={handleSpeakAlert}
-        isSpeaking={isSpeaking}
-        theme={dashboardTheme}
-        className="mb-6"
-      />
-
-      {/* Geospatial Summary Widget: Categorizes health telemetry metrics by site location / region using a simple chart */}
-      <GeospatialSummaryWidget
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {/* Sliding 24-Hour Recharts Telemetry Stream with 1-Hour Forecast */}
-      <TelemetryCharts
-        data={telemetryStream}
-        zoneName={activeZoneObj.name}
-        streamToggles={effectiveStreamToggles}
-        showMovingAverage={showGlobalMovingAverages}
-        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
-        onExportData={() => setIsReportModalOpen(true)}
-      />
-
-      {/* Side-by-Side Population Cohort & Site Health Telemetry Line Chart Comparison View */}
-      <CohortHealthComparisonLineView
-        zones={zones}
-        telemetryStream={telemetryStream}
-        selectedZoneId={selectedZone}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          setSelectedComparisonDeptId(zoneId);
-          setAnomalyTrendZoneId(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-        className="mb-6"
-      />
-
-      {/* Multi-Variable Sensor Correlation & Root-Cause Scatter Plot (Recharts) */}
-      <div id="sensor-correlation-scatter-section">
-        <SensorCorrelationScatterPlot
-          data={correlationData}
-          zones={zones}
-          selectedZoneId={selectedZone}
-          onSelectZone={(zoneId) => setSelectedZone(zoneId)}
-        />
-      </div>
-
-      {/* 48-Hour Potential Incident Volume Projection Trend Analysis (Recharts) */}
-      <IncidentProjectionChart
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        currentZone={activeZoneObj}
-      />
-
-      {/* 48-Hour Forecasted Risk Staffing & Resource Distribution Widget */}
-      <ForecastedResourceDistributionWidget
-        zones={zones}
-        alerts={activeAlerts}
-        telemetryStream={telemetryStream}
-        currentZone={activeZoneObj}
-        onApplyReallocation={(order) => {
-          setProtocolActiveNotice(
-            `Staffing Distribution Applied: Reallocated personnel to ${order.toZone} to prevent forecasted health signals.`
-          );
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-      />
-
-      {/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap & Predictive Maintenance) */}
+{/* Active Alerts Section (Kalman Filter Anomaly Detection with D3 Weekly Heatmap & Predictive Maintenance) */}
       <ActiveAlertsSection
         alerts={activeAlerts}
         onAcknowledgeAlert={handleAcknowledgeAlert}
@@ -7434,26 +5975,7 @@ export default function ManagerDashboard({
         onInspectAnomaly={handleOpenAnomalyDetails}
       />
 
-      {/* Automated Predictive Maintenance Scheduler Tool (Correlating Alerts with Technician Availability) */}
-      <MaintenanceSchedulerModule
-        alerts={activeAlerts}
-        zones={zones}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
-        onNotice={(msg) => {
-          setProtocolActiveNotice(msg);
-          setTimeout(() => setProtocolActiveNotice(null), 6000);
-        }}
-        onSelectZone={(zoneId) => {
-          setSelectedZone(zoneId);
-          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
-          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
-          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
-          setTelemetryAlert(res);
-        }}
-      />
-
-      {/* Main Operational Section: Split View */}
+{/* Main Operational Section: Split View */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Col: Geospatial Zone Selector / Heatmap & Custom Zone Builder */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
@@ -7711,7 +6233,1634 @@ export default function ManagerDashboard({
         </div>
       </div>
 
-      {/* Dynamic On-Site Safety Resource Allocation & Personnel Redistribution Module */}
+{/* 2D Floor Plan Visualization Component with Zone Hotspots & Sensor Telemetry Stream Toggles */}
+      <FloorPlan2DView
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        activeAlerts={activeAlerts}
+        streamToggles={effectiveStreamToggles}
+        onToggleStream={handleToggleStream}
+        onSetAllStreams={handleSetAllStreams}
+        recentTelemetryPoint={telemetryStream[telemetryStream.length - 1]}
+      />
+
+{/* Automated Response Module: Corrective HVAC/Ventilation Adjustments for Low-to-Medium Environmental Anomalies */}
+      <AutomatedResponseModule
+        className="mb-6"
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onNavigateToZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          jumpToLiveSection('ANALYTICS', 'anomaly-density-floor-plan-heatmap');
+        }}
+      />
+
+{/* Hyper-Local Real-Time Weather Integration Card */}
+      <ZoneWeatherCard
+        weather={currentWeather}
+        loading={weatherLoading}
+        onRefreshWeather={() => syncLiveWeather(activeZoneObj)}
+        zoneName={activeZoneObj.name}
+        latitude={activeZoneObj.latitude}
+        longitude={activeZoneObj.longitude}
+      />
+        </div>
+      )}
+
+      {liveSection === 'FORECASTS' && (
+        <div className="space-y-2 animate-fadeIn">
+{/* 48-Hour Incident Likelihood Surge Predictive Analysis Banner */}
+      {predictive48hAnalysis.increasePct >= 20.0 && !isPredictiveSurgeBannerDismissed && (
+        <div className="mb-6 p-5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-slate-900/95 to-amber-950/75 border-2 border-rose-500/70 shadow-2xl relative overflow-hidden ring-1 ring-rose-500/30 animate-in fade-in slide-in-from-top-3 duration-300">
+          {/* Subtle Ambient Background Watermark */}
+          <div className="absolute -right-6 -bottom-8 opacity-10 pointer-events-none text-rose-400">
+            <TrendingUp className="h-44 w-44" />
+          </div>
+
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 relative z-10">
+            {/* Left: Surge Beacon & Analytical Breakdown */}
+            <div className="flex items-start sm:items-center space-x-4">
+              <div className="p-3.5 rounded-2xl bg-rose-900/60 border-2 border-rose-500 text-rose-300 shrink-0 shadow-lg relative">
+                <AlertTriangle className="h-7 w-7 text-rose-400 animate-bounce" />
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
+                </span>
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="bg-rose-500/20 text-rose-300 border border-rose-500/50 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
+                    <Sparkles className="h-3 w-3 text-rose-400" />
+                    PREDICTIVE ANALYSIS ALERT &bull; 48-HOUR SURGE WARNING
+                  </span>
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono px-2 py-0.5 rounded-full font-bold">
+                    Inflection Threshold &ge; 20% Breached
+                  </span>
+                  <span className="bg-slate-800 text-slate-300 text-[10px] font-mono px-2 py-0.5 rounded-full border border-slate-700">
+                    Model Confidence: {predictive48hAnalysis.confidenceScore}%
+                  </span>
+                </div>
+
+                <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                  <span>+{predictive48hAnalysis.increasePct}% Projected Incident Likelihood Increase Over Next 48 Hours</span>
+                </h3>
+
+                <p className="text-xs text-rose-200/90 mt-1 max-w-3xl leading-relaxed">
+                  Longitudinal 30-day anomaly trend frequency and forward projection models indicate an acute{' '}
+                  <strong className="text-white">+{predictive48hAnalysis.increasePct}% incident likelihood velocity spike</strong> over the upcoming 48 hours (rising from rolling baseline of <span className="font-mono text-cyan-300 font-semibold">{predictive48hAnalysis.baselineDailyRate}/day</span> to <span className="font-mono text-rose-300 font-bold">{predictive48hAnalysis.projected48hDailyRate}/day</span>, forecasted <span className="font-mono text-rose-300 font-bold">~{predictive48hAnalysis.total48hForecastedEvents} events</span>). Primary hazard vector: <span className="text-amber-300 font-semibold">{predictive48hAnalysis.primaryDriver}</span> across {predictive48hAnalysis.affectedCohorts.join(', ')}.
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Key Proactive Metrics & Quick Actions */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
+              <div className="flex bg-slate-950/80 p-2.5 rounded-xl border border-rose-900/60 divide-x divide-slate-800 text-xs">
+                <div className="px-3 text-center">
+                  <div className="text-[10px] text-slate-400">Baseline 7D Rate</div>
+                  <div className="text-sm font-bold text-cyan-400 font-mono">{predictive48hAnalysis.baselineDailyRate}/day</div>
+                </div>
+                <div className="px-3 text-center">
+                  <div className="text-[10px] text-slate-400">48h Forecast Rate</div>
+                  <div className="text-sm font-bold text-rose-400 font-mono">{predictive48hAnalysis.projected48hDailyRate}/day</div>
+                </div>
+                <div className="px-3 text-center">
+                  <div className="text-[10px] text-slate-400">Surge Delta</div>
+                  <div className="text-sm font-bold text-rose-300 font-mono">+{predictive48hAnalysis.increasePct}%</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                <button
+                  onClick={handleStagePreemptive48hMitigation}
+                  className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-lg cursor-pointer border border-rose-400/40"
+                  title="Stage pre-emptive rapid cooling stations and hydration rotations before acute anomalies materialize"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>Stage Pre-Emptive Protocols</span>
+                </button>
+
+                <button
+                  onClick={handleScrollToForecastChart}
+                  className="flex items-center justify-center space-x-1 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  title="Jump directly to 30-day anomaly trend and 48-hour forward projection chart"
+                >
+                  <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Inspect Trend Chart</span>
+                </button>
+
+                <button
+                  onClick={() => handleExportViewAuditReport('PDF')}
+                  className="flex items-center justify-center space-x-1 bg-indigo-950/80 hover:bg-indigo-900/90 border border-indigo-500/50 text-indigo-200 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  title="Export 48h predictive risk brief as simulated PDF for statutory audit"
+                >
+                  <FileText className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Risk Brief PDF</span>
+                </button>
+
+                <button
+                  onClick={() => setIsPredictiveSurgeBannerDismissed(true)}
+                  className="px-2.5 py-2 text-slate-400 hover:text-slate-200 text-sm font-bold rounded-xl hover:bg-slate-900 transition cursor-pointer"
+                  title="Dismiss 48-hour predictive surge banner"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* Kalman Filter Real-Time Confidence & Desktop Notification Sentinel Banner */}
+      <div className="mb-6 p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          {/* Left: Kalman Filter Confidence Status */}
+          <div className="flex items-start sm:items-center space-x-3.5">
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 ${
+                kalmanConfidence >= kalmanConfidenceThreshold
+                  ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-400'
+                  : 'bg-rose-950/80 border-rose-500/70 text-rose-400 animate-pulse'
+              }`}
+            >
+              <Activity className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Kalman Filter Real-Time Confidence Sentinel</h3>
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border flex items-center gap-1 ${
+                    kalmanConfidence >= kalmanConfidenceThreshold
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      kalmanConfidence >= kalmanConfidenceThreshold ? 'bg-emerald-400' : 'bg-rose-400 animate-ping'
+                    }`}
+                  />
+                  State Confidence: {kalmanConfidence.toFixed(1)}%
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                  Threshold: &lt;{kalmanConfidenceThreshold.toFixed(1)}% Triggers Alert
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Monitors recursive 1D Kalman state estimation confidence. If high noise or packet jitter drops confidence below the safety threshold, an OS desktop notification and audit entry are dispatched immediately.
+              </p>
+            </div>
+          </div>
+
+          {/* Right: Controls & Simulation Actions */}
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {/* Threshold Slider / Presets */}
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs">
+              <span className="text-[11px] text-slate-400 px-2 font-medium">Floor:</span>
+              {[75, 80, 85, 90].map((th) => (
+                <button
+                  key={th}
+                  onClick={() => setKalmanConfidenceThreshold(th)}
+                  className={`px-2 py-1 rounded text-[11px] font-mono font-semibold transition cursor-pointer ${
+                    kalmanConfidenceThreshold === th
+                      ? 'bg-cyan-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {th}%
+                </button>
+              ))}
+            </div>
+
+            {/* Desktop Notification Permission Status / Toggle */}
+            <button
+              onClick={requestDesktopNotificationPermission}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+                desktopNotificationPermission === 'granted'
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                  : 'bg-amber-950/70 border-amber-500/50 text-amber-300 hover:bg-amber-900/60'
+              }`}
+              title={
+                desktopNotificationPermission === 'granted'
+                  ? 'Desktop notification permission is granted'
+                  : 'Click to grant browser notification permission for desktop alerts'
+              }
+            >
+              {desktopNotificationPermission === 'granted' ? (
+                <>
+                  <Bell className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Desktop Alerts: Active</span>
+                </>
+              ) : (
+                <>
+                  <BellRing className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
+                  <span>Enable Desktop Alerts</span>
+                </>
+              )}
+            </button>
+
+            {/* Simulate Confidence Drop (< 85%) */}
+            <button
+              onClick={handleSimulateKalmanConfidenceDrop}
+              className="flex items-center space-x-1.5 bg-rose-950/80 hover:bg-rose-900/90 border border-rose-500/60 text-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+              title={`Instantly simulate a Kalman filter confidence collapse below threshold to trigger desktop notification and in-app alerts`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+              <span>Simulate Confidence Drop (&lt;{kalmanConfidenceThreshold}%)</span>
+            </button>
+
+            {/* Test Desktop Notification Button */}
+            <button
+              onClick={handleTestDesktopNotification}
+              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer"
+              title="Send a sample desktop notification to verify operating system permissions"
+            >
+              <Bell className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Test OS Alert</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+{/* Proactive Alert Forecast Card: Analyzes Health Risk Growth Rates to Predict Upcoming Spikes */}
+      <AlertForecastCard
+        telemetryStream={telemetryStream}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onStageMitigation={(forecast) => {
+          setProtocolActiveNotice(
+            `Mitigation Protocol Staged for ${forecast.zoneName}: ${forecast.action} (Projected peak: ${forecast.projectedPeak}%, Time to breach: ~${forecast.timeToSpikeHours}h)`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onViewTrendChart={() => {
+          jumpToLiveSection('FORECASTS', 'workforce-risk-trend-7d-card');
+        }}
+        theme={dashboardTheme}
+        className="mb-6"
+      />
+
+{/* 24-48 Hour Prognostic Forecast Panel & 12h LSTM: Gated and restricted when Maintenance Crew view is active */}
+      {activeRole === 'MAINTENANCE_CREW' ? (
+        <div className="bg-slate-900 border border-amber-900/40 rounded-xl p-5 mb-6 text-slate-300 shadow-xl relative overflow-hidden">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0">
+              <Lock className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  Sensitive Workforce Health Forecasting Restricted
+                </h3>
+                <span className="text-[10px] font-mono uppercase bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold">
+                  Maintenance Crew Role Gated
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Access to individualized worker physiological stress projections, LSTM neural risk curves, and personal biometric predictions is restricted under OSHA 1910 and HIPAA §164.312 privacy requirements for the Maintenance Crew view. Physical equipment telemetry, HVAC response, and microclimate environmental monitors remain active.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                <span className="text-slate-400 font-mono">
+                  Active for Maintenance: <strong className="text-cyan-400">HVAC Automation</strong> • <strong className="text-cyan-400">Microclimate Environmental Sensors</strong> • <strong className="text-cyan-400">Equipment Vibration &amp; RUL</strong>
+                </span>
+                <button
+                  onClick={() => handleSwitchRole('SAFETY_OFFICER')}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer ml-auto"
+                >
+                  Switch to Safety Officer View (Full Access) &rarr;
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <PrognosticForecastPanel
+            alerts={activeAlerts}
+            zones={zones}
+            selectedZone={activeZoneObj}
+            onSelectZone={(zoneId) => {
+              setSelectedZone(zoneId);
+              setAnomalyTrendZoneId(zoneId);
+              const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+              const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+              const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+              setTelemetryAlert(res);
+            }}
+            onApplyPreemptiveProtocol={(scenarioType, details) => {
+              const newAudit: AuditEvent = {
+                id: generateUniqueId('AUD-PROG'),
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                eventType: 'ALERT_DISPATCH',
+                zone: activeZoneObj.name,
+                cohortCount: activeZoneObj.count,
+                riskTier: 'CRITICAL_RISK',
+                privacyEnforced: 'Differential Privacy Enforced (k=12)',
+                actionTaken: details
+              };
+              setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
+              setProtocolActiveNotice(`Prognostic 24-48h Pre-emptive Countermeasure staged: ${details}`);
+              setTimeout(() => setProtocolActiveNotice(null), 7000);
+            }}
+            className="mb-6"
+          />
+
+          <LstmRiskForecastingPanel12h
+            alerts={activeAlerts}
+            selectedZone={activeZoneObj}
+            onStageMitigation={handleStageLstmPreemptiveMitigation}
+            className="mb-6"
+          />
+        </>
+      )}
+
+{/* Kalman Filter Cohort Anomaly Sentinel & Notification Panel: Alerts safety managers when anomaly scores exceed defined thresholds for any population cohort */}
+      <KalmanCohortAnomalyNotificationPanel
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(cohortName, action) => {
+          setProtocolActiveNotice(`Mitigation Protocol Dispatched to ${cohortName}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onLogAudit={(action, details) => {
+          const entry: SystemAuditLogEntry = {
+            id: generateUniqueId('AUD-KALMAN'),
+            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+            userId: 'USR-MGR-2026',
+            userName: activeActorName,
+            userRole: 'EHS Operations Supervisor',
+            category: 'THRESHOLD_CHANGE',
+            targetModule: 'Kalman Cohort Sentinel',
+            parameter: action,
+            previousValue: 'NOMINAL',
+            newValue: action,
+            justification: details,
+            approvalStatus: 'VERIFIED'
+          };
+          setSystemAuditLogs((prev) => [entry, ...prev]);
+        }}
+        onTriggerAnomalyToast={(cohort) => {
+          triggerCriticalAnomalyNotification({
+            department: cohort.cohortName,
+            confidenceLevel: cohort.kalmanAnomalyScore / 100,
+            riskProbability: cohort.kalmanAnomalyScore / 100,
+            riskTier: cohort.severity === 'CRITICAL' ? 'CRITICAL_RISK' : 'HIGH_RISK',
+            locationZone: cohort.zoneName,
+            zoneId: cohort.zoneId,
+            cohortCount: cohort.populationSize,
+            workerPseudonym: `COHORT-${cohort.zoneId.slice(0, 8)}`,
+            anomalyMetric: `${cohort.primaryAttribution} (Kalman Score: ${cohort.kalmanAnomalyScore}%)`,
+            measuredValue: `Kalman Anomaly Score: ${cohort.kalmanAnomalyScore}% (Limit: ${cohort.thresholdLimit}%)`,
+            rawMeasuredValue: `Raw Measured Divergence: +${cohort.divergenceDelta}%`,
+            kalmanSmoothedValue: `Kalman Smoothed Score: ${cohort.kalmanAnomalyScore}%`,
+            kalmanStatus: cohort.kalmanValidationStatus,
+            thresholdLimit: `${cohort.thresholdLimit}% Safe Threshold`,
+            reconstructionMse: 0.392,
+            recommendedAction: cohort.recommendedIntervention,
+            privacyNotice: `k-Anonymity Verified (N=${cohort.populationSize} >= 12) & ε=0.5 DP Shield`,
+            force: true
+          });
+        }}
+        className="mb-6"
+      />
+
+{/* Predictive Trend Alerts (Kalman Drift Early Warning): Identifies and Surfaces Long-Term Negative Health Trends Before High-Risk Alerts Trigger */}
+      <PredictiveTrendAlertsPanel
+        telemetryStream={telemetryStream}
+        zones={zones}
+        onDeployPrecursorAction={(trendAlert, directive) => {
+          const newAudit: AuditEvent = {
+            id: generateUniqueId('AUD-TRD'),
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            eventType: 'ALERT_DISPATCH',
+            zone: trendAlert.zoneName,
+            cohortCount: trendAlert.cohortSize,
+            riskTier: 'MODERATE_RISK',
+            privacyEnforced: 'Differential Privacy Enforced (k=12)',
+            actionTaken: `Precursor Early Countermeasure Deployed: ${directive}`
+          };
+          setAuditEvents((prev: AuditEvent[]) => [newAudit, ...prev]);
+          setProtocolActiveNotice(`Predictive Trend Precursor Action Staged: ${directive}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onInspectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Real-Time 24-Hour Aggregate Risk Score Progression Trend Line Chart (Using Recharts & 24H Linear Regression Forecast) */}
+      <AggregateRiskScoreTrend24hChart
+        telemetryStream={telemetryStream}
+        selectedZone={activeZoneObj}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
+        onInspectHour={(pt) => {
+          setIsolatedHealthSignal('riskScore');
+          jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
+        }}
+        className="mb-6"
+      />
+
+{/* Recharts 7-Day Aggregate Workforce Risk Level Line Chart with What-If Simulator & Prediction Uncertainty Band */}
+      <WorkforceRiskTrend7DaysChart
+        className="mb-6"
+        theme={dashboardTheme}
+        isWhatIfOpen={isWhatIfSimulatorOpen}
+        onToggleWhatIfOpen={() => setIsWhatIfSimulatorOpen((prev) => !prev)}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
+        onSelectDay={(day) => {
+          if (day.isSpike) {
+            setProtocolActiveNotice(
+              `Inspecting 7-day risk spike on ${day.fullDate}: Peak risk ${day.peakRiskScore}% driven by ${day.spikeReason}.`
+            );
+            setTimeout(() => setProtocolActiveNotice(null), 7000);
+          }
+        }}
+      />
+
+{/* 48-Hour Potential Incident Volume Projection Trend Analysis (Recharts) */}
+      <IncidentProjectionChart
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        currentZone={activeZoneObj}
+      />
+
+{/* 48-Hour Forecasted Risk Staffing & Resource Distribution Widget */}
+      <ForecastedResourceDistributionWidget
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        currentZone={activeZoneObj}
+        onApplyReallocation={(order) => {
+          setProtocolActiveNotice(
+            `Staffing Distribution Applied: Reallocated personnel to ${order.toZone} to prevent forecasted health signals.`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+      />
+
+{/* Real-Time Biometric Synchronization Hub (Wearable Health Devices & Live HRV Stress Monitoring) */}
+      <BiometricSyncModule
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSyncBiometricToKalman={handleSyncBiometricToKalman}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+      />
+
+{/* Sliding 24-Hour Recharts Telemetry Stream with 1-Hour Forecast */}
+      <TelemetryCharts
+        data={telemetryStream}
+        zoneName={activeZoneObj.name}
+        streamToggles={effectiveStreamToggles}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
+        onExportData={() => setIsReportModalOpen(true)}
+      />
+
+{/* Multi-Variable Sensor Correlation & Root-Cause Scatter Plot (Recharts) */}
+      <div id="sensor-correlation-scatter-section">
+        <SensorCorrelationScatterPlot
+          data={correlationData}
+          zones={zones}
+          selectedZoneId={selectedZone}
+          onSelectZone={(zoneId) => setSelectedZone(zoneId)}
+        />
+      </div>
+        </div>
+      )}
+
+      {liveSection === 'ANALYTICS' && (
+        <div className="space-y-2 animate-fadeIn">
+{/* Macro Analytics Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Active Monitored Workforce</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-white">1,420 Active</h3>
+              <span className="text-xs text-emerald-400 font-semibold flex items-center">
+                <Users className="h-3 w-3 mr-1" /> 100% Anonymized
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">Resilience Trend</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => Math.round(100 - p.risk_score * 0.6))}
+                lowerIsBetter={false}
+                label="24h"
+              />
+            </div>
+            <MiniSparkline
+              data={telemetryStream.slice(-24).map((p) => Math.round(100 - p.risk_score * 0.6))}
+              color="#10b981"
+              height={28}
+              width={95}
+              unit="%"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour resilience trend with 7-day linear forecast"
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Active Critical Alerts</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-rose-400">{pendingCriticalCount}</h3>
+              <span className="text-xs text-rose-400 font-semibold flex items-center">
+                <ShieldAlert className="h-3 w-3 mr-1" /> Immediate Action
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">Risk Variance</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => p.risk_score)}
+                lowerIsBetter={true}
+                label="24h"
+              />
+            </div>
+            <MiniSparkline
+              data={telemetryStream.slice(-24).map((p) => p.risk_score)}
+              color="#f43f5e"
+              height={28}
+              width={95}
+              unit="%"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour risk variance trend with 7-day linear forecast"
+            />
+          </div>
+        </div>
+
+        {/* Equipment Predictive Maintenance Macro Metric Card */}
+        <div className="bg-slate-900 border border-amber-500/30 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5">
+              <Wrench className="h-3.5 w-3.5 text-amber-400" />
+              Predictive Maintenance
+            </p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-amber-400">
+                {activeAlerts.filter((a) => a.alert_type === 'PREDICTIVE_MAINTENANCE' && !a.acknowledged).length} Pending
+              </h3>
+              <span className="text-[11px] text-amber-300/80 font-mono">
+                Vibration / Heat
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">ISO 10816 Curve</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
+                lowerIsBetter={true}
+                label="24h"
+              />
+            </div>
+            <MiniSparkline
+              data={telemetryStream.slice(-24).map((p) => (p.equipment_vibration_mm_s ?? 2.8) * 10)}
+              color="#f59e0b"
+              height={28}
+              width={95}
+              unit="mm/s"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour ISO 10816 vibration curve with 7-day linear forecast"
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Avg Wet-Bulb Heat Index</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-amber-400">{activeZoneObj.heatIndex || 42.5}°C</h3>
+              <span className="text-xs text-slate-400">Severe Thermal Load</span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">Heat Wave Index</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => p.ambient_temp_c)}
+                lowerIsBetter={true}
+                label="24h"
+              />
+            </div>
+            <MiniSparkline
+              data={telemetryStream.slice(-24).map((p) => p.ambient_temp_c)}
+              color="#f97316"
+              height={28}
+              width={95}
+              unit="°C"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour ambient heat index trend with 7-day linear forecast"
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Model Lead Time (Backtested)</p>
+            <div className="flex items-baseline justify-between mt-2">
+              <h3 className="text-2xl font-bold text-cyan-400">3.8 Hours</h3>
+              <span className="text-xs text-cyan-400 font-semibold">Prior to Incident</span>
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono">HRV Autonomic</span>
+              <HealthSignal24hBadge
+                data={telemetryStream.slice(-24).map((p) => p.smoothed_hrv)}
+                lowerIsBetter={false}
+                label="24h"
+              />
+            </div>
+            <MiniSparkline
+              data={telemetryStream.slice(-24).map((p) => p.smoothed_hrv)}
+              color="#06b6d4"
+              height={28}
+              width={95}
+              unit="ms"
+              showForecast={true}
+              forecastDays={7}
+              ariaLabel="24-hour HRV autonomic trend with 7-day linear forecast"
+            />
+          </div>
+        </div>
+      </div>
+
+{/* 24-Hour vs Previous Week Telemetry Variance Summary Component */}
+      <HealthTelemetryVarianceSummary
+        telemetryStream={telemetryStream}
+        theme={dashboardTheme}
+        thresholdBreaches={activeBreachSignalKeys}
+        className="mb-6"
+      />
+
+{/* Longitudinal Health Analytics & Timeframe Filter Header Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/90 border border-slate-800 p-3.5 rounded-xl mb-4 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-cyan-400">
+            <Calendar className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <span>Longitudinal Workforce Health Analytics &amp; Comparative Baselines</span>
+              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/30">
+                Filtered: {healthDateRange.preset}
+              </span>
+            </h3>
+            <p className="text-xs text-slate-400">
+              Filter historical trends and department comparison metrics across specific operational timeframes
+            </p>
+          </div>
+        </div>
+
+        {/* Quick jump to D3 30D Trend Comparison & Date Range Picker Control */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+          <button
+            onClick={() => {
+              const el = document.getElementById('d3-rolling-30d-health-signals-section');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                el.classList.add('ring-2', 'ring-cyan-500', 'transition-all');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-500'), 2500);
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 transition cursor-pointer shadow-xs"
+            title="Jump to D3 Rolling 30-Day Health Signals vs. Baseline Comparison section"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+            <span>D3 30D Signals vs. Baseline</span>
+          </button>
+
+          <DateRangePicker
+            value={healthDateRange}
+            onChange={(newRange) => {
+              setHealthDateRange(newRange);
+              setProtocolActiveNotice(
+                `Timeframe filter updated: ${newRange.label} (${newRange.daysCount} days applied)`
+              );
+              setTimeout(() => setProtocolActiveNotice(null), 6000);
+            }}
+          />
+        </div>
+      </div>
+
+{/* Split-View Department Health Metrics vs Previous Month Historical Averages Comparison Card */}
+      <DepartmentHealthComparisonSplitCard
+        zones={zones}
+        dateRange={healthDateRange}
+        selectedDepartmentId={selectedComparisonDeptId}
+        onSelectDepartmentId={(id) => {
+          setSelectedComparisonDeptId(id);
+          setSelectedZone(id);
+        }}
+        className="mb-6"
+      />
+
+{/* Side-by-Side Population Cohort & Site Health Telemetry Line Chart Comparison View */}
+      <CohortHealthComparisonLineView
+        zones={zones}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setSelectedComparisonDeptId(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Anomaly Severity Distribution (Low, Medium, High, Critical) per Department Stacked Bar Chart */}
+      <DepartmentSeverityStackedBarChart
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+      />
+
+{/* D3 Vector Engine: Rolling 30-Day Health Signals vs. Baseline Averages Trend Comparison Section */}
+      <div id="d3-rolling-30d-health-signals-section" className="scroll-mt-6">
+        <D3HealthSignalRollingTrendComparison
+          selectedZone={activeZoneObj}
+          zones={zones}
+          thresholds={healthThresholds}
+          dateRange={healthDateRange}
+          onSelectZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setAnomalyTrendZoneId(zoneId);
+            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+            setTelemetryAlert(res);
+          }}
+          className="mb-6"
+        />
+      </div>
+
+{/* 30-Day Longitudinal Anomaly Trend Frequency Intelligence Line Chart (Recharts / D3.js) */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 px-1 gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="text-xs font-semibold text-slate-300">Longitudinal Trend Visualizer:</span>
+          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs shadow-xs">
+            <button
+              onClick={() => setTrendChartEngine('RECHARTS')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
+                trendChartEngine === 'RECHARTS'
+                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BarChart3 className="h-3 w-3" />
+              <span>Recharts Line Engine (Active)</span>
+            </button>
+            <button
+              onClick={() => setTrendChartEngine('D3')}
+              className={`flex items-center space-x-1.5 px-3 py-1 rounded-md font-semibold transition cursor-pointer ${
+                trendChartEngine === 'D3'
+                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="h-3 w-3 text-cyan-200" />
+              <span>D3.js Vector Engine</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate-400 font-mono hidden md:flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Recharts Longitudinal Line Chart &bull; Multi-Series &bull; 7D SMA Projection &bull; 30-Day Frequency</span>
+        </div>
+      </div>
+
+      {trendChartEngine === 'RECHARTS' ? (
+        <AnomalyTrend30DaysChart
+          data={anomalyTrend30d}
+          summary={anomalyTrendSummary}
+          currentZone={activeZoneObj}
+          zones={zones}
+          selectedZoneId={anomalyTrendZoneId}
+          onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
+          onExportReport={handleExportViewAuditReport}
+          isExporting={isExportingAuditReport}
+          dailyFrequencyThreshold={dailyFrequencyThreshold}
+          criticalFrequencyThreshold={criticalFrequencyThreshold}
+          proactiveRiskThreshold={proactiveRiskThreshold}
+          sensitivityLevel={sensitivityLevel}
+          onOpenThresholdPanel={() => {
+            jumpToLiveSection('GOVERNANCE', 'anomaly-threshold-config-panel');
+          }}
+          onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
+        />
+      ) : (
+        <D3AnomalyTrend30DaysChart
+          data={anomalyTrend30d}
+          summary={anomalyTrendSummary}
+          currentZone={activeZoneObj}
+          zones={zones}
+          selectedZoneId={anomalyTrendZoneId}
+          onSelectZone={(zoneId) => setAnomalyTrendZoneId(zoneId)}
+          onExportReport={handleExportViewAuditReport}
+          isExporting={isExportingAuditReport}
+          dailyFrequencyThreshold={dailyFrequencyThreshold}
+          criticalFrequencyThreshold={criticalFrequencyThreshold}
+          proactiveRiskThreshold={proactiveRiskThreshold}
+          sensitivityLevel={sensitivityLevel}
+          onOpenThresholdPanel={() => {
+            jumpToLiveSection('GOVERNANCE', 'anomaly-threshold-config-panel');
+          }}
+          onOpenCompliancePdfModal={() => setIsCompliancePdfExportModalOpen(true)}
+        />
+      )}
+
+{/* Historical Trend of Workforce Health Metrics Line Chart (Recharts) */}
+      <WorkforceHealth30DaysTrendChart
+        selectedZone={activeZoneObj}
+        zones={zones}
+        thresholds={healthThresholds}
+        dateRange={healthDateRange}
+        onTriggerThresholdAlert={checkReadingForThresholdBreaches}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
+        className="mb-6"
+      />
+
+{/* 30-Day Forward Predictive Health Modeling using Kalman Filter Extrapolation */}
+      <KalmanPredictiveModel30DaysChart
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Historical Workforce Health Signal Data Line Chart (Last 24 Hours via Recharts) */}
+      <HistoricalWorkforceHealthChart
+        data={telemetryStream}
+        zoneName={activeZoneObj.name}
+        activeThresholdCutoff={kalmanConfig.criticalCutoffPct}
+        thresholds={healthThresholds}
+        onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
+        onExportCsv={handleExportWorkforceCsv}
+        onExportReport={() => setIsHealthMetricsPdfModalOpen(true)}
+        externalIsolatedSignal={isolatedHealthSignal}
+        onSignalIsolationChange={setIsolatedHealthSignal}
+        correlationPair={activeCorrelationPair}
+        showMovingAverage={showGlobalMovingAverages}
+        onToggleMovingAverage={(active) => setShowGlobalMovingAverages(active !== undefined ? active : !showGlobalMovingAverages)}
+        maWindowHours={globalMaWindowHours}
+      />
+
+{/* D3-Powered Workplace Zone Health Risk Clusters Heatmap */}
+      <D3WorkplaceZoneRiskHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Visual Heatmap Highlighting Geographical Zones & Workforce Segments Showing High-Risk Anomaly Markers */}
+      <GeographicalZoneRiskHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchAction={(actionData) => {
+          const newDispatch: MedicalDispatchNotification = {
+            id: generateUniqueId('DSP-MAP'),
+            alertId: generateUniqueId('ALR-ZONE'),
+            zone: actionData.zoneName,
+            severity: actionData.severity,
+            recipientRole: 'On-Site Rapid Cooling Evacuation Team',
+            contactMethod: 'DUAL_CHANNEL',
+            recipientPhone: '+1 (555) 911-ZONE',
+            messagePayload: actionData.directive,
+            stagedAt: 'Just now',
+            status: 'STAGED'
+          };
+          setMedicalDispatches((prev) => [newDispatch, ...prev]);
+          setProtocolActiveNotice(
+            `Medical dispatch staged from Geographical Zone Heatmap: ${actionData.directive}`
+          );
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        className="mb-6"
+      />
+
+{/* Geospatial Summary Widget: Categorizes health telemetry metrics by site location / region using a simple chart */}
+      <GeospatialSummaryWidget
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Anomaly Density Heatmap: Overlays Multi-Sensor Anomaly Counts Onto Schematic Architectural Floor Plan to Pinpoint High-Traffic Error Areas */}
+      <AnomalyDensityHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(zoneName, action) => {
+          setProtocolActiveNotice(`Hotspot mitigation team dispatched to ${zoneName}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        className="mb-6"
+      />
+
+{/* Zone Anomaly Concentration Heatmap: Visual Heatmap Representing Geographic or Zone-Based Health Anomaly Concentration Levels */}
+      <ZoneAnomalyConcentrationHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(zoneObj, action) => {
+          setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        className="mb-6"
+      />
+
+{/* Spatial Distribution Risk Heatmap: Visual Identification of Hazard Hot Spots Across Zones Alongside Existing Charts */}
+      <SpatialZoneRiskHeatmap
+        className="mb-6"
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onDispatchMitigation={(zoneObj, action) => {
+          setProtocolActiveNotice(`Rapid mitigation protocol activated in ${zoneObj.name}: ${action}`);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onNavigateToMaintenance={(endpointId) => {
+          setManagerTab('predictiveMaintenance');
+        }}
+      />
+
+{/* Organization-Wide Geographical & Departmental Anomaly Frequency Heatmap */}
+      <OrganizationalAnomalyHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+      />
+
+{/* 24-Hour Temporal Health Anomaly Heat-Map Visualization (Using Recharts) */}
+      <TemporalAnomalyHeatmap
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Population Health Risk Heatmap Widget (Categorizes into Low, Medium, High, Critical using Radar Chart) */}
+      <RiskHeatmapRadarWidget
+        zones={zones}
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        className="mb-6"
+      />
+
+{/* Recharts Multi-Zone Facility Health Risk Trends Over Time Line Chart */}
+      <FacilityZonesRiskTrendChart
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        className="mb-6"
+      />
+
+{/* Resource Utilization & Worker Distribution Heatmap Panel */}
+      <ResourceUtilizationPanel
+        zones={zones}
+        alerts={activeAlerts}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        onNavigateToFloorplan={() => {
+          jumpToLiveSection('COMMAND', 'floor-plan-2d-view');
+        }}
+        className="mb-6"
+      />
+        </div>
+      )}
+
+      {liveSection === 'GOVERNANCE' && (
+        <div className="space-y-2 animate-fadeIn">
+{/* Real-Time Health Metric Safety Alert System Monitor Bar */}
+      <div id="real-time-alert-system-panel" className="mb-6 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400">
+              <BellRing className="h-5 w-5 text-rose-400 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  Real-Time Health Metric Safety Alert System
+                </h3>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  Active &bull; Toast Warnings Armed
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Evaluates streaming telemetry packets every 3.2s &bull; Immediately fires warning toasts when health metrics drop below safety floors
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => handleSimulateHealthMetricDrop('HRV')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/60 text-rose-200 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Test real-time warning toast when worker HRV drops below the 40ms safety threshold"
+            >
+              <Activity className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+              <span>Simulate HRV Drop (&lt;40ms)</span>
+            </button>
+
+            <button
+              onClick={() => handleSimulateHealthMetricDrop('TWL')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-500/60 text-amber-200 text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Test real-time warning toast when Thermal Work Limit drops below 115 W/m²"
+            >
+              <TrendingDown className="h-3.5 w-3.5 text-amber-400" />
+              <span>Simulate TWL Drop (&lt;115)</span>
+            </button>
+
+            <button
+              onClick={() => handleSimulateHealthMetricDrop('MULTI')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition shadow-md shadow-red-950/50 cursor-pointer"
+              title="Simulate severe multi-signal health drop across HRV, TWL, and pulse"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-white" />
+              <span>Acute Multi-Drop Alert</span>
+            </button>
+
+            <button
+              onClick={() => setIsHealthThresholdsModalOpen(true)}
+              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+              title="Configure custom health signal notification thresholds"
+            >
+              <Settings className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Thresholds</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Live Safety Floor Badges */}
+        <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-3 flex-wrap text-[11px] font-mono text-slate-400">
+            <span className="text-slate-300 font-semibold">Active Safety Thresholds:</span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              HRV Safety Floor: <strong className="text-cyan-400">&ge;{healthThresholds.minHrvMs} ms</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              TWL Safe Work Limit: <strong className="text-blue-400">&ge;{healthThresholds.minTwlIndex} W/m²</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              Health Homeostasis: <strong className="text-emerald-400">&ge;65%</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              Pulse Ceiling: <strong className="text-rose-400">&le;{healthThresholds.maxHeartRateBpm ?? 115} BPM</strong>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+              Skin Temp Ceiling: <strong className="text-amber-400">&le;{healthThresholds.maxSkinTempC}°C</strong>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] font-mono">
+            <span className="text-slate-400">Active Warning Toasts:</span>
+            <span className={`px-2 py-0.5 rounded font-bold ${activeToasts.length > 0 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 'bg-slate-950 text-slate-500'}`}>
+              {activeToasts.length} Active
+            </span>
+            {activeToasts.length > 0 && (
+              <button
+                onClick={handleClearAllToasts}
+                className="flex items-center space-x-1 text-xs font-semibold text-rose-300 hover:text-white bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 px-2 py-0.5 rounded cursor-pointer ml-1 transition"
+                title="Dismiss all active warning toasts at once"
+              >
+                <span>Dismiss All ({activeToasts.length})</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+{/* High-Risk Event Notification Center (Scrollable Queue of Recent High-Risk Events with Timestamp, Anomaly Type, and View Details) */}
+      <div id="notification-center-section">
+        <NotificationCenter
+          alerts={activeAlerts}
+          zones={zones}
+          onViewDetails={handleOpenAnomalyDetails}
+          onAcknowledgeAlert={handleAcknowledgeAlert}
+          onAcknowledgeAll={handleAcknowledgeAllAlerts}
+          onDispatchAction={handleDispatchAction}
+          onSelectZone={(zoneId) => {
+            setSelectedZone(zoneId);
+            setAnomalyTrendZoneId(zoneId);
+            const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+            const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+            const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+            setTelemetryAlert(res);
+          }}
+          departmentThresholdBreaches={departmentThresholdBreaches}
+          onOpenDepartmentThresholds={() => {
+            const el = document.getElementById('department-risk-threshold-config-panel');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.classList.add('ring-2', 'ring-indigo-500', 'transition-all');
+              setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-500'), 3000);
+            }
+          }}
+          onExportComplianceCsv={handleSimulatedComplianceCsvExport}
+          onGeneratePdfReport={handleDirectPdfExport}
+          onInjectTestAnomaly={handleInjectTestAnomaly}
+          isGeneratingPdf={isDirectPdfExporting}
+          incidentAssignments={incidentAssignments}
+          onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
+          telemetryRiskThreshold={telemetryRiskThreshold}
+          onUpdateTelemetryRiskThreshold={handleUpdateTelemetryRiskThreshold}
+          riskThresholdBreaches={riskThresholdBreaches}
+          onAcknowledgeRiskBreach={handleAcknowledgeRiskBreach}
+          onClearRiskBreaches={handleClearRiskBreaches}
+          currentTelemetryRisk={Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1))}
+          browserPermission={desktopNotificationPermission}
+          onRequestBrowserPermission={() => {
+            desktopNotificationService.requestPermission().then((p) => {
+              setDesktopNotificationPermission(p === 'unsupported' ? 'denied' : (p as NotificationPermission));
+            });
+          }}
+          browserAlertsEnabled={desktopNotificationsEnabled}
+          onToggleBrowserAlerts={() => {
+            const next = !desktopNotificationsEnabled;
+            setDesktopNotificationsEnabled(next);
+            desktopNotificationService.updateConfig({ enabled: next });
+          }}
+          soundEnabled={toastSoundEnabled}
+          onToggleSound={() => setToastSoundEnabled((p) => !p)}
+          onTestBrowserAlert={() => {
+            const cur = Number(((telemetryAlert?.risk_probability ?? 0.848) * 100).toFixed(1));
+            desktopNotificationService.notifyRiskThresholdBreach(
+              {
+                id: `TEST-SENTINEL-${Date.now()}`,
+                riskScore: cur,
+                threshold: telemetryRiskThreshold,
+                delta: Number((cur - telemetryRiskThreshold).toFixed(1)),
+                zoneName: activeZoneObj.name,
+                workerCount: activeZoneObj.count,
+                primarySignal: 'Cardiovascular Autonomic Collapse & Extreme Core Temp',
+                recommendedAction: 'Immediate shaded cooling extraction; stage medical dispatch liaison.'
+              },
+              { forceTrigger: true }
+            );
+            setProtocolActiveNotice('Browser Alert dispatched! OS notification and audio siren triggered.');
+            setTimeout(() => setProtocolActiveNotice(null), 5000);
+          }}
+          onSimulateRiskBreach={() => {
+            const simulatedScore = Number((telemetryRiskThreshold + 9.8).toFixed(1));
+            triggerTelemetryRiskBrowserAlert(simulatedScore, activeZoneObj);
+          }}
+          className="mb-6"
+        />
+      </div>
+
+{/* Configuration Panel for Custom Department Risk Score Threshold Values */}
+      <DepartmentRiskThresholdConfigPanel
+        departmentThresholds={departmentRiskThresholds}
+        onSaveThresholds={handleSaveDepartmentThresholds}
+        onResetDefaults={handleResetDepartmentThresholds}
+        className="mb-6"
+      />
+
+{/* Custom Sensor Signals Alert Thresholds Configuration Panel (Inline Real-Time Control) */}
+      <SensorThresholdsConfigPanel
+        thresholds={healthThresholds}
+        onUpdateThresholds={handleSaveHealthThresholds}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        telemetryStream={telemetryStream}
+        onOpenAdvancedModal={() => setIsHealthThresholdsModalOpen(true)}
+        onScrollToChart={() => {
+          jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
+        }}
+      />
+
+{/* Dedicated Algorithm Sensitivity Configuration Panel for Anomaly Detection Algorithms */}
+      <AlgorithmSensitivityConfigPanel
+        kalmanConfig={kalmanConfig}
+        onUpdateKalmanConfig={(newConfig) => {
+          setKalmanConfig(newConfig);
+          const newPacket = generatePacketForZone(activeZoneObj, activeZoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, newConfig);
+          setTelemetryAlert(res);
+        }}
+        healthThresholds={healthThresholds}
+        onUpdateHealthThresholds={handleSaveHealthThresholds}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        onScrollToHistoricalLog={() => {
+          const el = document.getElementById('historical-anomaly-event-log-panel');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
+{/* Real-Time Audio Alerts Notification Toggle System per Severity Level */}
+      <AudioNotificationSeverityTogglePanel
+        voiceSettings={voiceSettings}
+        onUpdateVoiceSettings={setVoiceSettings}
+        onLogAuditAction={(cat, action, justification) => {
+          const auditEntry: SystemAuditLogEntry = {
+            id: generateUniqueId('AUD-AUD'),
+            timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+            userId: 'USR-MGR-2026',
+            userName: activeActorName,
+            userRole: 'EHS Safety Manager',
+            category: 'THRESHOLD_CHANGE',
+            targetModule: 'Real-Time Audio Notification Engine',
+            parameter: 'Severity Audio Toggles',
+            previousValue: 'N/A',
+            newValue: action,
+            justification: justification || 'Adjusted acoustic audio alert permissions per severity tier.',
+            approvalStatus: 'VERIFIED'
+          };
+          setSystemAuditLogs((prev) => [auditEntry, ...prev]);
+        }}
+      />
+
+{/* Custom Anomaly Detection Thresholds & Sensitivity Configuration Panel */}
+      <AnomalyThresholdConfigPanel
+        thresholds={healthThresholds}
+        onUpdateThresholds={handleSaveHealthThresholds}
+        trendData={anomalyTrend30d}
+        dailyFrequencyThreshold={dailyFrequencyThreshold}
+        onDailyFrequencyThresholdChange={setDailyFrequencyThreshold}
+        criticalFrequencyThreshold={criticalFrequencyThreshold}
+        onCriticalFrequencyThresholdChange={setCriticalFrequencyThreshold}
+        proactiveRiskThreshold={proactiveRiskThreshold}
+        onProactiveRiskThresholdChange={setProactiveRiskThreshold}
+        onTriggerPreemptiveAlert={() => triggerPreemptiveProactiveAlert()}
+        sensitivityLevel={sensitivityLevel}
+        onSensitivityLevelChange={setSensitivityLevel}
+        onScrollToTrendChart={() => {
+          jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+        }}
+        selectedZone={activeZoneObj}
+      />
+
+{/* Explainable AI (XAI) Log Window: Top Contributing Factors for High-Risk Anomaly Detections by LSTM-Kalman Engine */}
+      <ExplainableAiLogWindow
+        className="mb-6"
+        anomalies={activeAlerts}
+        zones={zones}
+        onOpenScenarioSimulation={() => setIsScenarioSimulationOpen(true)}
+        onDispatchMitigation={handleDispatchAction}
+      />
+
+{/* Telemetry Precursor Pattern Recognition Engine (String-Matching Algorithm) */}
+      <PatternRecognitionPanel
+        telemetryStream={telemetryStream}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+      />
+
+{/* Historical Population Health Anomalies Log (Lists the Last 5 Detected Events with Timestamps and Severity Levels) */}
+      <HistoricalPopulationHealthAnomaliesLog
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onInspectAnomaly={(alert) => {
+          setAnomalyTrendZoneId(alert.location_zone);
+          jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        onOpenComplianceExportModal={() => setIsComplianceCsvExportModalOpen(true)}
+        isSpeaking={isSpeaking}
+        className="mb-6"
+      />
+
+{/* Incident Hotspots Summary Widget (Text-Based Natural Language Generation) */}
+      <IncidentHotspotsWidget
+        alerts={activeAlerts}
+        zones={zones}
+        telemetryStream={telemetryStream}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onOpenVoiceAlerts={() => setIsVoiceModalOpen(true)}
+      />
+
+{/* Last 10 Detected Anomalies Scrollable Quick Audit List Component */}
+      <RecentAnomaliesAuditList
+        alerts={activeAlerts}
+        zones={zones}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onInspectAnomaly={(alert) => {
+          setAnomalyTrendZoneId(alert.location_zone);
+          jumpToLiveSection('ANALYTICS', 'anomaly-trend-30d-card');
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+      />
+
+{/* Dedicated Historical Anomaly Events Log Component with Severity Scores & Timestamp Details */}
+      <HistoricalAnomalyEventLog
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        thresholds={healthThresholds}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        onOpenSensitivityPanel={() => {
+          const el = document.getElementById('algorithm-sensitivity-config-panel');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onOpenComplianceExportModal={() => setIsComplianceCsvExportModalOpen(true)}
+        onOpenCompliancePdfExportModal={() => setIsCompliancePdfExportModalOpen(true)}
+        isSpeaking={isSpeaking}
+      />
+
+{/* Chronological Anomaly Log Panel below Line Chart */}
+      <ChronologicalAnomalyLogPanel
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => setSelectedZone(zoneId)}
+        onSpeakAlert={handleSpeakAlert}
+        onIsolateSignalInChart={(sigKey) => setIsolatedHealthSignal(sigKey)}
+        isSpeaking={isSpeaking}
+      />
+
+{/* Alert History Table: Timestamped Log of Past Incidents Exceeding Thresholds */}
+      <AlertHistoryTable
+        alerts={activeAlerts}
+        telemetryStream={telemetryStream}
+        thresholds={healthThresholds}
+        zones={zones}
+        selectedZone={activeZoneObj}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        isSpeaking={isSpeaking}
+        onScrollToChart={() => {
+          jumpToLiveSection('ANALYTICS', 'historical-health-chart-card');
+        }}
+        onOpenThresholdsModal={() => setIsHealthThresholdsModalOpen(true)}
+      />
+
+{/* Incident Log: Comprehensive Historical Alerts Triggered by Anomaly Detection System */}
+      <IncidentLog
+        alerts={activeAlerts}
+        zones={zones}
+        selectedZoneId={selectedZone}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onDispatchAction={handleDispatchAction}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          setAnomalyTrendZoneId(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+        onSpeakAlert={handleSpeakAlert}
+        isSpeaking={isSpeaking}
+        theme={dashboardTheme}
+        className="mb-6"
+      />
+
+{/* Proactive Maintenance Scheduler: Triggers when LSTM-Kalman engine predicts sensor component failure within 72h */}
+      <ProactiveMaintenanceSchedulerCard
+        className="mb-6"
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 7000);
+        }}
+        onNavigateToZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          jumpToLiveSection('ANALYTICS', 'anomaly-density-floor-plan-heatmap');
+        }}
+      />
+
+{/* Automated Predictive Maintenance Scheduler Tool (Correlating Alerts with Technician Availability) */}
+      <MaintenanceSchedulerModule
+        alerts={activeAlerts}
+        zones={zones}
+        onAcknowledgeAlert={handleAcknowledgeAlert}
+        onLogAudit={(entry) => setSystemAuditLogs((prev) => [entry, ...prev])}
+        onNotice={(msg) => {
+          setProtocolActiveNotice(msg);
+          setTimeout(() => setProtocolActiveNotice(null), 6000);
+        }}
+        onSelectZone={(zoneId) => {
+          setSelectedZone(zoneId);
+          const zoneObj = zones.find((z) => z.id === zoneId) || activeZoneObj;
+          const newPacket = generatePacketForZone(zoneObj, zoneObj.status === 'CRITICAL');
+          const res = predictWorkforceAnomaly(newPacket, undefined, kalmanConfig);
+          setTelemetryAlert(res);
+        }}
+      />
+
+{/* Dynamic On-Site Safety Resource Allocation & Personnel Redistribution Module */}
       <ResourceAllocationModule
         zones={zones}
         alerts={activeAlerts}
@@ -7724,7 +7873,7 @@ export default function ManagerDashboard({
         onUpdateIncidentAssignment={handleUpdateIncidentAssignment}
       />
 
-      {/* Security Audit Log Panel: Listing Recent Anomaly Detection Events with Severity Indicators & Timestamps */}
+{/* Security Audit Log Panel: Listing Recent Anomaly Detection Events with Severity Indicators & Timestamps */}
       <SecurityAuditLogPanel
         alerts={activeAlerts}
         anomalyAuditRecords={anomalyAuditRecords}
@@ -7737,22 +7886,16 @@ export default function ManagerDashboard({
         className="mb-6"
       />
 
-      {/* System Audit Log Component: Manual Changes to Sensitivity Thresholds & Zone Configurations */}
+{/* System Audit Log Component: Manual Changes to Sensitivity Thresholds & Zone Configurations */}
       <div id="system-audit-log-section">
         <SystemAuditLog
           logs={systemAuditLogs}
           onAddManualLog={handleAddManualAuditLog}
         />
       </div>
-        </>
-      ) : (
-        <div className="py-12 flex flex-col items-center justify-center bg-slate-900/40 border border-slate-800 rounded-xl mb-6 text-center">
-          <div className="flex items-center space-x-2 text-cyan-400 text-xs font-mono">
-            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
-            <span>Hydrating telemetry streams &amp; prognostic charts...</span>
-          </div>
         </div>
       )}
+
       </div>
 
       {/* Modals & Drawers - Loaded conditionally on demand for optimal runtime performance */}
@@ -7844,8 +7987,7 @@ export default function ManagerDashboard({
           onJumpToZone={(zoneId) => {
             setSelectedZone(zoneId);
             setIsQuickSnapshotModalOpen(false);
-            const el = document.getElementById('zone-anomaly-concentration-heatmap');
-            el?.scrollIntoView({ behavior: 'smooth' });
+            jumpToLiveSection('ANALYTICS', 'zone-anomaly-concentration-heatmap');
           }}
         />
       )}
@@ -8104,8 +8246,7 @@ export default function ManagerDashboard({
         onDispatchBreach={handleDispatchActionForToast}
         onInspectInChart={handleInspectSignalInChart}
         onOpenNotificationCenter={() => {
-          const el = document.getElementById('high-risk-notification-center') || document.getElementById('notification-center-section');
-          el?.scrollIntoView({ behavior: 'smooth' });
+          jumpToLiveSection('GOVERNANCE', 'notification-center-section');
         }}
         soundEnabled={toastSoundEnabled && !isAlertsMuted}
         onToggleSound={() => setToastSoundEnabled((s) => !s)}

@@ -57,7 +57,7 @@ export default function SafetyCommitteePdfExportModal({
   );
   const [meetingDate, setMeetingDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [committeeChair, setCommitteeChair] = useState('Dr. Sarah Lin, MD (Occupational Health Lead)');
-  const [safetyOfficer, setSafetyOfficer] = useState('Alex Mercer, CSP (EHS Safety Director)');
+  const [safetyOfficer, setSafetyOfficer] = useState('EHS Safety Director (CSP)');
   const [agendaNotes, setAgendaNotes] = useState(
     'Review of current shift telemetry, thermal strain thresholds, active acoustic exposure levels, and preventive engineering mitigations across operational zones.'
   );

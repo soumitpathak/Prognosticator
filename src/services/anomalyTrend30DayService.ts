@@ -345,7 +345,7 @@ export async function exportSimulatedAnomalyReportPdf({
   currentZone,
   activeAlerts,
   thresholds,
-  userName = 'Alex Mercer (EHS Lead Supervisor)'
+  userName = 'Safety Director (EHS Lead Supervisor)'
 }: {
   data: AnomalyTrendDay[];
   summary: AnomalyTrendSummaryStats;
@@ -556,7 +556,7 @@ export function exportSimulatedAnomalyReportCsv({
   currentZone,
   activeAlerts,
   thresholds,
-  userName = 'Alex Mercer (EHS Lead Supervisor)'
+  userName = 'Safety Director (EHS Lead Supervisor)'
 }: {
   data: AnomalyTrendDay[];
   summary: AnomalyTrendSummaryStats;

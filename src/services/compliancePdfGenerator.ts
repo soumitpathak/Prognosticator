@@ -171,7 +171,7 @@ export async function generateComplianceAuditPdf({
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(7);
   pdf.setTextColor(16, 185, 129);
-  pdf.text('Verified Officer: Alex Mercer, CSP, Director of Environmental Health & Safety   |   Integrity Seal: ACTIVE', margin + 4, currentY + 18.5);
+  pdf.text('Verified Officer: Director of Environmental Health & Safety (CSP)   |   Integrity Seal: ACTIVE', margin + 4, currentY + 18.5);
 
   currentY += 27;
 

@@ -36,7 +36,7 @@ export async function generateHealthMetricsPdfReport({
   totalAnomalies24h = 14,
   connectedEndpoints = '184 / 184 (100% Online)',
   safetyPersonnel = '12 Officers (9 Deployed, 3 Standby)',
-  userName = 'Alex Mercer (EHS Safety Lead)',
+  userName = 'Safety Director (EHS Safety Lead)',
   onProgress
 }: HealthMetricsExportData): Promise<HealthMetricsPdfResult> {
   // Step 1: Ingesting current health metrics & baseline telemetry

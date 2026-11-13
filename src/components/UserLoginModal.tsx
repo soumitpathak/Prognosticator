@@ -38,29 +38,38 @@ export default function UserLoginModal({
   const [passwordInput, setPasswordInput] = useState<string>('••••••••••••');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const [isErrorFeedback, setIsErrorFeedback] = useState<boolean>(false);
+
   const currentUser = authService.getCurrentUser();
 
   if (!isOpen) return null;
 
   const handleSelectPersona = (persona: UserPersona) => {
+    setIsErrorFeedback(false);
     const updated = authService.switchPersona(persona.id);
     setSuccessMessage(`Switched session to ${persona.name} (${persona.roleTitle})`);
     onUserChanged(updated);
     setTimeout(() => {
       setSuccessMessage(null);
       onClose();
-    }, 700);
+    }, 500);
   };
 
   const handleCredentialsSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const updated = authService.loginWithCredentials(emailInput);
+    if (!updated) {
+      setIsErrorFeedback(true);
+      setSuccessMessage(`Unrecognized directory email "${emailInput}". Please choose one of the authorized personas.`);
+      return;
+    }
+    setIsErrorFeedback(false);
     setSuccessMessage(`Authenticated as ${updated.name} (${updated.roleTitle})`);
     onUserChanged(updated);
     setTimeout(() => {
       setSuccessMessage(null);
       onClose();
-    }, 700);
+    }, 500);
   };
 
   const handleGoogleSignIn = async () => {
@@ -175,10 +184,20 @@ export default function UserLoginModal({
           </div>
         </div>
 
-        {/* Success message banner */}
+        {/* Success / Error message banner */}
         {successMessage && (
-          <div className="mt-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <div
+            className={`mt-3 p-3 rounded-xl text-xs flex items-center gap-2 border ${
+              isErrorFeedback
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+            }`}
+          >
+            {isErrorFeedback ? (
+              <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            )}
             <span className="font-semibold">{successMessage}</span>
           </div>
         )}
@@ -301,16 +320,19 @@ export default function UserLoginModal({
                 <span>Enter organizational email address. For testing, choose from active directory personas:</span>
                 <div className="mt-1.5 space-y-1 font-mono text-[11px]">
                   <div className="text-cyan-400 cursor-pointer hover:underline" onClick={() => setEmailInput('sarah.chen@prognosticator.io')}>
-                    • sarah.chen@prognosticator.io (Safety Director)
+                    • sarah.chen@prognosticator.io (Safety Director · Admin)
                   </div>
                   <div className="text-emerald-400 cursor-pointer hover:underline" onClick={() => setEmailInput('dr.aravind@prognosticator.io')}>
-                    • dr.aravind@prognosticator.io (Occupational Health Lead)
+                    • dr.aravind@prognosticator.io (Occupational Health Officer)
                   </div>
-                  <div className="text-purple-400 cursor-pointer hover:underline" onClick={() => setEmailInput('tariq.mansoor@worker.local')}>
-                    • tariq.mansoor@worker.local (Migrant Frontline Worker)
+                  <div className="text-amber-400 cursor-pointer hover:underline" onClick={() => setEmailInput('marcus.vance@plantops.net')}>
+                    • marcus.vance@plantops.net (Facility Engineer)
                   </div>
                   <div className="text-rose-400 cursor-pointer hover:underline" onClick={() => setEmailInput('e.rostova@wsh-inspector.gov')}>
-                    • e.rostova@wsh-inspector.gov (Government WSH Inspector)
+                    • e.rostova@wsh-inspector.gov (Government WSH Auditor)
+                  </div>
+                  <div className="text-purple-400 cursor-pointer hover:underline" onClick={() => setEmailInput('tariq.mansoor@worker.local')}>
+                    • tariq.mansoor@worker.local (Frontline Worker · English)
                   </div>
                 </div>
               </div>

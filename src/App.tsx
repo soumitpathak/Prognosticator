@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import ManagerDashboard from './components/ManagerDashboard';
+const ManagerDashboard = lazy(() => import('./components/ManagerDashboard'));
 const WorkerPrivateDashboard = lazy(() => import('./components/WorkerPrivateDashboard'));
 const ClinicianHealthDashboard = lazy(() => import('./components/ClinicianHealthDashboard'));
 const FacilityEngineeringDashboard = lazy(() => import('./components/FacilityEngineeringDashboard'));
@@ -20,12 +20,17 @@ import {
   HardHat,
   Stethoscope,
   Wrench,
-  FileCheck
+  FileCheck,
+  Key,
+  Globe2
 } from 'lucide-react';
 import { UserPersona, RegulatoryJurisdiction, UserRole } from './types';
-import { authService, REGULATORY_FRAMEWORKS } from './services/authService';
+import { authService, REGULATORY_FRAMEWORKS, TARGET_PERSONAS } from './services/authService';
+import { useTranslation } from './services/i18nService';
+import LanguageAutocomplete from './components/LanguageAutocomplete';
 
 export default function App() {
+  const { t } = useTranslation();
   const [currentUser, setCurrentUser] = useState<UserPersona>(() => authService.getCurrentUser());
   const [currentJurisdiction, setCurrentJurisdiction] = useState<RegulatoryJurisdiction>(() =>
     authService.getActiveJurisdiction()
@@ -130,26 +135,47 @@ export default function App() {
   const getRoleLandingTitle = (role: UserRole) => {
     switch (role) {
       case 'SAFETY_DIRECTOR':
-        return 'Executive Whole-Site Command & Prognostics';
+        return t.shell.roleTabDirector;
       case 'OCCUPATIONAL_HEALTH_OFFICER':
-        return 'Occupational Health & Clinical Triage Center';
+        return t.clinician.title;
       case 'FACILITY_ENGINEER':
-        return 'Facility HVAC & Mechanical Reliability Console';
+        return t.engineer.title;
       case 'COMPLIANCE_AUDITOR':
-        return 'Statutory Regulatory Compliance & WSH Audit';
+        return t.auditor.title;
       case 'FRONTLINE_WORKER':
-        return 'Sovereign Worker Private Biometric Shield';
+        return t.worker.title;
     }
   };
+
+  const getShortCountryLabel = (jur: RegulatoryJurisdiction) => {
+    switch (jur) {
+      case 'SINGAPORE_MOM':
+        return 'Singapore (MOM)';
+      case 'GCC_MOHRE':
+        return 'GCC (MoHRE)';
+      case 'US_OSHA_NIOSH':
+        return 'United States (OSHA)';
+      case 'EU_GDPR_OSHA':
+        return 'European Union (GDPR)';
+    }
+  };
+
+  // When an Admin audits another role via the top console switcher, reflect that role's persona context
+  const effectiveRoleUser: UserPersona =
+    isAdmin && activeRoleView !== currentUser.role
+      ? TARGET_PERSONAS.find((p) => p.role === activeRoleView) || currentUser
+      : currentUser;
 
   // If user is not authenticated, display the full Enterprise Login Gateway
   if (!isAuthenticated) {
     return (
       <Suspense
         fallback={
-          <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400 font-mono text-xs">
+          <div className={`min-h-screen flex items-center justify-center font-mono text-xs ${
+            isAccessibilityMode ? 'bg-slate-100 text-cyan-800' : 'bg-slate-950 text-cyan-400'
+          }`}>
             <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping mr-2"></span>
-            Loading Enterprise Authentication Gateway...
+            {t.shell.loadingGateway}
           </div>
         }
       >
@@ -173,21 +199,19 @@ export default function App() {
       <div className={`border-b px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs transition-colors sticky top-0 z-50 backdrop-blur-md ${
         isAccessibilityMode ? 'bg-slate-200/95 border-slate-300 text-slate-900' : 'bg-[#090D17]/95 border-slate-800/80 text-slate-100'
       }`}>
-        {/* Zone 1: Brand & Operational Status */}
+        {/* Zone 1: Brand & Operational Jurisdiction */}
         <div className="flex items-center space-x-3 shrink-0">
-          <div className="flex items-center space-x-2">
-            <span className={`font-black tracking-tight text-sm font-sans ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>
-              PROGNOSTICATOR
+          <span className={`font-extrabold tracking-tight text-sm font-sans whitespace-nowrap ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>
+            PROGNOSTICATOR
+          </span>
+          <span className={`hidden sm:inline ${isAccessibilityMode ? 'text-slate-400' : 'text-slate-600'}`} aria-hidden="true">&middot;</span>
+          <div className={`hidden lg:flex items-center space-x-1.5 text-[11px] font-sans ${
+            isAccessibilityMode ? 'text-slate-700' : 'text-slate-400'
+          }`}>
+            <span>{t.shell.surveillanceActive}</span>
+            <span className={`font-semibold ${isAccessibilityMode ? 'text-cyan-800' : 'text-cyan-300'}`}>
+              {getShortCountryLabel(currentJurisdiction)}
             </span>
-            <span className="font-mono text-[10px] tracking-wider text-cyan-400 border border-cyan-500/30 px-1 py-0.2 rounded bg-cyan-950/40">
-              v2.4
-            </span>
-          </div>
-          <span className="text-slate-600 hidden sm:inline">&middot;</span>
-          <div className="hidden lg:flex items-center space-x-1.5 text-[11px] font-mono text-slate-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-            <span>Surveillance Active:</span>
-            <span className="text-cyan-300 font-semibold">{frameworkDetail.countryName.split(' ')[0]}</span>
           </div>
         </div>
 
@@ -201,85 +225,88 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => handleRoleViewChange('SAFETY_DIRECTOR')}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   activeRoleView === 'SAFETY_DIRECTOR'
                     ? isAccessibilityMode ? 'bg-cyan-700 text-white shadow-xs font-bold' : 'bg-cyan-600 text-white shadow-xs'
                     : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Executive Whole-Site Command & Prognostics"
+                title={t.shell.roleTabDirector}
               >
                 <Shield className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Executive Command</span>
+                <span className="hidden sm:inline">{t.shell.roleTabDirector}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleRoleViewChange('OCCUPATIONAL_HEALTH_OFFICER')}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   activeRoleView === 'OCCUPATIONAL_HEALTH_OFFICER'
                     ? isAccessibilityMode ? 'bg-emerald-700 text-white shadow-xs font-bold' : 'bg-emerald-600 text-white shadow-xs'
                     : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Occupational Health & Clinical Triage Center"
+                title={t.clinician.title}
               >
                 <Stethoscope className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Clinical Health</span>
+                <span className="hidden md:inline">{t.shell.roleTabClinician}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleRoleViewChange('FACILITY_ENGINEER')}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   activeRoleView === 'FACILITY_ENGINEER'
                     ? isAccessibilityMode ? 'bg-amber-700 text-white shadow-xs font-bold' : 'bg-amber-600 text-white shadow-xs'
                     : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Facility HVAC & Mechanical Reliability Console"
+                title={t.engineer.title}
               >
                 <Wrench className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Facility HVAC</span>
+                <span className="hidden md:inline">{t.shell.roleTabEngineer}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleRoleViewChange('COMPLIANCE_AUDITOR')}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   activeRoleView === 'COMPLIANCE_AUDITOR'
                     ? isAccessibilityMode ? 'bg-rose-700 text-white shadow-xs font-bold' : 'bg-rose-600 text-white shadow-xs'
                     : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Statutory Regulatory Compliance & WSH Audit"
+                title={t.auditor.title}
               >
                 <FileCheck className="h-3.5 w-3.5" />
-                <span className="hidden lg:inline">WSH Audit</span>
+                <span className="hidden lg:inline">{t.shell.roleTabAuditor}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleRoleViewChange('FRONTLINE_WORKER')}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   activeRoleView === 'FRONTLINE_WORKER'
                     ? isAccessibilityMode ? 'bg-purple-700 text-white shadow-xs font-bold' : 'bg-purple-600 text-white shadow-xs'
                     : isAccessibilityMode ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
                 }`}
-                title="Sovereign Worker Private Biometric Terminal"
+                title={t.worker.title}
               >
                 <HardHat className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Worker Shield</span>
+                <span className="hidden sm:inline">{t.shell.roleTabWorker}</span>
               </button>
             </div>
           ) : (
             /* Non-Admin Locked Indicator: strictly locked to assigned role */
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
-              isAccessibilityMode ? 'bg-slate-100 border-slate-300 text-slate-800' : 'bg-slate-900/90 border-slate-800 text-slate-200'
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-lg border ${
+              isAccessibilityMode ? 'bg-slate-100 border-slate-300 text-slate-800' : 'bg-slate-900/80 border-slate-800 text-slate-200'
             }`}>
               <div className="flex items-center gap-1.5">
                 {getRoleIcon(currentUser.role)}
                 <span className="font-bold text-xs">{getRoleLandingTitle(currentUser.role)}</span>
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-700 text-slate-400 flex items-center gap-1">
-                <Lock className="h-2.5 w-2.5" />
-                <span>Strict Role Separation</span>
+              <span className={isAccessibilityMode ? 'text-slate-400' : 'text-slate-600'} aria-hidden="true">&middot;</span>
+              <span className={`text-[11px] font-sans flex items-center gap-1 whitespace-nowrap ${
+                isAccessibilityMode ? 'text-slate-700 font-medium' : 'text-slate-400'
+              }`}>
+                <Lock className="h-3 w-3" />
+                <span>{t.shell.strictRoleSeparation}</span>
               </span>
             </div>
           )}
@@ -311,8 +338,10 @@ export default function App() {
                   {currentUser.role.replace(/_/g, ' ')}
                 </div>
               </div>
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400 border border-slate-700">
-                SWITCH
+              <span className={`text-[10px] font-sans font-semibold whitespace-nowrap ${
+                isAccessibilityMode ? 'text-cyan-800' : 'text-cyan-400'
+              }`}>
+                &middot; {t.shell.switchLabel}
               </span>
             </button>
           ) : (
@@ -336,37 +365,70 @@ export default function App() {
             </div>
           )}
 
-          {/* Frontline Worker Sovereign Protection Badge */}
-          {currentUser.role === 'FRONTLINE_WORKER' && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-950/60 border border-purple-500/40 text-[11px] text-purple-300 font-mono">
-              <Shield className="h-3.5 w-3.5 text-purple-400" />
-              <span>Sovereign Privacy Shield</span>
+          {/* Direct Admin RBAC & Jurisdiction Compliance Buttons */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsRbacModalOpen(true)}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs whitespace-nowrap ${
+                isAccessibilityMode
+                  ? 'bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100'
+                  : 'bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-300 border-indigo-500/40'
+              }`}
+              title="Open Enterprise User Management & PBAC Role Matrix"
+            >
+              <Key className="h-3.5 w-3.5 text-indigo-400" />
+              <span className="hidden xl:inline">{t.shell.rbacLabel}</span>
+            </button>
+          )}
+
+          {activeRoleView !== 'FRONTLINE_WORKER' && (
+            <button
+              type="button"
+              onClick={() => setIsComplianceModalOpen(true)}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs whitespace-nowrap ${
+                isAccessibilityMode
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border-emerald-500/30'
+              }`}
+              title="View Country & Migrant Workforce Statutory Protections"
+            >
+              <Globe2 className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="hidden xl:inline">{t.shell.statutesLabel}</span>
+            </button>
+          )}
+
+          {/* Frontline Worker Sovereign Protection Indicator */}
+          {activeRoleView === 'FRONTLINE_WORKER' && (
+            <div className={`flex items-center gap-1.5 px-1.5 text-[11px] font-sans font-medium whitespace-nowrap ${
+              isAccessibilityMode ? 'text-purple-800' : 'text-purple-300'
+            }`}>
+              <Shield className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-purple-700' : 'text-purple-400'}`} />
+              <span>{t.shell.sovereignShield}</span>
             </div>
           )}
 
-          {/* Global Accessibility Mode Toggle Button (for non-workers) */}
-          {currentUser.role !== 'FRONTLINE_WORKER' && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isAccessibilityMode}
-              onClick={toggleAccessibilityMode}
-              className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs ${
-                isAccessibilityMode
-                  ? 'bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 font-bold'
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
-              }`}
-              title="Toggle Accessibility Mode: High-contrast light presentation"
-            >
-              <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
-              <span className="hidden sm:inline">A11y</span>
-              <span className={`text-[9px] font-mono px-1 py-0.5 rounded font-bold ${
-                isAccessibilityMode ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400'
-              }`}>
-                {isAccessibilityMode ? 'ON' : 'OFF'}
-              </span>
-            </button>
-          )}
+          {/* Global Accessibility / Sunlight High-Contrast Mode Toggle Button (All Roles) */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isAccessibilityMode}
+            onClick={toggleAccessibilityMode}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition cursor-pointer shadow-xs whitespace-nowrap ${
+              isAccessibilityMode
+                ? 'bg-amber-400 text-slate-950 border-amber-500 ring-2 ring-amber-400/50 font-bold'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+            }`}
+            title="Toggle Accessibility & Sunlight High-Contrast Light Mode"
+          >
+            <Eye className={`h-3.5 w-3.5 ${isAccessibilityMode ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span className="hidden sm:inline">{t.shell.a11yLabel}</span>
+            <span className={`text-[10px] font-mono tabular-nums font-bold ${
+              isAccessibilityMode ? 'text-slate-950' : 'text-slate-400'
+            }`}>
+              {isAccessibilityMode ? 'ON' : 'OFF'}
+            </span>
+          </button>
 
           {/* Direct Logout Button */}
           <button
@@ -375,7 +437,7 @@ export default function App() {
               authService.logout();
               setIsAuthenticated(false);
             }}
-            className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer shadow-xs ${
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer shadow-xs whitespace-nowrap ${
               isAccessibilityMode
                 ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
                 : 'bg-slate-900 text-rose-400 border-rose-500/30 hover:bg-rose-950/40'
@@ -383,24 +445,30 @@ export default function App() {
             title="Log out and return to Login Gateway"
           >
             <LogOut className="h-3.5 w-3.5 text-rose-400" />
-            <span className="hidden sm:inline">Log Out</span>
+            <span className="hidden sm:inline">{t.shell.logOut}</span>
           </button>
         </div>
       </div>
 
       {/* PBAC Access Denied Notification Banner */}
       {accessDeniedMessage && (
-        <div className="bg-rose-950/80 border-b border-rose-500/60 p-3 px-6 text-xs text-rose-200 flex items-center justify-between gap-3 animate-fadeIn">
+        <div className={`border-b p-3 px-6 text-xs flex items-center justify-between gap-3 animate-fadeIn ${
+          isAccessibilityMode
+            ? 'bg-rose-50 border-rose-300 text-rose-900'
+            : 'bg-rose-950/80 border-rose-500/60 text-rose-200'
+        }`}>
           <div className="flex items-center space-x-2.5">
-            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
-            <span className="font-semibold text-rose-100">PBAC Access Guarded:</span>
+            <AlertTriangle className={`h-4 w-4 shrink-0 ${isAccessibilityMode ? 'text-rose-700' : 'text-rose-400'}`} />
+            <span className={`font-semibold ${isAccessibilityMode ? 'text-rose-950' : 'text-rose-100'}`}>PBAC Access Guarded:</span>
             <span>{accessDeniedMessage}</span>
           </div>
           <div className="flex items-center space-x-2">
             <button
               type="button"
               onClick={() => setAccessDeniedMessage(null)}
-              className="text-rose-400 hover:text-white font-bold text-xs p-1"
+              className={`font-bold text-xs p-1 cursor-pointer ${
+                isAccessibilityMode ? 'text-rose-700 hover:text-rose-950' : 'text-rose-400 hover:text-white'
+              }`}
             >
               &times;
             </button>
@@ -408,14 +476,51 @@ export default function App() {
         </div>
       )}
 
+      {/* Admin Role-Audit Indicator when previewing another operational role */}
+      {isAdmin && activeRoleView !== currentUser.role && (
+        <div className={`border-b px-6 py-2 text-xs flex items-center justify-between gap-3 ${
+          isAccessibilityMode
+            ? 'bg-indigo-50 border-indigo-300 text-indigo-950'
+            : 'bg-indigo-950/70 border-indigo-500/40 text-indigo-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Shield className={`h-3.5 w-3.5 shrink-0 ${isAccessibilityMode ? 'text-indigo-700' : 'text-indigo-400'}`} />
+            <span>
+              <strong>{t.shell.adminPreviewTitle}</strong> {t.shell.adminPreviewViewing}{' '}
+              <strong className={isAccessibilityMode ? 'text-slate-950' : 'text-white'}>
+                {getRoleLandingTitle(activeRoleView)}
+              </strong> ({effectiveRoleUser.name}).
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveRoleView(currentUser.role)}
+            className={`text-[11px] font-mono underline cursor-pointer shrink-0 ${
+              isAccessibilityMode ? 'text-cyan-800 hover:text-slate-950 font-bold' : 'text-cyan-300 hover:text-white'
+            }`}
+          >
+            {t.shell.returnToExec} &rarr;
+          </button>
+        </div>
+      )}
+
       {/* Main Content Area: Strictly renders the dedicated landing dashboard based on role */}
       <main className="flex-1">
         {activeRoleView === 'SAFETY_DIRECTOR' && (
-          <ManagerDashboard
-            isAccessibilityMode={isAccessibilityMode}
-            onToggleAccessibilityMode={toggleAccessibilityMode}
-            currentUser={currentUser}
-          />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center p-12 text-cyan-400 font-mono text-sm">
+                <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping mr-2"></span>
+                {t.shell.loadingDirector}
+              </div>
+            }
+          >
+            <ManagerDashboard
+              isAccessibilityMode={isAccessibilityMode}
+              onToggleAccessibilityMode={toggleAccessibilityMode}
+              currentUser={effectiveRoleUser}
+            />
+          </Suspense>
         )}
 
         {activeRoleView === 'OCCUPATIONAL_HEALTH_OFFICER' && (
@@ -423,12 +528,12 @@ export default function App() {
             fallback={
               <div className="flex items-center justify-center p-12 text-emerald-400 font-mono text-sm">
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping mr-2"></span>
-                Loading Occupational Health &amp; Clinical Triage Console...
+                {t.shell.loadingClinician}
               </div>
             }
           >
             <ClinicianHealthDashboard
-              currentUser={currentUser}
+              currentUser={effectiveRoleUser}
               isAccessibilityMode={isAccessibilityMode}
             />
           </Suspense>
@@ -439,12 +544,12 @@ export default function App() {
             fallback={
               <div className="flex items-center justify-center p-12 text-amber-400 font-mono text-sm">
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-ping mr-2"></span>
-                Loading Facility Engineering &amp; Mechanical Reliability Console...
+                {t.shell.loadingEngineer}
               </div>
             }
           >
             <FacilityEngineeringDashboard
-              currentUser={currentUser}
+              currentUser={effectiveRoleUser}
               isAccessibilityMode={isAccessibilityMode}
             />
           </Suspense>
@@ -455,12 +560,12 @@ export default function App() {
             fallback={
               <div className="flex items-center justify-center p-12 text-rose-400 font-mono text-sm">
                 <span className="h-2.5 w-2.5 rounded-full bg-rose-400 animate-ping mr-2"></span>
-                Loading Statutory Regulatory Compliance &amp; WSH Audit Inspectorate...
+                {t.shell.loadingAuditor}
               </div>
             }
           >
             <ComplianceAuditorDashboard
-              currentUser={currentUser}
+              currentUser={effectiveRoleUser}
               isAccessibilityMode={isAccessibilityMode}
             />
           </Suspense>
@@ -470,31 +575,43 @@ export default function App() {
           <div className="p-4 md:p-6 max-w-7xl mx-auto">
             <Suspense
               fallback={
-                <div className="flex items-center justify-center p-12 text-purple-400 font-mono text-sm">
+                <div className={`flex items-center justify-center p-12 font-mono text-sm ${
+                  isAccessibilityMode ? 'text-purple-800' : 'text-purple-400'
+                }`}>
                   <span className="h-2.5 w-2.5 rounded-full bg-purple-400 animate-ping mr-2"></span>
-                  Loading sovereign private biometric shield...
+                  {t.shell.loadingWorker}
                 </div>
               }
             >
-              <WorkerPrivateDashboard />
+              <WorkerPrivateDashboard
+                currentUser={effectiveRoleUser}
+                isAccessibilityMode={isAccessibilityMode}
+              />
             </Suspense>
           </div>
         )}
       </main>
 
-      {/* Persistent Platform & Compliance Footer */}
-      <footer className={`border-t px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between text-xs gap-2 transition-colors ${
+      {/* Persistent Platform & Compliance Footer with Single-Select Autocomplete Language Selector */}
+      <footer className={`border-t px-4 md:px-6 py-3 flex flex-col lg:flex-row items-center justify-between text-xs gap-3 transition-colors ${
         isAccessibilityMode ? 'bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-950 border-slate-900 text-slate-500'
       }`}>
-        <div className="flex items-center space-x-3">
-          <span>&copy; 2026 Prognosticator Intelligence Platform</span>
+        <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-3 gap-y-1">
+          <span>{t.shell.footerCopyright}</span>
           <span className={`hidden sm:inline ${isAccessibilityMode ? 'text-slate-400' : 'text-slate-700'}`}>·</span>
           <span className={isAccessibilityMode ? 'text-slate-900 font-medium' : 'text-slate-400'}>
-            {frameworkDetail.countryName} ({frameworkDetail.regulatoryBody.split(' ')[0]}) &amp; HIPAA Shield Certified
+            {frameworkDetail.countryName} ({frameworkDetail.regulatoryBody.split(' ')[0]}) &amp; {t.shell.footerCertified}
           </span>
         </div>
-        <div className={`text-[11px] font-mono ${isAccessibilityMode ? 'text-slate-800 font-semibold' : 'text-slate-500'}`}>
-          Dual Workforce Equity · Non-Punitive Telemetry · k-Anonymity (N &ge; 12) &amp; &epsilon;-DP (0.5) Enforced
+        <div className="flex flex-wrap items-center justify-center lg:justify-end gap-4">
+          <div className={`text-[11px] font-mono ${isAccessibilityMode ? 'text-slate-800 font-semibold' : 'text-slate-500'}`}>
+            {t.shell.footerInvariants}
+          </div>
+          <LanguageAutocomplete
+            dropDirection="up"
+            isAccessibilityMode={isAccessibilityMode}
+            idPrefix="app-footer-lang"
+          />
         </div>
       </footer>
 

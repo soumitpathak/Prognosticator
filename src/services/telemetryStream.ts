@@ -624,7 +624,7 @@ export const INITIAL_SYSTEM_AUDIT_LOGS: SystemAuditLogEntry[] = [
     id: 'AUD-TH-9712',
     timestamp: '2026-03-29 13:05:10',
     userId: 'USR-MGR-2026',
-    userName: 'Alex Mercer',
+    userName: 'Safety Director',
     userRole: 'EHS Manager on Duty',
     category: 'THRESHOLD_CHANGE',
     targetModule: 'Kalman Process Noise Matrix',

@@ -29,7 +29,7 @@ export async function generateHistoricalAnomalyPdfReport({
   zones,
   targetZone = 'ALL',
   standard = 'ISO 45001:2018 Occupational Health & Safety',
-  auditorName = 'Alex Mercer, Lead EHS Safety Auditor (ID: EHS-2026-904)',
+  auditorName = 'Lead EHS Safety Auditor (ID: EHS-2026-904)',
   includeCertificationHeader = true,
   includeKpiSummary = true,
   onProgress

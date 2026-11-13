@@ -424,7 +424,7 @@ export function serializeCurrentAnomalyDataToCsvAndDownload(
   const dateStr = dateIso.slice(0, 10);
   const timeStr = dateIso.slice(11, 19).replace(/:/g, '-');
   const auditStandard = options?.auditStandard || 'ISO 45001 / OSHA 1910 Occupational Safety Standard';
-  const userName = options?.userName || 'Alex Mercer (EHS Safety Supervisor)';
+  const userName = options?.userName || 'Safety Director (EHS Safety Supervisor)';
   const zoneName = zone?.name || 'All Facility Zones';
   const zoneId = zone?.id || 'GLOBAL_FACILITY';
 

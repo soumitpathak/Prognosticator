@@ -20,7 +20,7 @@ export async function generateDashboardSummaryPdfReport({
   zones,
   telemetryStream,
   annotations = [],
-  supervisorName = 'Alex Mercer (Safety Compliance Lead)',
+  supervisorName = 'Safety Director (Safety Compliance Lead)',
   activeRole = 'Safety Compliance Officer',
   onProgress
 }: DashboardSummaryPdfOptions): Promise<string> {
@@ -493,7 +493,7 @@ export async function generateDashboardSummaryPdfReport({
   pdf.setTextColor(100, 116, 139);
 
   pdf.text('___________________________________________', margin + 4, p2Y + 3);
-  pdf.text(`Alex Mercer, EHS Compliance Lead`, margin + 4, p2Y + 7);
+  pdf.text(`Safety Director, EHS Compliance Lead`, margin + 4, p2Y + 7);
 
   pdf.text('___________________________________________', margin + 100, p2Y + 3);
   pdf.text('Statutory Safety & Regulatory Inspector Signature', margin + 100, p2Y + 7);

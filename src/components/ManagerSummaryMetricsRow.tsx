@@ -18,6 +18,7 @@ import {
   FileText,
   Loader2
 } from 'lucide-react';
+import { useTranslation } from '../services/i18nService';
 
 export interface ManagerSummaryMetricsRowProps {
   activeAlertsCount: number;
@@ -50,6 +51,8 @@ export default function ManagerSummaryMetricsRow({
   isGeneratingPdf = false,
   className = ''
 }: ManagerSummaryMetricsRowProps) {
+  const { t } = useTranslation();
+  const m = t.manager;
   const coveragePct = Number(((monitoredWorkersCount / totalWorkersCount) * 100).toFixed(1));
 
   return (
@@ -62,7 +65,7 @@ export default function ManagerSummaryMetricsRow({
             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
           </span>
           <span className="font-mono text-[11px] font-bold text-slate-300 tracking-wider uppercase">
-            Executive Health Operations &amp; Telemetry Status
+            {m.execOverviewHeader}
           </span>
           <span className="text-slate-600">|</span>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 border border-cyan-800/80 px-2 py-0.5 rounded-full">
@@ -78,7 +81,7 @@ export default function ManagerSummaryMetricsRow({
               title="Download current workforce telemetry data as a CSV file for offline analysis"
             >
               <Download className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Download CSV</span>
+              <span>{m.downloadCsv}</span>
               <span className="text-[10px] font-mono bg-emerald-950/90 border border-emerald-700/60 px-1 rounded text-emerald-200 ml-1">
                 CSV
               </span>
@@ -101,7 +104,7 @@ export default function ManagerSummaryMetricsRow({
               ) : (
                 <Download className="h-3.5 w-3.5 text-white" />
               )}
-              <span>{isGeneratingPdf ? 'Compiling PDF Dossier...' : 'Download PDF Summary Report'}</span>
+              <span>{isGeneratingPdf ? 'Compiling PDF Dossier...' : m.downloadPdfReport}</span>
               <span className="text-[10px] font-mono bg-cyan-950/80 px-1 rounded text-cyan-200 ml-1">
                 PDF
               </span>
@@ -129,7 +132,7 @@ export default function ManagerSummaryMetricsRow({
           <div>
             <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
               <ShieldAlert className={`h-4 w-4 ${criticalAlertsCount > 0 ? 'text-rose-400 animate-pulse' : 'text-amber-400'}`} />
-              <span>Active Anomalies</span>
+              <span>{m.kpiActiveAnomalies}</span>
             </span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className={`text-2xl sm:text-3xl font-extrabold font-mono ${
@@ -182,7 +185,7 @@ export default function ManagerSummaryMetricsRow({
           <div>
             <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
               <Users className="h-4 w-4 text-cyan-400" />
-              <span>Worker Coverage</span>
+              <span>{m.kpiWorkerCoverage}</span>
             </span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-extrabold font-mono text-cyan-300">
@@ -219,7 +222,7 @@ export default function ManagerSummaryMetricsRow({
           <div>
             <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
               <Cpu className="h-4 w-4 text-emerald-400" />
-              <span>Engine Uptime</span>
+              <span>{m.kpiEngineUptime}</span>
             </span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">
@@ -256,7 +259,7 @@ export default function ManagerSummaryMetricsRow({
           <div>
             <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
               <Zap className="h-4 w-4 text-cyan-400" />
-              <span>System Latency</span>
+              <span>{m.kpiSystemLatency}</span>
             </span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-extrabold font-mono text-cyan-300">

@@ -7,7 +7,7 @@
 ---
 
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=flat-square&logo=vite)](https://vitejs.dev)
-[![Test Suite](https://img.shields.io/badge/SDET%20Tests-69%2F69%20Passing-emerald?style=flat-square&logo=vitest)](https://vitest.dev)
+[![Test Suite](https://img.shields.io/badge/SDET%20Tests-78%2F78%20Passing-emerald?style=flat-square&logo=vitest)](https://vitest.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6.3%20Strict-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org)
 [![React](https://img.shields.io/badge/React-18.3.1%20SPA-61dafb?style=flat-square&logo=react)](https://react.dev)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4.0.12-38bdf8?style=flat-square&logo=tailwindcss)](https://tailwindcss.com)
@@ -239,18 +239,18 @@ With global sensitivity $\Delta f = 1.0$ and privacy budget $\epsilon = 0.5$, pr
 
 ---
 
-## 🤖 AI & Machine Learning Subsystems
+## 🤖 Deterministic Signal & Forecasting Subsystems
 
-| Subsystem | Model / Algorithm | Purpose | Output / Action |
+| Subsystem | Deterministic Method | Purpose | Output / Action |
 |---|---|---|---|
 | **Kalman Filter Simulator** | 1D Discrete Kalman Filter with Covariance Update | Filters motion artifacts and imputes missing packets | Smoothed, jitter-free physiological time series |
-| **LSTM Anomaly Engine** | Temporal Reconstruction Autoencoder MSE | Detects subtle physiological decay hours before collapse | Anomaly Risk Tier (`CRITICAL`, `MODERATE`, `STABLE`) |
-| **Explainable AI (XAI)** | Feature Attribution Decomposition | Explains root cause of detected risk | Relative % drivers (HRV vs Heat vs Noise vs Sleep) |
-| **LSTM 12-Hour Forecaster** | Autoregressive Multi-Horizon Monte Carlo | Projects future 12h risk curves under 3 operational scenarios | Forward risk trajectory and peak risk hour offset |
+| **Baseline MSE Anomaly Engine** | Deterministic Physiological Reconstruction MSE | Measures divergence vs nominal physiological baselines | Anomaly Risk Tier (`CRITICAL_RISK`, `MODERATE_RISK`, `STABLE`) |
+| **Explainable Attribution (XAI)** | Weighted Deviation Attribution Decomposition | Decomposes computed MSE across risk signals | Relative % drivers (HRV vs Heat vs Skin Temp vs Sleep) |
+| **12-Hour Scenario Forecaster** | Autoregressive Deterministic Trajectory Projector | Projects 12h risk curves under Baseline, Heat Surge, and Mitigated paths | Forward risk curve and peak risk hour offset |
 | **Causal Correlation Engine** | Graph Node Decoupling with Pearson $r$ | Maps hazard propagation between physical facility zones | Inter-zone risk propagation warnings & manual decoupling |
 | **Worker Density Correlator** | 168-hour Density-Strain Correlation Matrix | Detects overcrowding-induced physiological strain | Overcrowding hot-spot identification |
-| **NLP Semantic Synthesizer** | Occupational Diagnostic Rule Synthesizer | Translates telemetry spikes into executive summaries | Plain-English incident narratives and root-cause summaries |
-| **Predictive IoT Maintenance** | Degradation Curve Extrapolation (ISO 10816) | Predicts equipment sensor and bearing failures ($<72\text{h}$) | Automatic work orders with parts and technician assignment |
+| **Cross-Role Live Operations Bus** | Event-Synced Shared Operational Ledger & Firestore Sync | Propagates anonymous break requests, HVAC actuation & triage | Real-time multi-role action sync + SHA-256 audit hash chain |
+| **Predictive IoT Maintenance** | Degradation Curve Extrapolation (ISO 10816) | Projects equipment sensor and bearing wear ($<72\text{h}$) | Preventive work orders with parts and technician dispatch |
 
 ---
 
@@ -380,20 +380,19 @@ interface ProactiveMaintenanceTask {
 ## 🧪 Principal SDET Quality Engineering & Test Report
 
 Prognosticator features a **dual-layer test architecture** executed under Vitest:
-1. `src/test/prognosticator.test.ts` (24 unit & algorithmic validation tests)
-2. `src/test/e2e_features.test.ts` (32 end-to-end integration tests)
+1. `src/test/prognosticator.test.ts` (35 unit, i18n, cross-role ops & deterministic edge signal tests)
+2. `src/test/e2e_features.test.ts` (43 end-to-end RBAC, PBAC, and safety workflow integration tests)
 
 ### Test Suite Execution Summary
 ```bash
 $ npm test
 
  RUN  v5.1.0 /app/applet
- ✓ src/test/prognosticator.test.ts  (24 tests)  56ms
- ✓ src/test/e2e_features.test.ts    (32 tests)  78ms
+ ✓ src/test/prognosticator.test.ts  (35 tests)
+ ✓ src/test/e2e_features.test.ts    (43 tests)
 
  Test Files  2 passed (2)
-      Tests  56 passed (56)
-   Duration  1.02s
+      Tests  78 passed (78)
 ```
 
 ### Comprehensive SDET Test Coverage Matrix
@@ -401,29 +400,26 @@ $ npm test
 |---|---|---|
 | **Kalman Filter & Imputation** | Noise suppression, covariance convergence, $\text{NaN} / \pm\infty$ resilient imputation | ✅ PASS |
 | **Privacy Shield ($k$-Anonymity)** | Small-cell masking when $N \in [1, 11]$, compliant disclosure with Laplace noise when $N \ge 12$ | ✅ PASS |
-| **LSTM Reconstruction MSE** | Physiological MSE calculation, risk tier assignment, feature attribution decomposition | ✅ PASS |
+| **Baseline Reconstruction MSE** | Physiological MSE calculation, risk tier assignment, feature attribution decomposition | ✅ PASS |
 | **What-If Simulation Engine** | Rothfusz Heat Index regression, herd immunity transitions, PPE cooling mitigation | ✅ PASS |
 | **Predictive IoT Maintenance** | 30-day degradation curves, 72h failure task generation, parts & technician dispatch | ✅ PASS |
 | **Causal Correlation Graph** | Multi-zone Pearson correlation, cascade propagation triggering, link decoupling | ✅ PASS |
 | **Worker Density Matrix** | 168-hour weekly matrix generation, overcrowding anomaly detection, hourly profiles | ✅ PASS |
 | **System Compliance Audit** | SHA-256 cryptographic chaining, HIPAA Safe Harbor de-identification verification | ✅ PASS |
-| **NLP Semantic Insights** | Root-cause text synthesis, entity extraction, narrative coherence score ($>0.90$) | ✅ PASS |
-| **LSTM 12-Hour Forecasting** | Monte Carlo projection for Baseline, Heat Surge, and Mitigated scenarios | ✅ PASS |
-| **Rolling 30-Day Health** | Diurnal baseline drift, Thermal Work Limit (TWL) variance, health safety scores | ✅ PASS |
-| **Wearable Biometrics (BLE)** | RMSSD & SDNN math, ANS balance (PNS vs SNS), stress surge simulation | ✅ PASS |
-| **Automated Response Engine** | Lifecycle transitions (`PENDING` $\to$ `APPROVED` $\to$ `EXECUTED`), opt-in auto mode | ✅ PASS |
-| **Data Exporters (CSV/JSON)** | RFC-4180 escaping, zero `NaN`/`undefined`, enterprise JSON schema compliance | ✅ PASS |
-| **Voice & Chime Synthesizer** | Severity audio toggles, Web Audio API chime synthesis, headless fallback | ✅ PASS |
+| **8-Language i18n & RTL** | Single-select autocomplete across EN/BN/TA/ZH/TL/AR/HI/ES + dynamic Arabic `dir="rtl"` | ✅ PASS |
+| **Cross-Role Operations Bus** | Zero-PII anonymous worker break dispatch synced to Clinician, Director & Auditor Ledger | ✅ PASS |
+| **RBAC & Statutory Jurisdictions** | Strict PBAC console isolation + SG MOM / GCC MoHRE / US OSHA / EU GDPR rules | ✅ PASS |
+| **Data Exporters (PDF/CSV/JSON)** | RFC-4180 escaping, zero `NaN`/`undefined`, vector PDF & Merkle ledger JSON | ✅ PASS |
 | **Worker Privacy Invariant** | Ephemeral token isolation, zero managerial surveillance guarantee verification | ✅ PASS |
 
 ---
 
 ## 👁️ Accessibility & Universal Design (WCAG 2.1 AA/AAA)
 
-Prognosticator includes a dedicated **Universal Accessibility Mode** designed specifically for safety managers and inspectors operating in high-glare environments (direct sunlight on mobile tablets) or with visual impairments:
-- **High-Contrast Light Presentation:** Activated via the top mode bar (`Accessibility Mode ON/OFF`), applying the `.manager-high-contrast-light` CSS scope.
-- **Contrast Ratios:** Text elements guarantee $>7:1$ contrast against light slate backgrounds, surpassing standard WCAG AAA thresholds.
-- **Screen Reader Support:** Full ARIA role definitions (`role="switch"`, `aria-checked`, semantic headings).
+Prognosticator includes a global **Sunlight High-Contrast Light Mode** across all 5 role consoles (including Frontline Workers in direct outdoor glare, Clinicians, Facility Engineers, Compliance Auditors, and Safety Directors):
+- **High-Contrast Light Presentation:** Activated from any console's persistent header switch (`A11y Mode ON/OFF`), applying `.manager-high-contrast-light` across the full app shell and role terminals.
+- **Contrast Ratios:** High-ink slate typography and preserved action button contrast ensure $>7:1$ legibility in bright outdoor daylight.
+- **Screen Reader & Multilingual Support:** Full ARIA attributes (`role="switch"`, `role="combobox"`, `aria-checked`), `Plus Jakarta Sans` + `JetBrains Mono` (`tabular-nums`), and 8 languages with automatic Arabic RTL directionality.
 - **Persistent Preferences:** Automatically saved in `localStorage` across user sessions.
 
 ---

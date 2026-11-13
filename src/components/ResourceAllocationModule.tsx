@@ -264,7 +264,7 @@ export default function ResourceAllocationModule({
         {
           timestamp: 'Just now',
           action: `Status advanced to ${nextStatus} via Resource Allocation Module`,
-          actor: 'Alex Mercer (Lead Supervisor)',
+          actor: 'Safety Director (Lead Supervisor)',
           previousStatus: current.status,
           newStatus: nextStatus
         },
@@ -392,7 +392,7 @@ export default function ResourceAllocationModule({
       id: `AUD-RES-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       userId: 'USR-MGR-2026',
-      userName: 'Alex Mercer',
+      userName: 'Safety Director',
       userRole: 'EHS Operations Supervisor',
       category: 'RESOURCE_REALLOCATION',
       targetModule: 'On-Site Safety Workforce Deployment',

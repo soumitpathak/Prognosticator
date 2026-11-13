@@ -60,7 +60,7 @@ const INITIAL_PROJECTED_NOTES: Record<number, ProjectedAnnotation> = {
     title: 'Pre-Staged Rapid Cooling & Misting Intervention',
     note: 'Forecasted wet-bulb heatwave peak. Safety supervisor pre-staged auxiliary chillers and 20-min mandatory shaded rest rotation.',
     category: 'MITIGATION_PLAN',
-    author: 'Alex Mercer (Safety Lead)',
+    author: 'Safety Director (Safety Lead)',
     createdAt: new Date().toISOString()
   },
   21: {
@@ -139,7 +139,7 @@ export default function KalmanPredictiveModel30DaysChart({
   const [formNoteTitle, setFormNoteTitle] = useState<string>('');
   const [formNoteBody, setFormNoteBody] = useState<string>('');
   const [formNoteCategory, setFormNoteCategory] = useState<ProjectedAnnotation['category']>('MITIGATION_PLAN');
-  const [formNoteAuthor, setFormNoteAuthor] = useState<string>('Alex Mercer (Safety Lead)');
+  const [formNoteAuthor, setFormNoteAuthor] = useState<string>('Safety Director (Safety Lead)');
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   const saveAnnotationsToStorage = (updated: Record<number, ProjectedAnnotation>) => {
@@ -174,7 +174,7 @@ export default function KalmanPredictiveModel30DaysChart({
           : `Nominal baseline progress observation recorded for ${point.dateLabel}.`
       );
       setFormNoteCategory(isBreached ? 'MITIGATION_PLAN' : 'OTHER');
-      setFormNoteAuthor('Alex Mercer (Safety Lead)');
+      setFormNoteAuthor('Safety Director (Safety Lead)');
     }
     setIsNoteModalOpen(true);
   };
@@ -193,7 +193,7 @@ export default function KalmanPredictiveModel30DaysChart({
       title: formNoteTitle.trim() || `Day ${dayNum} Note`,
       note: formNoteBody.trim(),
       category: formNoteCategory,
-      author: formNoteAuthor.trim() || 'Alex Mercer',
+      author: formNoteAuthor.trim() || 'Safety Director',
       createdAt: new Date().toISOString()
     };
 

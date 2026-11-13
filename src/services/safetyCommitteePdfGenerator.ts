@@ -47,7 +47,7 @@ export async function generateSafetyCommitteePdfReport({
   meetingTitle = 'Joint Health & Safety Committee (JHSC) Review Session',
   docketNumber,
   committeeChair = 'Dr. Sarah Lin, MD (Occupational Health Lead)',
-  safetyOfficer = 'Alex Mercer, CSP (EHS Safety Director)',
+  safetyOfficer = 'EHS Safety Director (CSP)',
   meetingDate,
   agendaNotes = 'Review of current shift telemetry, thermal strain thresholds, active acoustic exposure levels, and preventive engineering mitigations across operational zones.',
   includedSections = {

@@ -747,6 +747,25 @@ describe('Principal SDET E2E Test Suite: Prognosticator Platform', () => {
       expect(roles.has('FRONTLINE_WORKER')).toBe(true);
       expect(roles.has('COMPLIANCE_AUDITOR')).toBe(true);
     });
+
+    it('rejects unrecognized credential logins and isolates newly registered users at Level 1 Worker clearance', () => {
+      const invalid = authService.loginWithCredentials('unknown.intruder@external.org');
+      expect(invalid).toBeNull();
+
+      const registered = authService.registerNewUser({
+        fullName: 'Test New Hire',
+        email: 'newhire.test@apex.io',
+        department: 'Field Assembly'
+      });
+      expect(registered.role).toBe('FRONTLINE_WORKER');
+      expect(registered.clearanceLevel).toBe('LEVEL_1_BASIC');
+      expect(authService.isAdmin()).toBe(false);
+      expect(authService.hasPermission('VIEW_PRIVATE_BIOMETRICS')).toBe(true);
+      expect(authService.hasPermission('VIEW_AGGREGATE_ANALYTICS')).toBe(false);
+
+      // Restore admin session
+      authService.switchPersona('user_safety_director');
+    });
   });
 });
 

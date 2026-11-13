@@ -21,7 +21,7 @@ export interface ChartAnnotation {
     | 'SHIFT_HANDOVER'
     | 'PPE_DRILL'
     | 'OTHER';
-  author: string; // e.g. "Alex Mercer (Safety Lead)"
+  author: string; // e.g. "Safety Director (Safety Lead)"
   createdAt: string;
   zoneId?: string;
   zoneName?: string;
@@ -40,7 +40,7 @@ const INITIAL_ANNOTATIONS: ChartAnnotation[] = [
     title: 'Facility event: HVAC maintenance',
     note: 'Primary chiller unit condenser pump maintenance caused temporary microclimate airflow reduction in Sector 4.',
     category: 'HVAC_MAINTENANCE',
-    author: 'Alex Mercer (Safety Lead)',
+    author: 'Safety Director (Safety Lead)',
     createdAt: '2026-10-30T14:15:00.000Z',
     zoneId: 'Outdoor-Construction-Sector-4',
     zoneName: 'Outdoor Construction Sector 4'

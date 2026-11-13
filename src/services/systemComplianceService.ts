@@ -34,7 +34,7 @@ export const INITIAL_COMPLIANCE_AUDIT_LOGS: ComplianceAuditEvent[] = [
     id: 'HIPAA-TRC-9835-AUD',
     timestamp: '2026-11-06T14:45:10.190Z',
     accessorId: 'USR-EHS-202',
-    accessorName: 'Alex Mercer, CSP',
+    accessorName: 'Safety Director (CSP)',
     accessorRole: 'EHS Safety Director',
     department: 'Environmental Health & Safety',
     reportName: 'Outdoor Sector 4 Heat Strain & Thermal Work Limit (TWL) Executive Summary',

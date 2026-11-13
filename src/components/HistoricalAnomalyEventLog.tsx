@@ -584,7 +584,7 @@ export default function HistoricalAnomalyEventLog({
         zones,
         targetZone: zoneFilter,
         standard: 'ISO 45001 / OSHA 1910 Workforce Safety Audit',
-        auditorName: 'Alex Mercer, Lead EHS Auditor (ID: EHS-2026-904)',
+        auditorName: 'Lead EHS Auditor (ID: EHS-2026-904)',
         includeCertificationHeader: true,
         includeKpiSummary: true,
         onProgress: (p) => setActionFeedback(p)

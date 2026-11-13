@@ -115,7 +115,7 @@ export const DEFAULT_FIELD_ASSIGNEES: IncidentAssignee[] = [
   },
   {
     id: 'ASG-EHS-06',
-    name: 'Alex Mercer',
+    name: 'Safety Director',
     role: 'EHS Lead Supervisor',
     team: 'EHS_LEAD',
     avatarInitials: 'AM',
@@ -139,7 +139,7 @@ export const INITIAL_INCIDENT_ASSIGNMENTS: Record<string, IncidentAssignment> = 
       {
         timestamp: '10 mins ago',
         action: 'Incident Created & Assigned',
-        actor: 'Alex Mercer (Supervisor)',
+        actor: 'Safety Director (Supervisor)',
         notes: 'Dispatched Sarah Jenkins to Sector 4 structural rebar grid.',
         newStatus: 'Pending'
       },
@@ -167,7 +167,7 @@ export const INITIAL_INCIDENT_ASSIGNMENTS: Record<string, IncidentAssignment> = 
       {
         timestamp: '15 mins ago',
         action: 'Incident Assigned',
-        actor: 'Alex Mercer (Supervisor)',
+        actor: 'Safety Director (Supervisor)',
         notes: 'Conveyor 4B bearing vibration spike flagged at 7.2 mm/s RMS.',
         newStatus: 'Pending'
       }
@@ -187,7 +187,7 @@ export const INITIAL_INCIDENT_ASSIGNMENTS: Record<string, IncidentAssignment> = 
       {
         timestamp: '28 mins ago',
         action: 'Incident Assigned',
-        actor: 'Alex Mercer (Supervisor)',
+        actor: 'Safety Director (Supervisor)',
         newStatus: 'Pending'
       },
       {
@@ -843,7 +843,7 @@ export default function NotificationCenter({
     const newActivity: IncidentActivityLogEntry = {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       action: previousStatus === newStatus ? 'Assignment Updated' : `Status Transition: ${previousStatus} → ${newStatus}`,
-      actor: 'Alex Mercer (Safety Manager)',
+      actor: 'Safety Director (Safety Manager)',
       notes: resolutionInput || undefined,
       previousStatus,
       newStatus
@@ -886,7 +886,7 @@ export default function NotificationCenter({
     const newActivity: IncidentActivityLogEntry = {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       action: `Status Transition: ${previousStatus} → ${targetStatus}`,
-      actor: 'Alex Mercer (Safety Manager)',
+      actor: 'Safety Director (Safety Manager)',
       previousStatus,
       newStatus: targetStatus
     };
