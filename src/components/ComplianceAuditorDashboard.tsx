@@ -7,14 +7,14 @@ import {
   CheckCircle2,
   Scale,
   Database,
-  Sparkles,
+  ShieldAlert,
   Globe2,
   FileSpreadsheet,
   FileText,
   BarChart3
 } from 'lucide-react';
 import { UserPersona, RegulatoryJurisdiction } from '../types';
-import { REGULATORY_FRAMEWORKS } from '../services/authService';
+import { authService, REGULATORY_FRAMEWORKS } from '../services/authService';
 import { INITIAL_FACILITY_ZONES, INITIAL_ACTIVE_ALERTS, generateSyntheticStream } from '../services/telemetryStream';
 import { systemComplianceService } from '../services/systemComplianceService';
 import { complianceAuditService } from '../services/complianceAuditService';
@@ -24,7 +24,7 @@ import { generate30DayAnomalyTrendWithProjection } from '../services/anomalyTren
 import { compileFullAnomalyAuditLog } from '../services/anomalyAuditService';
 import { defaultPrivacyShield } from '../services/privacyShield';
 import { useTranslation } from '../services/i18nService';
-import { crossRoleOperationsService, useCrossRoleOperations } from '../services/crossRoleOperationsService';
+import { crossRoleOperationsService, LedgerVerificationResult, useCrossRoleOperations } from '../services/crossRoleOperationsService';
 import LanguageAutocomplete from './LanguageAutocomplete';
 
 interface ComplianceAuditorDashboardProps {
@@ -45,11 +45,42 @@ export default function ComplianceAuditorDashboard({
   const [activeTab, setActiveTab] = useState<AuditorTab>('LEDGER');
   const [exportedStatus, setExportedStatus] = useState<string | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [activeJurisdiction, setActiveJurisdiction] = useState<RegulatoryJurisdiction>(() =>
+    authService.getActiveJurisdiction()
+  );
+  const [chainVerification, setChainVerification] = useState<LedgerVerificationResult>(() =>
+    crossRoleOperationsService.verifyLedgerIntegrity()
+  );
 
-  const framework = REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
+  React.useEffect(() => {
+    setChainVerification(crossRoleOperationsService.verifyLedgerIntegrity());
+  }, [logs]);
+
+  React.useEffect(() => {
+    return authService.onAuthChange((_u, jur) => {
+      setActiveJurisdiction(jur);
+    });
+  }, []);
+
+  const framework = REGULATORY_FRAMEWORKS[activeJurisdiction] || REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
   const complianceEvents = useMemo(() => systemComplianceService.getEvents(), [exportedStatus, logs.length]);
   const summaryMetrics = useMemo(() => systemComplianceService.getSummaryMetrics(), [exportedStatus, logs.length]);
   const operationalAuditRecords = useMemo(() => complianceAuditService.getRecords().slice(0, 6), [logs.length]);
+
+  const handleVerifyHashChain = () => {
+    const result = crossRoleOperationsService.verifyLedgerIntegrity();
+    setChainVerification(result);
+    if (result.isValid) {
+      setExportedStatus(
+        `Cryptographic Chain Verified: ${result.verifiedBlocks}/${result.totalBlocks} blocks passed SHA-256 link & digest check at ${result.checkedAt}.`
+      );
+    } else {
+      setExportedStatus(
+        `Integrity Warning: Detected ${result.corruptedBlockIds.length + result.brokenLinkIds.length} broken/tampered block(s).`
+      );
+    }
+    setTimeout(() => setExportedStatus(null), 5000);
+  };
 
   const recordAuditExport = (action: 'EXPORTED_PDF' | 'EXPORTED_CSV', reportName: string) => {
     systemComplianceService.logEvent({
@@ -176,6 +207,14 @@ export default function ComplianceAuditorDashboard({
         <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
           <button
             type="button"
+            onClick={handleVerifyHashChain}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-emerald-300 font-semibold transition cursor-pointer"
+          >
+            <ShieldCheck className="h-4 w-4 text-emerald-400" />
+            <span>Verify Hash Chain</span>
+          </button>
+          <button
+            type="button"
             onClick={handleExportDossier}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition cursor-pointer shadow-xs"
           >
@@ -241,8 +280,16 @@ export default function ComplianceAuditorDashboard({
 
       {/* Export Status Feedback */}
       {exportedStatus && (
-        <div className="mb-5 p-3 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2 animate-fadeIn">
-          <Sparkles className="h-4 w-4 text-rose-400 shrink-0" />
+        <div className={`mb-5 p-3 rounded-xl border text-xs flex items-center gap-2 animate-fadeIn ${
+          chainVerification.isValid
+            ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
+            : 'bg-rose-950/80 border-rose-500/50 text-rose-200'
+        }`}>
+          {chainVerification.isValid ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          ) : (
+            <ShieldAlert className="h-4 w-4 text-rose-400 shrink-0" />
+          )}
           <span>{exportedStatus}</span>
         </div>
       )}
@@ -251,11 +298,13 @@ export default function ComplianceAuditorDashboard({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-xs font-semibold font-sans">{a.kpiMomWsha}</span>
+            <span className="text-xs font-semibold font-sans">{framework.regulatoryBody.split(' ')[0]} Statutory Posture</span>
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold text-emerald-400 font-mono tabular-nums">100% PASS</div>
-          <div className="text-[11px] text-emerald-400 mt-1 font-sans font-medium">Cap. 354A &middot; 0 Citations</div>
+          <div className="text-[11px] text-emerald-400 mt-1 font-sans font-medium truncate">
+            Stop WBGT &ge; {framework.wbgtThresholds.stopWorkWbgtC}&deg;C &middot; 0 Citations
+          </div>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
@@ -296,7 +345,7 @@ export default function ComplianceAuditorDashboard({
           {/* Left Column (7 cols): Immutable Audit Trail */}
           <div className="lg:col-span-7 space-y-4">
             <div className="border border-slate-800 rounded-xl bg-slate-900 p-5 shadow-sm">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+              <div className="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 mb-4 gap-2">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
                     <Database className="h-4 w-4 text-rose-400" />
@@ -306,9 +355,17 @@ export default function ComplianceAuditorDashboard({
                     {a.ledgerDesc}
                   </p>
                 </div>
-                <span className="text-xs font-mono text-cyan-400">
-                  Ledger Height: {(99820 + logs.length).toLocaleString()}
-                </span>
+                <div className="flex items-center gap-2.5 text-xs font-mono tabular-nums">
+                  <span className={chainVerification.isValid ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                    {chainVerification.isValid
+                      ? `Chain Verified (${chainVerification.verifiedBlocks}/${chainVerification.totalBlocks})`
+                      : `Integrity Fault`}
+                  </span>
+                  <span className="text-slate-600">&middot;</span>
+                  <span className="text-cyan-400">
+                    Height #{(99820 + logs.length).toLocaleString()}
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-3">

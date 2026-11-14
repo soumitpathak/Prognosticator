@@ -22,7 +22,8 @@ import {
   Wrench,
   FileCheck,
   Key,
-  Globe2
+  Globe2,
+  Loader2
 } from 'lucide-react';
 import { UserPersona, RegulatoryJurisdiction, UserRole } from './types';
 import { authService, REGULATORY_FRAMEWORKS, TARGET_PERSONAS } from './services/authService';
@@ -59,7 +60,7 @@ export default function App() {
     return false;
   });
 
-  // Subscribe to auth changes
+  // Subscribe to auth changes & Admin closed-loop role-view jump events
   useEffect(() => {
     const unsubscribe = authService.onAuthChange((user, jur, authStatus) => {
       setCurrentUser(user);
@@ -68,7 +69,18 @@ export default function App() {
       // Strictly align landing console to user's assigned role
       setActiveRoleView(user.role);
     });
-    return unsubscribe;
+    const handleJumpRole = (e: Event) => {
+      const detail = (e as CustomEvent<{ role?: UserRole }>).detail;
+      if (detail?.role && authService.isAdmin()) {
+        setAccessDeniedMessage(null);
+        setActiveRoleView(detail.role);
+      }
+    };
+    window.addEventListener('prognosticator:switch-role-view', handleJumpRole);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('prognosticator:switch-role-view', handleJumpRole);
+    };
   }, []);
 
   // Apply .manager-high-contrast-light CSS class to the root element for visually impaired users
@@ -169,12 +181,12 @@ export default function App() {
   // If user is not authenticated, display the full Enterprise Login Gateway
   if (!isAuthenticated) {
     return (
-      <Suspense
+        <Suspense
         fallback={
           <div className={`min-h-screen flex items-center justify-center font-mono text-xs ${
             isAccessibilityMode ? 'bg-slate-100 text-cyan-800' : 'bg-slate-950 text-cyan-400'
           }`}>
-            <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping mr-2"></span>
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
             {t.shell.loadingGateway}
           </div>
         }
@@ -209,9 +221,27 @@ export default function App() {
             isAccessibilityMode ? 'text-slate-700' : 'text-slate-400'
           }`}>
             <span>{t.shell.surveillanceActive}</span>
-            <span className={`font-semibold ${isAccessibilityMode ? 'text-cyan-800' : 'text-cyan-300'}`}>
-              {getShortCountryLabel(currentJurisdiction)}
-            </span>
+            {activeRoleView !== 'FRONTLINE_WORKER' ? (
+              <select
+                aria-label="Active Regulatory Jurisdiction"
+                value={currentJurisdiction}
+                onChange={(e) => authService.setActiveJurisdiction(e.target.value as RegulatoryJurisdiction)}
+                className={`font-semibold rounded-md px-1.5 py-0.5 border text-[11px] cursor-pointer focus:outline-none focus:border-cyan-500 transition ${
+                  isAccessibilityMode
+                    ? 'bg-white text-cyan-800 border-slate-300'
+                    : 'bg-slate-900 text-cyan-300 border-slate-700 hover:border-cyan-500/60'
+                }`}
+              >
+                <option value="SINGAPORE_MOM">Singapore (MOM)</option>
+                <option value="GCC_MOHRE">GCC (MoHRE)</option>
+                <option value="US_OSHA_NIOSH">United States (OSHA)</option>
+                <option value="EU_GDPR_OSHA">European Union (GDPR)</option>
+              </select>
+            ) : (
+              <span className={`font-semibold ${isAccessibilityMode ? 'text-cyan-800' : 'text-cyan-300'}`}>
+                {getShortCountryLabel(currentJurisdiction)}
+              </span>
+            )}
           </div>
         </div>
 
@@ -510,7 +540,7 @@ export default function App() {
           <Suspense
             fallback={
               <div className="flex items-center justify-center p-12 text-cyan-400 font-mono text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping mr-2"></span>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 {t.shell.loadingDirector}
               </div>
             }
@@ -527,7 +557,7 @@ export default function App() {
           <Suspense
             fallback={
               <div className="flex items-center justify-center p-12 text-emerald-400 font-mono text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping mr-2"></span>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 {t.shell.loadingClinician}
               </div>
             }
@@ -543,7 +573,7 @@ export default function App() {
           <Suspense
             fallback={
               <div className="flex items-center justify-center p-12 text-amber-400 font-mono text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-ping mr-2"></span>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 {t.shell.loadingEngineer}
               </div>
             }
@@ -559,7 +589,7 @@ export default function App() {
           <Suspense
             fallback={
               <div className="flex items-center justify-center p-12 text-rose-400 font-mono text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-rose-400 animate-ping mr-2"></span>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 {t.shell.loadingAuditor}
               </div>
             }
@@ -578,7 +608,7 @@ export default function App() {
                 <div className={`flex items-center justify-center p-12 font-mono text-sm ${
                   isAccessibilityMode ? 'text-purple-800' : 'text-purple-400'
                 }`}>
-                  <span className="h-2.5 w-2.5 rounded-full bg-purple-400 animate-ping mr-2"></span>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   {t.shell.loadingWorker}
                 </div>
               }

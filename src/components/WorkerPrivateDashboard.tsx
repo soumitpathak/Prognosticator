@@ -7,7 +7,6 @@ import {
   Droplets,
   Clock,
   AlertCircle,
-  Sparkles,
   CheckCircle2,
   Languages,
   UserCheck,
@@ -15,7 +14,7 @@ import {
   Globe2
 } from 'lucide-react';
 import { authService, REGULATORY_FRAMEWORKS } from '../services/authService';
-import { UserPersona } from '../types';
+import { UserPersona, RegulatoryJurisdiction } from '../types';
 import { useTranslation } from '../services/i18nService';
 import { crossRoleOperationsService, useCrossRoleOperations } from '../services/crossRoleOperationsService';
 import LanguageAutocomplete from './LanguageAutocomplete';
@@ -36,12 +35,21 @@ export default function WorkerPrivateDashboard({
   const activeBreak = ops.restBreaks.find((b) => b.status !== 'COMPLETED') || null;
   const [hydrationCountdown, setHydrationCountdown] = useState<number>(14 * 60 + 20); // 14 mins
   const [loggedGlasses, setLoggedGlasses] = useState<number>(3);
+  const [activeJurisdiction, setActiveJurisdiction] = useState<RegulatoryJurisdiction>(() =>
+    authService.getActiveJurisdiction()
+  );
 
   useEffect(() => {
+    const unsubAuth = authService.onAuthChange((_u, jur) => {
+      setActiveJurisdiction(jur);
+    });
     const timer = setInterval(() => {
       setHydrationCountdown((prev) => (prev > 0 ? prev - 1 : 15 * 60));
     }, 1000);
-    return () => clearInterval(timer);
+    return () => {
+      unsubAuth();
+      clearInterval(timer);
+    };
   }, []);
 
   const formatTime = (secs: number) => {
@@ -50,7 +58,9 @@ export default function WorkerPrivateDashboard({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const framework = REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
+  const framework = REGULATORY_FRAMEWORKS[activeJurisdiction] || REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
+  const workerHrv = ops.heatSpikeActive ? 41 : 58;
+  const workerSkinTemp = ops.heatSpikeActive ? '38.2' : '37.4';
 
   return (
     <div className="space-y-6">
@@ -148,8 +158,8 @@ export default function WorkerPrivateDashboard({
             <div className="flex justify-between items-start mb-3">
               <div>
                 <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">{t.autonomicRecovery}</span>
-                <h3 className="text-xl font-bold text-white flex items-center gap-2 mt-0.5">
-                  58 ms <span className="text-xs text-amber-400 font-medium font-mono">{t.hrvDeltaTag}</span>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2 mt-0.5 font-mono tabular-nums">
+                  {workerHrv} ms <span className={`text-xs font-medium font-mono ${ops.heatSpikeActive ? 'text-rose-400' : 'text-amber-400'}`}>{ops.heatSpikeActive ? '(-38% Surge)' : t.hrvDeltaTag}</span>
                 </h3>
               </div>
               <div className="p-2 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
@@ -162,7 +172,7 @@ export default function WorkerPrivateDashboard({
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80">
             <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full w-[65%] rounded-full"></div>
+              <div className={`bg-gradient-to-r from-amber-500 to-emerald-400 h-full rounded-full ${ops.heatSpikeActive ? 'w-[42%]' : 'w-[65%]'}`}></div>
             </div>
             <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
               <span>{t.highStrainLabel}</span>
@@ -177,8 +187,8 @@ export default function WorkerPrivateDashboard({
             <div className="flex justify-between items-start mb-3">
               <div>
                 <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">{t.skinTemp}</span>
-                <h3 className="text-xl font-bold text-white flex items-center gap-2 mt-0.5">
-                  37.4°C <span className="text-xs text-amber-400 font-medium font-mono">{t.skinDeltaTag}</span>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2 mt-0.5 font-mono tabular-nums">
+                  {workerSkinTemp}°C <span className={`text-xs font-medium font-mono ${ops.heatSpikeActive ? 'text-rose-400' : 'text-amber-400'}`}>{ops.heatSpikeActive ? '(+1.7°C Surge)' : t.skinDeltaTag}</span>
                 </h3>
               </div>
               <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">

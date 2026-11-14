@@ -9,7 +9,7 @@ import {
   Play,
   RotateCcw,
   X,
-  Sparkles,
+  Loader2,
   Info,
   Layers,
   ArrowRight,
@@ -18,7 +18,8 @@ import {
   Sun,
   Snowflake,
   ShieldCheck,
-  Stethoscope
+  Stethoscope,
+  Activity
 } from 'lucide-react';
 import { TelemetryDataPoint } from '../types';
 import {
@@ -197,7 +198,7 @@ export default function TelemetryUploadModal({
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Sparkles className="h-4 w-4 text-cyan-400" />
+            <Activity className="h-4 w-4 text-cyan-400" />
             <span>Industrial Test &amp; Demo Datasets (1-Click)</span>
           </button>
           <button
@@ -380,7 +381,7 @@ export default function TelemetryUploadModal({
               {/* Status and Preview */}
               {isProcessing && (
                 <div className="text-center p-4 text-cyan-400 font-mono text-xs flex items-center justify-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Parsing and validating telemetry streams...
                 </div>
               )}

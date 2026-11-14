@@ -26,8 +26,12 @@ export interface ManagerSummaryMetricsRowProps {
   highAlertsCount: number;
   totalWorkersCount?: number;
   monitoredWorkersCount?: number;
+  zonesCount?: number;
+  droppedPacketsCount?: number;
   engineUptimePct?: number;
   systemLatencyMs?: number;
+  avgLatencyP99Ms?: number;
+  uptimeWindowLabel?: string;
   onJumpToAlerts?: () => void;
   onJumpToZones?: () => void;
   onDownloadPdfReport?: () => void;
@@ -42,16 +46,24 @@ export default function ManagerSummaryMetricsRow({
   highAlertsCount,
   totalWorkersCount = 144,
   monitoredWorkersCount = 142,
+  zonesCount = 4,
+  droppedPacketsCount = 0,
   engineUptimePct = 99.98,
   systemLatencyMs = 18.4,
+  avgLatencyP99Ms = 31.2,
+  uptimeWindowLabel = 'continuous stream',
   onJumpToAlerts,
   onJumpToZones,
   className = ''
 }: ManagerSummaryMetricsRowProps) {
   const { t } = useTranslation();
   const m = t.manager;
-  const coveragePct = Number(((monitoredWorkersCount / totalWorkersCount) * 100).toFixed(1));
+  const coveragePct =
+    totalWorkersCount > 0
+      ? Number(((monitoredWorkersCount / totalWorkersCount) * 100).toFixed(1))
+      : 0;
   const moderateCount = Math.max(0, activeAlertsCount - (criticalAlertsCount + highAlertsCount));
+  const healthDeltaSign = criticalAlertsCount > 0 ? `+${criticalAlertsCount} crit` : 'Stable';
 
   return (
     <section aria-label="Executive Health Operations Overview" className={`mb-5 ${className}`}>
@@ -107,9 +119,9 @@ export default function ManagerSummaryMetricsRow({
               <span className="text-cyan-400">{moderateCount} Mod</span>
             </div>
 
-            <span className="inline-flex items-center gap-1 text-[11px] font-mono tabular-nums text-rose-400">
-              <TrendingUp className="h-3 w-3" />
-              <span>+1 / hr</span>
+            <span className={`inline-flex items-center gap-1 text-[11px] font-mono tabular-nums ${criticalAlertsCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {criticalAlertsCount > 0 ? <TrendingUp className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+              <span>{healthDeltaSign}</span>
             </span>
           </div>
         </div>
@@ -131,7 +143,7 @@ export default function ManagerSummaryMetricsRow({
                 {coveragePct}%
               </span>
               <span className="text-xs font-mono tabular-nums text-slate-400">
-                {monitoredWorkersCount}/{totalWorkersCount} active &middot; 6 zones
+                {monitoredWorkersCount}/{totalWorkersCount} active &middot; {zonesCount} zones
               </span>
             </div>
           </div>
@@ -144,7 +156,7 @@ export default function ManagerSummaryMetricsRow({
 
             <span className="inline-flex items-center gap-0.5 text-[11px] font-mono tabular-nums text-emerald-400">
               <ArrowUpRight className="h-3 w-3" />
-              <span>+0.4%</span>
+              <span>{zonesCount} active</span>
             </span>
           </div>
         </div>
@@ -161,7 +173,7 @@ export default function ManagerSummaryMetricsRow({
                 {engineUptimePct}%
               </span>
               <span className="text-xs text-slate-400">
-                14d 6h continuous
+                {uptimeWindowLabel}
               </span>
             </div>
           </div>
@@ -169,11 +181,15 @@ export default function ManagerSummaryMetricsRow({
           <div className="mt-3.5 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
             <span className="inline-flex items-center gap-1 text-[11px]">
               <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-              <span>0 drops / 24h</span>
+              <span>
+                {droppedPacketsCount === 0
+                  ? '0 drops / window'
+                  : `${droppedPacketsCount} Kalman-imputed`}
+              </span>
             </span>
 
             <span className="text-[11px] font-mono tabular-nums text-emerald-400">
-              &plusmn;0.00% drift
+              {droppedPacketsCount === 0 ? '±0.00% drift' : 'Kalman active'}
             </span>
           </div>
         </div>
@@ -190,7 +206,7 @@ export default function ManagerSummaryMetricsRow({
                 {systemLatencyMs} <span className="text-sm font-normal text-slate-400">ms</span>
               </span>
               <span className="text-xs font-mono tabular-nums text-slate-400">
-                P99: 31.2ms
+                P99: {avgLatencyP99Ms.toFixed(1)}ms
               </span>
             </div>
           </div>
@@ -200,7 +216,7 @@ export default function ManagerSummaryMetricsRow({
 
             <span className="inline-flex items-center gap-0.5 text-[11px] font-mono tabular-nums text-emerald-400">
               <ArrowDownRight className="h-3 w-3" />
-              <span>-2.4ms</span>
+              <span>{(35 - systemLatencyMs).toFixed(1)}ms margin</span>
             </span>
           </div>
         </div>

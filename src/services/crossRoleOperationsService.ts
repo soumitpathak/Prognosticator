@@ -70,12 +70,33 @@ export type AuditBlockEventType =
 export interface AuditLedgerBlock {
   id: string;
   timestamp: string;
+  previousHash?: string;
+  payloadDigest?: string;
   blockHash: string;
   eventType: AuditBlockEventType;
   actorPseudonym: string;
   legalStandard: string;
   summary: string;
   status: 'VERIFIED' | 'TAMPER_PROOF';
+}
+
+export interface LedgerVerificationResult {
+  isValid: boolean;
+  totalBlocks: number;
+  verifiedBlocks: number;
+  corruptedBlockIds: string[];
+  brokenLinkIds: string[];
+  rootHash: string;
+  checkedAt: string;
+}
+
+export interface ClosedLoopStatus {
+  heatSurgeTriggered: boolean;
+  workerBreakRequested: boolean;
+  clinicalHydrationDispatched: boolean;
+  hvacMitigated: boolean;
+  auditSealedCount: number;
+  completedStages: number;
 }
 
 export interface CrossRoleActivityEvent {
@@ -101,6 +122,7 @@ export interface CrossRoleSnapshot {
 
 const STORAGE_KEY = 'prognosticator_cross_role_ops_v1';
 const BROADCAST_CHANNEL_NAME = 'prognosticator_cross_role_bus';
+const GENESIS_PREV_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
 const INITIAL_CLINICAL_QUEUE: ClinicalTriageRecord[] = [
   {
@@ -227,62 +249,6 @@ const INITIAL_VIBRATION_ASSETS: VibrationAsset[] = [
   }
 ];
 
-const INITIAL_LEDGER_BLOCKS: AuditLedgerBlock[] = [
-  {
-    id: 'BLK-99824',
-    timestamp: '2026-11-11 14:15:22 UTC',
-    blockHash: '0x8f3c7e91a24d5b6c801e9a2f7c4b1d3e8a9f0b1c2d3e4f5a6b7c8d9e0f1a2b3c',
-    eventType: 'REST_BREAK_ISSUED',
-    actorPseudonym: 'SYSTEM_AUTONOMOUS_PBAC',
-    legalStandard: 'Singapore MOM WSHA 2024 / WBGT >= 32.0°C Protocol',
-    summary: 'Anonymous 10-min rest cycle validated for Sector 4 cohort (k >= 12 preserved).',
-    status: 'VERIFIED'
-  },
-  {
-    id: 'BLK-99823',
-    timestamp: '2026-11-11 13:58:10 UTC',
-    blockHash: '0x5b2a9f7e1c8d4e3f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f',
-    eventType: 'HVAC_ACTUATION',
-    actorPseudonym: 'FACILITY_ENGINEER_MV',
-    legalStandard: 'ASHRAE 62.1-2022 Indoor Air Quality & Thermal Standard',
-    summary: 'Sector 4 misting manifold & AHU damper staged to 95% aperture.',
-    status: 'TAMPER_PROOF'
-  },
-  {
-    id: 'BLK-99822',
-    timestamp: '2026-11-11 13:30:45 UTC',
-    blockHash: '0x1c3e5a7b9d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c',
-    eventType: 'PRIVACY_SHIELD_VERIFIED',
-    actorPseudonym: 'CRYPTOGRAPHIC_AUDITOR',
-    legalStandard: 'HIPAA §164.514 Safe Harbor & GDPR Article 9 Verification',
-    summary: 'k-Anonymity (N >= 12) & Laplace epsilon=0.5 audit passed.',
-    status: 'VERIFIED'
-  },
-  {
-    id: 'BLK-99821',
-    timestamp: '2026-11-11 12:45:00 UTC',
-    blockHash: '0x9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b',
-    eventType: 'THRESHOLD_CALIBRATED',
-    actorPseudonym: 'SAFETY_DIRECTOR_SC',
-    legalStandard: 'OSHA Heat National Emphasis Program CPL 03-00-024',
-    summary: 'Calibrated WBGT stop-work threshold and TWL alerts.',
-    status: 'TAMPER_PROOF'
-  }
-];
-
-function createDefaultSnapshot(): CrossRoleSnapshot {
-  return {
-    triageQueue: INITIAL_CLINICAL_QUEUE.map((i) => ({ ...i })),
-    hvacZones: INITIAL_HVAC_ZONES.map((z) => ({ ...z })),
-    vibrationAssets: INITIAL_VIBRATION_ASSETS.map((a) => ({ ...a })),
-    restBreaks: [],
-    ledgerBlocks: INITIAL_LEDGER_BLOCKS.map((b) => ({ ...b })),
-    activityFeed: [],
-    heatSpikeActive: false,
-    firebaseSynced: false
-  };
-}
-
 function computeChainedHash(previousHash: string, payload: string): string {
   const input = `${previousHash}|${payload}`;
   let h1 = 0xdeadbeef ^ input.length;
@@ -297,6 +263,146 @@ function computeChainedHash(previousHash: string, payload: string): string {
   const seg = (n: number) => (n >>> 0).toString(16).padStart(8, '0');
   const base = `${seg(h1)}${seg(h2)}${seg(h1 ^ 0xa5a5a5a5)}${seg(h2 ^ 0x5a5a5a5a)}`;
   return `0x${base}${base}`;
+}
+
+export function buildLedgerBlockPayload(block: {
+  id: string;
+  timestamp: string;
+  eventType: AuditBlockEventType;
+  actorPseudonym: string;
+  summary: string;
+}): string {
+  return `${block.id}|${block.timestamp}|${block.eventType}|${block.actorPseudonym}|${block.summary}`;
+}
+
+export function verifyAuditLedgerChain(blocks: AuditLedgerBlock[]): LedgerVerificationResult {
+  const checkedAt = formatUtcTimestamp();
+  if (!blocks || blocks.length === 0) {
+    return {
+      isValid: true,
+      totalBlocks: 0,
+      verifiedBlocks: 0,
+      corruptedBlockIds: [],
+      brokenLinkIds: [],
+      rootHash: GENESIS_PREV_HASH,
+      checkedAt
+    };
+  }
+
+  // Blocks are stored newest-first (index 0 = head); walk oldest -> newest to validate chain
+  const chronological = [...blocks].reverse();
+  const corruptedBlockIds: string[] = [];
+  const brokenLinkIds: string[] = [];
+  let expectedPrev = chronological[0].previousHash || GENESIS_PREV_HASH;
+
+  for (let i = 0; i < chronological.length; i++) {
+    const blk = chronological[i];
+    if (i > 0 && blk.previousHash && blk.previousHash !== expectedPrev) {
+      brokenLinkIds.push(blk.id);
+    }
+    const recomputedPayload = buildLedgerBlockPayload(blk);
+    const prevForHash = blk.previousHash || expectedPrev;
+    const recomputed = computeChainedHash(prevForHash, recomputedPayload);
+
+    // Detect either mutated fields (payloadDigest mismatch) or forged hash
+    if (
+      (blk.payloadDigest && blk.payloadDigest !== recomputedPayload) ||
+      (blk.previousHash !== undefined && blk.blockHash !== recomputed)
+    ) {
+      corruptedBlockIds.push(blk.id);
+    }
+    expectedPrev = blk.blockHash;
+  }
+
+  const invalidCount = new Set([...corruptedBlockIds, ...brokenLinkIds]).size;
+  return {
+    isValid: corruptedBlockIds.length === 0 && brokenLinkIds.length === 0,
+    totalBlocks: blocks.length,
+    verifiedBlocks: Math.max(0, blocks.length - invalidCount),
+    corruptedBlockIds,
+    brokenLinkIds,
+    rootHash: blocks[0].blockHash,
+    checkedAt
+  };
+}
+
+function createInitialLedgerBlocks(): AuditLedgerBlock[] {
+  const seeds: Array<{
+    id: string;
+    timestamp: string;
+    eventType: AuditBlockEventType;
+    actorPseudonym: string;
+    legalStandard: string;
+    summary: string;
+    status: 'VERIFIED' | 'TAMPER_PROOF';
+  }> = [
+    {
+      id: 'BLK-99821',
+      timestamp: '2026-11-11 12:45:00 UTC',
+      eventType: 'THRESHOLD_CALIBRATED',
+      actorPseudonym: 'SAFETY_DIRECTOR_SC',
+      legalStandard: 'OSHA Heat National Emphasis Program CPL 03-00-024',
+      summary: 'Calibrated WBGT stop-work threshold and TWL alerts.',
+      status: 'TAMPER_PROOF'
+    },
+    {
+      id: 'BLK-99822',
+      timestamp: '2026-11-11 13:30:45 UTC',
+      eventType: 'PRIVACY_SHIELD_VERIFIED',
+      actorPseudonym: 'CRYPTOGRAPHIC_AUDITOR',
+      legalStandard: 'HIPAA §164.514 Safe Harbor & GDPR Article 9 Verification',
+      summary: 'k-Anonymity (N >= 12) & Laplace epsilon=0.5 audit passed.',
+      status: 'VERIFIED'
+    },
+    {
+      id: 'BLK-99823',
+      timestamp: '2026-11-11 13:58:10 UTC',
+      eventType: 'HVAC_ACTUATION',
+      actorPseudonym: 'FACILITY_ENGINEER_MV',
+      legalStandard: 'ASHRAE 62.1-2022 Indoor Air Quality & Thermal Standard',
+      summary: 'Sector 4 misting manifold & AHU damper staged to 95% aperture.',
+      status: 'TAMPER_PROOF'
+    },
+    {
+      id: 'BLK-99824',
+      timestamp: '2026-11-11 14:15:22 UTC',
+      eventType: 'REST_BREAK_ISSUED',
+      actorPseudonym: 'SYSTEM_AUTONOMOUS_PBAC',
+      legalStandard: 'Singapore MOM WSHA 2024 / WBGT >= 32.0°C Protocol',
+      summary: 'Anonymous 10-min rest cycle validated for Sector 4 cohort (k >= 12 preserved).',
+      status: 'VERIFIED'
+    }
+  ];
+
+  let prevHash = GENESIS_PREV_HASH;
+  const built: AuditLedgerBlock[] = [];
+  for (const seed of seeds) {
+    const payloadDigest = buildLedgerBlockPayload(seed);
+    const blockHash = computeChainedHash(prevHash, payloadDigest);
+    built.unshift({
+      ...seed,
+      previousHash: prevHash,
+      payloadDigest,
+      blockHash
+    });
+    prevHash = blockHash;
+  }
+  return built;
+}
+
+const INITIAL_LEDGER_BLOCKS: AuditLedgerBlock[] = createInitialLedgerBlocks();
+
+function createDefaultSnapshot(): CrossRoleSnapshot {
+  return {
+    triageQueue: INITIAL_CLINICAL_QUEUE.map((i) => ({ ...i })),
+    hvacZones: INITIAL_HVAC_ZONES.map((z) => ({ ...z })),
+    vibrationAssets: INITIAL_VIBRATION_ASSETS.map((a) => ({ ...a })),
+    restBreaks: [],
+    ledgerBlocks: INITIAL_LEDGER_BLOCKS.map((b) => ({ ...b })),
+    activityFeed: [],
+    heatSpikeActive: false,
+    firebaseSynced: false
+  };
 }
 
 function formatUtcTimestamp(date = new Date()): string {
@@ -516,16 +622,22 @@ class CrossRoleOperationsService {
     summary: string;
     status?: 'VERIFIED' | 'TAMPER_PROOF';
   }): AuditLedgerBlock {
-    const prevHash = this.state.ledgerBlocks[0]?.blockHash || '0x00000000';
+    const prevHash = this.state.ledgerBlocks[0]?.blockHash || GENESIS_PREV_HASH;
     const id = `BLK-${Math.floor(10000 + Math.random() * 89999)}`;
     const timestamp = formatUtcTimestamp();
-    const blockHash = computeChainedHash(
-      prevHash,
-      `${id}|${timestamp}|${params.eventType}|${params.actorPseudonym}|${params.summary}`
-    );
+    const payloadDigest = buildLedgerBlockPayload({
+      id,
+      timestamp,
+      eventType: params.eventType,
+      actorPseudonym: params.actorPseudonym,
+      summary: params.summary
+    });
+    const blockHash = computeChainedHash(prevHash, payloadDigest);
     const block: AuditLedgerBlock = {
       id,
       timestamp,
+      previousHash: prevHash,
+      payloadDigest,
       blockHash,
       eventType: params.eventType,
       actorPseudonym: params.actorPseudonym,
@@ -636,12 +748,20 @@ class CrossRoleOperationsService {
   }
 
   public completeAnonymousBreakRequest(breakId: string): void {
+    let updatedBreak: RestBreakRequestRecord | undefined;
     this.state = {
       ...this.state,
-      restBreaks: this.state.restBreaks.map((b) =>
-        b.id === breakId ? { ...b, status: 'COMPLETED' } : b
-      )
+      restBreaks: this.state.restBreaks.map((b) => {
+        if (b.id === breakId) {
+          updatedBreak = { ...b, status: 'COMPLETED' };
+          return updatedBreak;
+        }
+        return b;
+      })
     };
+    if (updatedBreak) {
+      void this.syncBreakToFirestore(updatedBreak);
+    }
     this.persistAndNotify();
   }
 
@@ -658,20 +778,31 @@ class CrossRoleOperationsService {
     const target = this.state.triageQueue.find((r) => r.id === params.recordId);
     if (!target) return undefined;
 
+    const syncedBreaks: RestBreakRequestRecord[] = [];
     this.state = {
       ...this.state,
       triageQueue: this.state.triageQueue.map((item) =>
         item.id === params.recordId ? { ...item, status: 'DISPATCHED' } : item
       ),
-      restBreaks: this.state.restBreaks.map((brk) =>
-        brk.status === 'DISPATCHED' &&
-        (brk.ephemeralToken === target.workerPseudonym ||
-          brk.zoneId.toLowerCase().includes('sector 4') ||
-          target.zone.toLowerCase().includes('sector-4'))
-          ? { ...brk, status: 'HYDRATION_DISPATCHED', acknowledgedByRole: 'Clinical Triage Team' }
-          : brk
-      )
+      restBreaks: this.state.restBreaks.map((brk) => {
+        if (
+          brk.status === 'DISPATCHED' &&
+          (brk.ephemeralToken === target.workerPseudonym ||
+            brk.zoneId.toLowerCase().includes('sector 4') ||
+            target.zone.toLowerCase().includes('sector-4'))
+        ) {
+          const nextBrk: RestBreakRequestRecord = {
+            ...brk,
+            status: 'HYDRATION_DISPATCHED',
+            acknowledgedByRole: 'Clinical Triage Team'
+          };
+          syncedBreaks.push(nextBrk);
+          return nextBrk;
+        }
+        return brk;
+      })
     };
+    syncedBreaks.forEach((b) => void this.syncBreakToFirestore(b));
 
     complianceAuditService.logEvent({
       eventType: 'SAFETY_DISPATCH',
@@ -913,14 +1044,23 @@ class CrossRoleOperationsService {
     const pendingCount = this.state.restBreaks.filter((b) => b.status === 'DISPATCHED').length;
     if (pendingCount === 0) return 0;
 
+    const syncedBreaks: RestBreakRequestRecord[] = [];
     this.state = {
       ...this.state,
-      restBreaks: this.state.restBreaks.map((b) =>
-        b.status === 'DISPATCHED'
-          ? { ...b, status: 'HYDRATION_DISPATCHED', acknowledgedByRole: 'Site Safety Command' }
-          : b
-      )
+      restBreaks: this.state.restBreaks.map((b) => {
+        if (b.status === 'DISPATCHED') {
+          const updated: RestBreakRequestRecord = {
+            ...b,
+            status: 'HYDRATION_DISPATCHED',
+            acknowledgedByRole: 'Site Safety Command'
+          };
+          syncedBreaks.push(updated);
+          return updated;
+        }
+        return b;
+      })
     };
+    syncedBreaks.forEach((b) => void this.syncBreakToFirestore(b));
 
     this.pushActivity({
       sourceRole: 'SAFETY_DIRECTOR',
@@ -968,6 +1108,36 @@ class CrossRoleOperationsService {
 
     this.persistAndNotify();
     return block;
+  }
+
+  public verifyLedgerIntegrity(): LedgerVerificationResult {
+    return verifyAuditLedgerChain(this.state.ledgerBlocks);
+  }
+
+  public getClosedLoopStatus(): ClosedLoopStatus {
+    const heatSurgeTriggered = this.state.heatSpikeActive ||
+      this.state.activityFeed.some((e) => e.category === 'HEAT_SPIKE');
+    const workerBreakRequested = this.state.restBreaks.length > 0 ||
+      this.state.activityFeed.some((e) => e.category === 'REST_BREAK');
+    const clinicalHydrationDispatched = this.state.triageQueue.some((t) => t.status === 'DISPATCHED') ||
+      this.state.activityFeed.some((e) => e.category === 'CLINICAL_TRIAGE');
+    const hvacMitigated = this.state.activityFeed.some((e) => e.category === 'HVAC_ACTUATION');
+    const auditSealedCount = this.state.ledgerBlocks.length;
+    const completedStages = [
+      heatSurgeTriggered,
+      workerBreakRequested,
+      clinicalHydrationDispatched,
+      hvacMitigated
+    ].filter(Boolean).length;
+
+    return {
+      heatSurgeTriggered,
+      workerBreakRequested,
+      clinicalHydrationDispatched,
+      hvacMitigated,
+      auditSealedCount,
+      completedStages
+    };
   }
 
   public resetOperationalState(): void {

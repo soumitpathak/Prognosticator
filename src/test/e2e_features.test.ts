@@ -71,6 +71,10 @@ import {
   parseUploadedCsv,
   parseUploadedJson
 } from '../services/telemetryUploadService';
+import {
+  crossRoleOperationsService,
+  verifyAuditLedgerChain
+} from '../services/crossRoleOperationsService';
 
 describe('Principal SDET E2E Test Suite: Prognosticator Platform', () => {
 
@@ -765,6 +769,117 @@ describe('Principal SDET E2E Test Suite: Prognosticator Platform', () => {
 
       // Restore admin session
       authService.switchPersona('user_safety_director');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Subsystem 16: Cryptographic Audit Ledger Chain & Closed-Loop Traceability
+  // --------------------------------------------------------------------------
+  describe('16. Cryptographic Audit Ledger Integrity & Closed-Loop Traceability', () => {
+    beforeEach(() => {
+      crossRoleOperationsService.resetOperationalState();
+    });
+
+    it('verifies hash chain integrity across seeded blocks and newly appended cross-role operations', () => {
+      const initialCheck = crossRoleOperationsService.verifyLedgerIntegrity();
+      expect(initialCheck.isValid).toBe(true);
+      expect(initialCheck.totalBlocks).toBe(4);
+      expect(initialCheck.verifiedBlocks).toBe(4);
+      expect(initialCheck.corruptedBlockIds).toEqual([]);
+      expect(initialCheck.brokenLinkIds).toEqual([]);
+
+      // Perform multi-role actions that append hash-chained blocks
+      crossRoleOperationsService.triggerSectorHeatSpike('Sarah Chen');
+      crossRoleOperationsService.submitAnonymousBreakRequest({ zoneId: 'SECTOR-4', language: 'en' });
+      crossRoleOperationsService.dispatchClinicalRehydration({
+        recordId: 'CLIN-001',
+        actorName: 'Dr. Elena Rostova',
+        actorRole: 'Occupational Health Officer',
+        regulatoryStandard: 'Singapore MOM WSHA 2024'
+      });
+      crossRoleOperationsService.actuateHvacDamper({
+        zoneId: 'ZONE-A',
+        delta: 5,
+        actorName: 'Marcus Vance',
+        actorRole: 'Facility Engineer'
+      });
+      crossRoleOperationsService.recordAuditExport({
+        actorRole: 'COMPLIANCE_AUDITOR_AI',
+        reportTitle: 'WSHA 2026 Audit Dossier',
+        legalStandard: 'Singapore MOM WSHA 2024'
+      });
+
+      const updatedCheck = crossRoleOperationsService.verifyLedgerIntegrity();
+      expect(updatedCheck.isValid).toBe(true);
+      expect(updatedCheck.totalBlocks).toBe(9);
+      expect(updatedCheck.verifiedBlocks).toBe(9);
+      expect(updatedCheck.corruptedBlockIds).toEqual([]);
+      expect(updatedCheck.brokenLinkIds).toEqual([]);
+    });
+
+    it('detects block payload tampering and previousHash chain breaks deterministically', () => {
+      const blocks = crossRoleOperationsService.getSnapshot().ledgerBlocks.map((b) => ({ ...b }));
+      expect(verifyAuditLedgerChain(blocks).isValid).toBe(true);
+
+      // Tamper with block summary (payload mismatch)
+      const tamperedPayloadBlocks = blocks.map((b, idx) =>
+        idx === 1 ? { ...b, summary: 'Tampered regulatory compliance statement' } : b
+      );
+      const payloadResult = verifyAuditLedgerChain(tamperedPayloadBlocks);
+      expect(payloadResult.isValid).toBe(false);
+      expect(payloadResult.corruptedBlockIds).toContain(blocks[1].id);
+
+      // Tamper with previousHash link continuity on head block
+      const brokenLinkBlocks = blocks.map((b, idx) =>
+        idx === 0 ? { ...b, previousHash: '0xdeadbeef00000000000000000000000000000000000000000000000000000000' } : b
+      );
+      const linkResult = verifyAuditLedgerChain(brokenLinkBlocks);
+      expect(linkResult.isValid).toBe(false);
+      expect(linkResult.brokenLinkIds).toContain(blocks[0].id);
+    });
+
+    it('tracks 5-stage closed-loop progression and resets cleanly', () => {
+      const initial = crossRoleOperationsService.getClosedLoopStatus();
+      expect(initial.completedStages).toBe(0);
+      expect(initial.auditSealedCount).toBe(4);
+
+      crossRoleOperationsService.triggerSectorHeatSpike('Sarah Chen');
+      expect(crossRoleOperationsService.getClosedLoopStatus().heatSurgeTriggered).toBe(true);
+      expect(crossRoleOperationsService.getClosedLoopStatus().completedStages).toBe(1);
+
+      const breakRec = crossRoleOperationsService.submitAnonymousBreakRequest({ zoneId: 'SECTOR-4', language: 'bn' });
+      expect(crossRoleOperationsService.getClosedLoopStatus().workerBreakRequested).toBe(true);
+      expect(crossRoleOperationsService.getClosedLoopStatus().completedStages).toBe(2);
+
+      crossRoleOperationsService.dispatchClinicalRehydration({
+        recordId: 'CLIN-001',
+        actorName: 'Dr. Elena Rostova',
+        actorRole: 'Occupational Health Officer',
+        regulatoryStandard: 'Singapore MOM WSHA 2024'
+      });
+      expect(crossRoleOperationsService.getClosedLoopStatus().clinicalHydrationDispatched).toBe(true);
+      expect(crossRoleOperationsService.getClosedLoopStatus().completedStages).toBe(3);
+
+      crossRoleOperationsService.actuateHvacDamper({
+        zoneId: 'ZONE-A',
+        delta: 5,
+        actorName: 'Marcus Vance',
+        actorRole: 'Facility Engineer'
+      });
+      const fullLoop = crossRoleOperationsService.getClosedLoopStatus();
+      expect(fullLoop.hvacMitigated).toBe(true);
+      expect(fullLoop.completedStages).toBe(4);
+      expect(fullLoop.auditSealedCount).toBeGreaterThan(4);
+
+      // Verify worker break completion syncs cleanly
+      crossRoleOperationsService.completeAnonymousBreakRequest(breakRec.id);
+      const completedBreak = crossRoleOperationsService.getSnapshot().restBreaks.find((b) => b.id === breakRec.id);
+      expect(completedBreak?.status).toBe('COMPLETED');
+
+      crossRoleOperationsService.resetOperationalState();
+      const afterReset = crossRoleOperationsService.getClosedLoopStatus();
+      expect(afterReset.completedStages).toBe(0);
+      expect(afterReset.auditSealedCount).toBe(4);
     });
   });
 });

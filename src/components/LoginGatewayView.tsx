@@ -13,7 +13,6 @@ import {
   LogIn,
   Send,
   Radio,
-  Sparkles,
   Info
 } from 'lucide-react';
 import { UserPersona } from '../types';
@@ -379,22 +378,26 @@ export default function LoginGatewayView({
 
           {/* Right Column (5 cols): Institutional Auth Card */}
           <div className="lg:col-span-5">
-            <div className={`border rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md ${
-              isAccessibilityMode ? 'border-slate-300 bg-white' : 'border-slate-800 bg-[#0B101E]/95'
+            <div className={`border rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden backdrop-blur-md ${
+              isAccessibilityMode ? 'border-slate-300 bg-white text-slate-900' : 'border-slate-800 bg-[#0B101E]/95 text-slate-100'
             }`}>
               
               {/* Header inside Card */}
-              <div className="flex items-center justify-between pb-5 border-b border-slate-800/80 mb-5 gap-3">
+              <div className={`flex items-center justify-between pb-5 border-b mb-5 gap-3 ${
+                isAccessibilityMode ? 'border-slate-200' : 'border-slate-800/80'
+              }`}>
                 <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-cyan-400 shrink-0" />
+                  <h2 className={`text-lg font-bold flex items-center gap-2 ${
+                    isAccessibilityMode ? 'text-slate-950' : 'text-white'
+                  }`}>
+                    <Lock className={`h-4 w-4 shrink-0 ${isAccessibilityMode ? 'text-cyan-700' : 'text-cyan-400'}`} />
                     <span>
                       {viewMode === 'LOGIN' && t.home.signInTitle}
                       {viewMode === 'SIGNUP' && t.home.signUpTitle}
                       {viewMode === 'FORGOT_PASSWORD' && t.home.forgotTitle}
                     </span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className={`text-xs mt-0.5 ${isAccessibilityMode ? 'text-slate-600' : 'text-slate-400'}`}>
                     {viewMode === 'LOGIN' && t.home.signInSubtitle}
                     {viewMode === 'SIGNUP' && t.home.signUpSubtitle}
                     {viewMode === 'FORGOT_PASSWORD' && t.home.forgotSubtitle}
@@ -402,7 +405,9 @@ export default function LoginGatewayView({
                 </div>
 
                 {/* View switcher tabs */}
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-xs shrink-0">
+                <div className={`flex items-center border rounded-lg p-0.5 text-xs shrink-0 ${
+                  isAccessibilityMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-950 border-slate-800'
+                }`}>
                   <button
                     type="button"
                     onClick={() => {
@@ -412,6 +417,8 @@ export default function LoginGatewayView({
                     className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer whitespace-nowrap ${
                       viewMode === 'LOGIN'
                         ? 'bg-cyan-600 text-white shadow-xs'
+                        : isAccessibilityMode
+                        ? 'text-slate-700 hover:text-slate-950'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -426,6 +433,8 @@ export default function LoginGatewayView({
                     className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer whitespace-nowrap ${
                       viewMode === 'SIGNUP'
                         ? 'bg-cyan-600 text-white shadow-xs'
+                        : isAccessibilityMode
+                        ? 'text-slate-700 hover:text-slate-950'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -439,11 +448,19 @@ export default function LoginGatewayView({
                 <div
                   className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 animate-fadeIn border ${
                     isErrorFeedback
-                      ? 'bg-rose-950/70 border-rose-500/50 text-rose-200'
+                      ? isAccessibilityMode
+                        ? 'bg-rose-50 border-rose-300 text-rose-900'
+                        : 'bg-rose-950/70 border-rose-500/50 text-rose-200'
+                      : isAccessibilityMode
+                      ? 'bg-cyan-50 border-cyan-300 text-cyan-950'
                       : 'bg-cyan-950/70 border-cyan-500/50 text-cyan-200'
                   }`}
                 >
-                  <Sparkles className={`h-4 w-4 shrink-0 ${isErrorFeedback ? 'text-rose-400' : 'text-cyan-400'}`} />
+                  {isErrorFeedback ? (
+                    <Shield className={`h-4 w-4 shrink-0 ${isAccessibilityMode ? 'text-rose-700' : 'text-rose-400'}`} />
+                  ) : (
+                    <CheckCircle2 className={`h-4 w-4 shrink-0 ${isAccessibilityMode ? 'text-cyan-700' : 'text-cyan-400'}`} />
+                  )}
                   <span>{statusFeedback}</span>
                 </div>
               )}
@@ -456,9 +473,13 @@ export default function LoginGatewayView({
                     type="button"
                     onClick={handleGoogleSignIn}
                     disabled={isLoading}
-                    className="w-full py-2.5 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-[0.99]"
+                    className={`w-full py-2.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-[0.99] border ${
+                      isAccessibilityMode
+                        ? 'bg-slate-900 hover:bg-slate-800 text-white border-slate-900'
+                        : 'bg-white hover:bg-slate-100 text-slate-900 border-transparent'
+                    }`}
                   >
-                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" />
                       <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z" />
                       <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
@@ -468,33 +489,43 @@ export default function LoginGatewayView({
                   </button>
 
                   <div className="flex items-center my-3">
-                    <div className="flex-1 border-t border-slate-800"></div>
-                    <span className="px-3 text-[10px] font-mono text-slate-500 uppercase">
+                    <div className={`flex-1 border-t ${isAccessibilityMode ? 'border-slate-200' : 'border-slate-800'}`}></div>
+                    <span className={`px-3 text-[10px] font-mono uppercase ${
+                      isAccessibilityMode ? 'text-slate-600' : 'text-slate-500'
+                    }`}>
                       {t.home.orCredentials}
                     </span>
-                    <div className="flex-1 border-t border-slate-800"></div>
+                    <div className={`flex-1 border-t ${isAccessibilityMode ? 'border-slate-200' : 'border-slate-800'}`}></div>
                   </div>
 
                   <form onSubmit={handleLoginSubmit} className="space-y-3.5">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      <label className={`block text-xs font-semibold mb-1 ${
+                        isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'
+                      }`}>
                         {t.home.emailLabel}
                       </label>
                       <div className="relative">
-                        <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                        <Mail className={`absolute left-3 top-2.5 h-4 w-4 ${isAccessibilityMode ? 'text-slate-500' : 'text-slate-500'}`} />
                         <input
                           type="email"
                           value={loginEmail}
                           onChange={(e) => setLoginEmail(e.target.value)}
                           required
                           placeholder="name@enterprise.org"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                          className={`w-full border rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                            isAccessibilityMode
+                              ? 'bg-slate-50 border-slate-300 text-slate-950 placeholder:text-slate-500'
+                              : 'bg-slate-950 border-slate-800 text-white'
+                          }`}
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      <label className={`block text-xs font-semibold mb-1 ${
+                        isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'
+                      }`}>
                         {t.home.passwordLabel}
                       </label>
                       <div className="relative">
@@ -504,25 +535,36 @@ export default function LoginGatewayView({
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
                           required
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-10 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                          className={`w-full border rounded-lg pl-9 pr-10 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                            isAccessibilityMode
+                              ? 'bg-slate-50 border-slate-300 text-slate-950'
+                              : 'bg-slate-950 border-slate-800 text-white'
+                          }`}
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 cursor-pointer"
+                          className={`absolute right-3 top-2.5 cursor-pointer ${
+                            isAccessibilityMode ? 'text-slate-600 hover:text-slate-950' : 'text-slate-500 hover:text-slate-300'
+                          }`}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-slate-400 pt-0.5">
+                    <div className={`flex items-center justify-between text-xs pt-0.5 ${
+                      isAccessibilityMode ? 'text-slate-700' : 'text-slate-400'
+                    }`}>
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={rememberMe}
                           onChange={(e) => setRememberMe(e.target.checked)}
-                          className="rounded border-slate-700 bg-slate-950 text-cyan-600 focus:ring-0"
+                          className={`rounded text-cyan-600 focus:ring-0 ${
+                            isAccessibilityMode ? 'border-slate-400 bg-white' : 'border-slate-700 bg-slate-950'
+                          }`}
                         />
                         <span>{t.home.rememberMe}</span>
                       </label>
@@ -533,7 +575,9 @@ export default function LoginGatewayView({
                           setResetEmail(loginEmail);
                           setStatusFeedback(null);
                         }}
-                        className="text-cyan-400 hover:underline cursor-pointer text-xs"
+                        className={`hover:underline cursor-pointer text-xs ${
+                          isAccessibilityMode ? 'text-cyan-700 font-semibold' : 'text-cyan-400'
+                        }`}
                       >
                         {t.home.forgotLink}
                       </button>
@@ -542,16 +586,16 @@ export default function LoginGatewayView({
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/40"
+                      className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/30"
                     >
                       <LogIn className="h-3.5 w-3.5" />
                       <span>{t.home.signInSubmitBtn}</span>
                     </button>
                   </form>
 
-                  {/* Institutional Directory Helper (Single English Worker Login) */}
-                  <div className="mt-4 pt-3 border-t border-slate-800/80">
-                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px]">
+                  {/* Institutional Directory Helper (Quick-Fill Authorized Personas) */}
+                  <div className={`mt-4 pt-3 border-t ${isAccessibilityMode ? 'border-slate-200' : 'border-slate-800/80'}`}>
+                    <div className="flex flex-wrap gap-1.5 font-sans text-xs">
                       <button
                         type="button"
                         onClick={() => {
@@ -559,7 +603,11 @@ export default function LoginGatewayView({
                           setIsErrorFeedback(false);
                           setStatusFeedback(null);
                         }}
-                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 cursor-pointer text-[10px]"
+                        className={`px-2.5 py-1 rounded-md border cursor-pointer text-[11px] font-medium whitespace-nowrap transition ${
+                          isAccessibilityMode
+                            ? 'bg-cyan-50 hover:bg-cyan-100 text-cyan-900 border-cyan-300'
+                            : 'bg-slate-900 hover:bg-slate-800 text-cyan-300 border-cyan-500/30'
+                        }`}
                         title="Lands on Executive Whole-Site Command & Admin RBAC"
                       >
                         {t.home.roleDirectorBtn}
@@ -571,7 +619,11 @@ export default function LoginGatewayView({
                           setIsErrorFeedback(false);
                           setStatusFeedback(null);
                         }}
-                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 cursor-pointer text-[10px]"
+                        className={`px-2.5 py-1 rounded-md border cursor-pointer text-[11px] font-medium whitespace-nowrap transition ${
+                          isAccessibilityMode
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300'
+                            : 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border-emerald-500/30'
+                        }`}
                         title="Lands on Occupational Health & Clinical Triage Center"
                       >
                         {t.home.roleClinicianBtn}
@@ -583,7 +635,11 @@ export default function LoginGatewayView({
                           setIsErrorFeedback(false);
                           setStatusFeedback(null);
                         }}
-                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 cursor-pointer text-[10px]"
+                        className={`px-2.5 py-1 rounded-md border cursor-pointer text-[11px] font-medium whitespace-nowrap transition ${
+                          isAccessibilityMode
+                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                            : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border-amber-500/30'
+                        }`}
                         title="Lands on Facility HVAC & Mechanical Reliability Console"
                       >
                         {t.home.roleEngineerBtn}
@@ -595,7 +651,11 @@ export default function LoginGatewayView({
                           setIsErrorFeedback(false);
                           setStatusFeedback(null);
                         }}
-                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-rose-300 border border-rose-500/30 cursor-pointer text-[10px]"
+                        className={`px-2.5 py-1 rounded-md border cursor-pointer text-[11px] font-medium whitespace-nowrap transition ${
+                          isAccessibilityMode
+                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-900 border-rose-300'
+                            : 'bg-slate-900 hover:bg-slate-800 text-rose-300 border-rose-500/30'
+                        }`}
                         title="Lands on Statutory Regulatory Compliance & WSH Audit"
                       >
                         {t.home.roleAuditorBtn}
@@ -607,7 +667,11 @@ export default function LoginGatewayView({
                           setIsErrorFeedback(false);
                           setStatusFeedback(null);
                         }}
-                        className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 cursor-pointer text-[10px]"
+                        className={`px-2.5 py-1 rounded-md border cursor-pointer text-[11px] font-medium whitespace-nowrap transition ${
+                          isAccessibilityMode
+                            ? 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-300'
+                            : 'bg-slate-900 hover:bg-slate-800 text-purple-300 border-purple-500/30'
+                        }`}
                         title="Lands on Sovereign Worker Shield"
                       >
                         {t.home.roleWorkerBtn}
@@ -620,9 +684,15 @@ export default function LoginGatewayView({
               {/* VIEW 2: SIGN UP / REGISTRATION */}
               {viewMode === 'SIGNUP' && (
                 <form onSubmit={handleSignUpSubmit} className="space-y-3.5">
-                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300 relative">
-                    <div className="font-semibold text-white flex items-center gap-1.5">
-                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <div className={`p-3 rounded-lg border text-[11px] relative ${
+                    isAccessibilityMode
+                      ? 'bg-slate-50 border-slate-300 text-slate-800'
+                      : 'bg-slate-950 border-slate-800 text-slate-300'
+                  }`}>
+                    <div className={`font-semibold flex items-center gap-1.5 ${
+                      isAccessibilityMode ? 'text-slate-950' : 'text-white'
+                    }`}>
+                      <ShieldCheck className={`h-3.5 w-3.5 shrink-0 ${isAccessibilityMode ? 'text-emerald-700' : 'text-emerald-400'}`} />
                       <span>{t.home.signupNoticeTitle}</span>
                       <div className="inline-flex items-center group">
                         <button
@@ -632,13 +702,21 @@ export default function LoginGatewayView({
                           aria-label={t.home.signupNoticeDesc}
                           aria-expanded={showSignupNoticeInfo}
                           title={t.home.signupNoticeDesc}
-                          className="p-0.5 rounded-full text-slate-400 hover:text-cyan-400 focus:text-cyan-400 focus:outline-none cursor-pointer transition-colors"
+                          className={`p-0.5 rounded-full focus:outline-none cursor-pointer transition-colors ${
+                            isAccessibilityMode
+                              ? 'text-slate-600 hover:text-cyan-700 focus:text-cyan-700'
+                              : 'text-slate-400 hover:text-cyan-400 focus:text-cyan-400'
+                          }`}
                         >
                           <Info className="h-3.5 w-3.5" />
                         </button>
                         <div
                           role="tooltip"
-                          className={`absolute inset-x-0 top-full mt-1.5 p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-normal text-slate-200 leading-relaxed shadow-xl z-40 transition-opacity ${
+                          className={`absolute inset-x-0 top-full mt-1.5 p-2.5 rounded-lg border text-[11px] font-normal leading-relaxed shadow-xl z-40 transition-opacity ${
+                            isAccessibilityMode
+                              ? 'bg-white border-slate-300 text-slate-800'
+                              : 'bg-slate-900 border-slate-700 text-slate-200'
+                          } ${
                             showSignupNoticeInfo
                               ? 'block opacity-100'
                               : 'hidden group-hover:block group-focus-within:block'
@@ -651,7 +729,7 @@ export default function LoginGatewayView({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    <label className={`block text-xs font-semibold mb-1 ${isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'}`}>
                       {t.home.fullNameLabel}
                     </label>
                     <input
@@ -660,12 +738,16 @@ export default function LoginGatewayView({
                       onChange={(e) => setSignupName(e.target.value)}
                       required
                       placeholder={t.home.fullNameLabel}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                      className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                        isAccessibilityMode
+                          ? 'bg-slate-50 border-slate-300 text-slate-950'
+                          : 'bg-slate-950 border-slate-800 text-white'
+                      }`}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    <label className={`block text-xs font-semibold mb-1 ${isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'}`}>
                       {t.home.emailLabel}
                     </label>
                     <input
@@ -674,12 +756,16 @@ export default function LoginGatewayView({
                       onChange={(e) => setSignupEmail(e.target.value)}
                       required
                       placeholder="name@organization.com"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                      className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                        isAccessibilityMode
+                          ? 'bg-slate-50 border-slate-300 text-slate-950'
+                          : 'bg-slate-950 border-slate-800 text-white'
+                      }`}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    <label className={`block text-xs font-semibold mb-1 ${isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'}`}>
                       {t.home.deptLabel}
                     </label>
                     <input
@@ -687,13 +773,17 @@ export default function LoginGatewayView({
                       value={signupDept}
                       onChange={(e) => setSignupDept(e.target.value)}
                       placeholder="e.g. Civil Construction Team / Environmental Safety"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                      className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                        isAccessibilityMode
+                          ? 'bg-slate-50 border-slate-300 text-slate-950'
+                          : 'bg-slate-950 border-slate-800 text-white'
+                      }`}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      <label className={`block text-xs font-semibold mb-1 ${isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'}`}>
                         {t.home.passwordLabel}
                       </label>
                       <input
@@ -701,11 +791,15 @@ export default function LoginGatewayView({
                         value={signupPassword}
                         onChange={(e) => setSignupPassword(e.target.value)}
                         required
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                        className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                          isAccessibilityMode
+                            ? 'bg-slate-50 border-slate-300 text-slate-950'
+                            : 'bg-slate-950 border-slate-800 text-white'
+                        }`}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      <label className={`block text-xs font-semibold mb-1 ${isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'}`}>
                         {t.home.confirmPasswordLabel}
                       </label>
                       <input
@@ -713,7 +807,11 @@ export default function LoginGatewayView({
                         value={signupConfirmPassword}
                         onChange={(e) => setSignupConfirmPassword(e.target.value)}
                         required
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                        className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                          isAccessibilityMode
+                            ? 'bg-slate-50 border-slate-300 text-slate-950'
+                            : 'bg-slate-950 border-slate-800 text-white'
+                        }`}
                       />
                     </div>
                   </div>
@@ -721,7 +819,7 @@ export default function LoginGatewayView({
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/40"
+                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/30"
                   >
                     <UserPlus className="h-3.5 w-3.5" />
                     <span>{t.home.signupSubmitBtn}</span>
@@ -731,9 +829,14 @@ export default function LoginGatewayView({
                     <button
                       type="button"
                       onClick={() => setViewMode('LOGIN')}
-                      className="text-xs text-slate-400 hover:text-cyan-400 cursor-pointer"
+                      className={`text-xs cursor-pointer ${
+                        isAccessibilityMode ? 'text-slate-700 hover:text-cyan-700' : 'text-slate-400 hover:text-cyan-400'
+                      }`}
                     >
-                      {t.home.alreadyHaveAccount} <span className="text-cyan-400 underline">{t.home.tabSignIn}</span>
+                      {t.home.alreadyHaveAccount}{' '}
+                      <span className={`underline ${isAccessibilityMode ? 'text-cyan-700 font-semibold' : 'text-cyan-400'}`}>
+                        {t.home.tabSignIn}
+                      </span>
                     </button>
                   </div>
                 </form>
@@ -743,13 +846,17 @@ export default function LoginGatewayView({
               {viewMode === 'FORGOT_PASSWORD' && (
                 <div className="space-y-4">
                   {resetSent ? (
-                    <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 text-xs space-y-2">
-                      <div className="flex items-center gap-2 font-bold text-white">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    <div className={`p-4 rounded-xl border text-xs space-y-2 ${
+                      isAccessibilityMode
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                        : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                    }`}>
+                      <div className={`flex items-center gap-2 font-bold ${isAccessibilityMode ? 'text-slate-950' : 'text-white'}`}>
+                        <CheckCircle2 className={`h-4 w-4 ${isAccessibilityMode ? 'text-emerald-700' : 'text-emerald-400'}`} />
                         <span>Security Dispatch Triggered</span>
                       </div>
-                      <p className="text-slate-300 leading-relaxed">
-                        <strong className="text-emerald-300">{resetEmail}</strong>
+                      <p className="leading-relaxed">
+                        <strong className={isAccessibilityMode ? 'text-emerald-800' : 'text-emerald-300'}>{resetEmail}</strong>
                       </p>
                       <button
                         type="button"
@@ -764,12 +871,12 @@ export default function LoginGatewayView({
                     </div>
                   ) : (
                     <form onSubmit={handleForgotPasswordSubmit} className="space-y-3.5">
-                      <p className="text-xs text-slate-300 leading-relaxed">
+                      <p className={`text-xs leading-relaxed ${isAccessibilityMode ? 'text-slate-700' : 'text-slate-300'}`}>
                         {t.home.forgotDesc}
                       </p>
 
                       <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        <label className={`block text-xs font-semibold mb-1 ${isAccessibilityMode ? 'text-slate-800' : 'text-slate-300'}`}>
                           {t.home.emailLabel}
                         </label>
                         <div className="relative">
@@ -780,7 +887,11 @@ export default function LoginGatewayView({
                             onChange={(e) => setResetEmail(e.target.value)}
                             required
                             placeholder="name@organization.com"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 transition"
+                            className={`w-full border rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-cyan-500 transition ${
+                              isAccessibilityMode
+                                ? 'bg-slate-50 border-slate-300 text-slate-950'
+                                : 'bg-slate-950 border-slate-800 text-white'
+                            }`}
                           />
                         </div>
                       </div>
@@ -788,7 +899,7 @@ export default function LoginGatewayView({
                       <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/40"
+                        className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-cyan-950/30"
                       >
                         <Send className="h-3.5 w-3.5" />
                         <span>{t.home.resetSubmitBtn}</span>
@@ -798,7 +909,9 @@ export default function LoginGatewayView({
                         <button
                           type="button"
                           onClick={() => setViewMode('LOGIN')}
-                          className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                          className={`text-xs cursor-pointer ${
+                            isAccessibilityMode ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'
+                          }`}
                         >
                           {t.home.backToSignIn}
                         </button>

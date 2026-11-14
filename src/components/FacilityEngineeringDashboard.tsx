@@ -7,7 +7,6 @@ import {
   Sliders,
   CheckCircle2,
   Clock,
-  Sparkles,
   ShieldCheck,
   Power,
   Lock,
@@ -16,8 +15,8 @@ import {
   ClipboardList,
   Zap
 } from 'lucide-react';
-import { UserPersona } from '../types';
-import { REGULATORY_FRAMEWORKS } from '../services/authService';
+import { UserPersona, RegulatoryJurisdiction } from '../types';
+import { authService, REGULATORY_FRAMEWORKS } from '../services/authService';
 import { INITIAL_FACILITY_ZONES } from '../services/telemetryStream';
 import {
   automatedResponseService,
@@ -79,7 +78,17 @@ export default function FacilityEngineeringDashboard({
     isSimulationActive: true
   });
 
-  const framework = REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.US_OSHA_NIOSH;
+  const [activeJurisdiction, setActiveJurisdiction] = useState<RegulatoryJurisdiction>(() =>
+    authService.getActiveJurisdiction()
+  );
+
+  useEffect(() => {
+    return authService.onAuthChange((_u, jur) => {
+      setActiveJurisdiction(jur);
+    });
+  }, []);
+
+  const framework = REGULATORY_FRAMEWORKS[activeJurisdiction] || REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.US_OSHA_NIOSH;
   const simImpact = useMemo(() => calculateWhatIfImpact(simParams), [simParams]);
   const auditRecords = useMemo(() => complianceAuditService.getRecords().slice(0, 10), [actionNotice, ops.ledgerBlocks.length]);
 
@@ -262,7 +271,7 @@ export default function FacilityEngineeringDashboard({
       {/* Action Notification */}
       {actionNotice && (
         <div className="mb-5 p-3 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs flex items-center gap-2 animate-fadeIn">
-          <Sparkles className="h-4 w-4 text-amber-400 shrink-0" />
+          <CheckCircle2 className="h-4 w-4 text-amber-400 shrink-0" />
           <span>{actionNotice}</span>
         </div>
       )}

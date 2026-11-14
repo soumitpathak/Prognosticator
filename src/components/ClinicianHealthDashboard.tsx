@@ -9,7 +9,6 @@ import {
   Thermometer,
   Send,
   FileText,
-  Sparkles,
   Lock,
   BarChart3,
   Sliders,
@@ -19,8 +18,8 @@ import {
   CheckCircle2,
   ClipboardList
 } from 'lucide-react';
-import { UserPersona } from '../types';
-import { REGULATORY_FRAMEWORKS } from '../services/authService';
+import { UserPersona, RegulatoryJurisdiction } from '../types';
+import { authService, REGULATORY_FRAMEWORKS } from '../services/authService';
 import { INITIAL_FACILITY_ZONES, INITIAL_ACTIVE_ALERTS, generateSyntheticStream } from '../services/telemetryStream';
 import {
   calculateWhatIfImpact,
@@ -68,10 +67,31 @@ export default function ClinicianHealthDashboard({
     isSimulationActive: true
   });
 
-  const framework = REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
+  const [activeJurisdiction, setActiveJurisdiction] = useState<RegulatoryJurisdiction>(() =>
+    authService.getActiveJurisdiction()
+  );
+
+  React.useEffect(() => {
+    return authService.onAuthChange((_u, jur) => {
+      setActiveJurisdiction(jur);
+    });
+  }, []);
+
+  const framework = REGULATORY_FRAMEWORKS[activeJurisdiction] || REGULATORY_FRAMEWORKS[currentUser.jurisdiction] || REGULATORY_FRAMEWORKS.SINGAPORE_MOM;
   const telemetryStream = useMemo(() => generateSyntheticStream(24, 60), []);
   const simImpact = useMemo(() => calculateWhatIfImpact(simParams), [simParams]);
   const clinicalAuditEvents = useMemo(() => systemComplianceService.getEvents().slice(0, 8), [dispatchFeedback, ops.ledgerBlocks.length]);
+
+  const triageLiveMetrics = useMemo(() => {
+    if (triageQueue.length === 0) {
+      return { avgHrv: 34.2, avgSkinTemp: 38.12, pendingCount: 0 };
+    }
+    const pendingItems = triageQueue.filter((i) => i.status === 'PENDING');
+    const source = pendingItems.length > 0 ? pendingItems : triageQueue;
+    const avgHrv = Number((source.reduce((s, r) => s + r.hrv, 0) / source.length).toFixed(1));
+    const avgSkinTemp = Number((source.reduce((s, r) => s + r.skinTemp, 0) / source.length).toFixed(2));
+    return { avgHrv, avgSkinTemp, pendingCount: pendingItems.length };
+  }, [triageQueue]);
 
   const filteredQueue = useMemo(() => {
     if (priorityFilter === 'ALL') return triageQueue;
@@ -245,7 +265,7 @@ export default function ClinicianHealthDashboard({
       {/* Notice Banner */}
       {dispatchFeedback && (
         <div className="mb-5 p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2 animate-fadeIn">
-          <Sparkles className="h-4 w-4 text-emerald-400 shrink-0" />
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
           <span>{dispatchFeedback}</span>
         </div>
       )}
@@ -257,8 +277,10 @@ export default function ClinicianHealthDashboard({
             <span className="text-xs font-semibold font-sans">{c.kpiHrv}</span>
             <Heart className="h-4 w-4 text-rose-400" />
           </div>
-          <div className="text-2xl font-bold text-white font-mono tabular-nums">34.2 ms</div>
-          <div className="text-[11px] text-rose-400 mt-1 font-sans font-medium tabular-nums">-43.0% Autonomic Suppression</div>
+          <div className="text-2xl font-bold text-white font-mono tabular-nums">{triageLiveMetrics.avgHrv} ms</div>
+          <div className="text-[11px] text-rose-400 mt-1 font-sans font-medium tabular-nums">
+            {Number((((triageLiveMetrics.avgHrv - 60) / 60) * 100).toFixed(1))}% vs Baseline (60 ms)
+          </div>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
@@ -266,8 +288,10 @@ export default function ClinicianHealthDashboard({
             <span className="text-xs font-semibold font-sans">{c.kpiSkinTemp}</span>
             <Thermometer className="h-4 w-4 text-rose-400" />
           </div>
-          <div className="text-2xl font-bold text-rose-400 font-mono tabular-nums">38.12&deg;C</div>
-          <div className="text-[11px] text-rose-400 mt-1 font-sans font-medium tabular-nums">+1.62&deg;C Core Heat Elevation</div>
+          <div className="text-2xl font-bold text-rose-400 font-mono tabular-nums">{triageLiveMetrics.avgSkinTemp}&deg;C</div>
+          <div className="text-[11px] text-rose-400 mt-1 font-sans font-medium tabular-nums">
+            +{(triageLiveMetrics.avgSkinTemp - 36.5).toFixed(2)}&deg;C Core Heat Elevation
+          </div>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm">
